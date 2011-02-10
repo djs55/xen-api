@@ -89,31 +89,29 @@ let create_vbd ~__context ~xs ~hvm ~protocol domid self =
 	end else begin
 	  (* Attach a real VDI *)
 	  let vdi = Db.VBD.get_VDI ~__context ~self in
+	  let sr = Db.VDI.get_SR ~__context ~self:vdi in
 	  let vdi_uuid = Uuid.of_string (Db.VDI.get_uuid ~__context ~self:vdi) in
 
-	  Sm.call_sm_vdi_functions ~__context ~vdi
-	    (fun srconf srtype sr ->
-	       let phystype = Device.Vbd.physty_of_string (Sm.sr_content_type ~__context ~sr) 
-	       and physpath = Storage_access.VDI.get_physical_path vdi_uuid in
+	  let phystype = Device.Vbd.physty_of_string (Sm.sr_content_type ~__context ~sr)
+	  and physpath = Storage_access.VDI.get_physical_path vdi_uuid in
 
-		    try
-		      (* The backend can put useful stuff in here on vdi_attach *)
-		      let extra_backend_keys = List.map (fun (k, v) -> "sm-data/" ^ k, v) (Db.VDI.get_xenstore_data ~__context ~self:vdi) in
-		      let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype ~physpath
-			~virtpath:realdevice ~dev_type ~unpluggable ~protocol ~extra_backend_keys ~extra_private_keys:[ "ref", Ref.string_of self ] domid in
-
-		      Db.VBD.set_currently_attached ~__context ~self ~value:true;
-		      debug "set_currently_attached to true for VBD uuid %s" (Db.VBD.get_uuid ~__context ~self)
-		    with   
-		    | Hotplug.Device_timeout device ->
-			error "Timeout waiting for backend hotplug scripts (%s) for VBD %s" (Device_common.string_of_device device) (string_of_vbd ~__context ~vbd:self);
-			raise (Api_errors.Server_error(Api_errors.device_attach_timeout, 
-						      [ "VBD"; Ref.string_of self ]))
-		    | Hotplug.Frontend_device_timeout device ->
-			error "Timeout waiting for frontend hotplug scripts (%s) for VBD %s" (Device_common.string_of_device device) (string_of_vbd ~__context ~vbd:self);
-			raise (Api_errors.Server_error(Api_errors.device_attach_timeout, 
-						      [ "VBD"; Ref.string_of self ]))
-		 )
+	  try
+		  (* The backend can put useful stuff in here on vdi_attach *)
+		  let extra_backend_keys = List.map (fun (k, v) -> "sm-data/" ^ k, v) (Db.VDI.get_xenstore_data ~__context ~self:vdi) in
+		  let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype ~physpath
+			  ~virtpath:realdevice ~dev_type ~unpluggable ~protocol ~extra_backend_keys ~extra_private_keys:[ "ref", Ref.string_of self ] domid in
+		  
+		  Db.VBD.set_currently_attached ~__context ~self ~value:true;
+		  debug "set_currently_attached to true for VBD uuid %s" (Db.VBD.get_uuid ~__context ~self)
+	  with   
+		  | Hotplug.Device_timeout device ->
+			  error "Timeout waiting for backend hotplug scripts (%s) for VBD %s" (Device_common.string_of_device device) (string_of_vbd ~__context ~vbd:self);
+			  raise (Api_errors.Server_error(Api_errors.device_attach_timeout, 
+			  [ "VBD"; Ref.string_of self ]))
+		  | Hotplug.Frontend_device_timeout device ->
+			  error "Timeout waiting for frontend hotplug scripts (%s) for VBD %s" (Device_common.string_of_device device) (string_of_vbd ~__context ~vbd:self);
+			  raise (Api_errors.Server_error(Api_errors.device_attach_timeout, 
+			  [ "VBD"; Ref.string_of self ]))
 	end
     )
 
