@@ -281,7 +281,7 @@ let devty_of_string = function
 	| "disk"  -> Disk
 	| _       -> invalid_arg "devty_of_string"
 
-let string_of_major_minor file =
+let physical_device_of_path file =
 	let major, minor = device_major_minor file in
 	sprintf "%x:%x" major minor
 
@@ -478,7 +478,7 @@ let is_paused ~xs (x: device) =
 (* Add the VBD to the domain, When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
    performs a 'waitForDevices') *)
-let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
+let add ~xs ~hvm ~mode ~virtpath ~phystype ~physdevice ~dev_type ~unpluggable
         ?(protocol=Protocol_Native) ?extra_backend_keys ?(extra_private_keys=[]) ?(backend_domid=0) domid  =
 	let back_tbl = Hashtbl.create 16 and front_tbl = Hashtbl.create 16 in
 	let devid = device_number virtpath in
@@ -487,8 +487,8 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 	  in  device_of_backend backend domid
 	in
 
-	debug "Device.Vbd.add (virtpath=%s | physpath=%s | phystype=%s)"
-	  virtpath physpath (string_of_physty phystype);
+	debug "Device.Vbd.add (virtpath=%s | physdevice=%s | phystype=%s)"
+	  virtpath physdevice (string_of_physty phystype);
 	(* Notes:
 	   1. qemu accesses devices images itself and so needs the path of the original
               file (in params)
@@ -511,7 +511,7 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 		"device-type", if dev_type = CDROM then "cdrom" else "disk";
 	];
 	Hashtbl.add_list back_tbl [
-		"physical-device", (string_of_major_minor physpath);
+		"physical-device", physdevice;
 		"frontend-id", sprintf "%u" domid;
 		(* Prevents the backend hotplug scripts from running if the frontend disconnects.
 		   This allows the xenbus connection to re-establish itself *)
@@ -522,7 +522,7 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 		"dev", (if domid = 0 && virtpath.[0] = 'x' then "/dev/" else "") ^ virtpath;
 		"type", backendty_of_physty phystype;
 		"mode", string_of_mode mode;
-		"params", physpath;
+(*		"params", physpath; *)
 	];
 	if protocol <> Protocol_Native then
 		Hashtbl.add front_tbl "protocol" (string_of_protocol protocol);
@@ -558,6 +558,7 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 	    release ~xs device;
 		(* Attempt to diagnose the error: the error from blkback ("2 creating vbd structure")
 		   doesn't give much away. *)
+(*
 		if phystype = Phys then begin
 		  try
 			(* Speculatively query the physical device as if a CDROM *)
@@ -566,10 +567,12 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 			  | x -> 
 					error "CDROM device %s: %s" physpath (Cdrom.string_of_cdrom_drive_status x);
 					raise Cdrom
+
 		  with 
 		  | Cdrom as e' -> raise e'
 		  | _ -> () (* assume it wasn't a CDROM *)
 		end;
+*)
 	    raise e
 	end;
 	device

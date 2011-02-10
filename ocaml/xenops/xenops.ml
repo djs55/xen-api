@@ -224,7 +224,7 @@ let add_vbd ~xs ~hvm ~domid ~virtpath ~phystype ~physpath ~dev_type ~mode ~backe
 	let dev_type = Device.Vbd.devty_of_string dev_type in
 
 	Device.Vbd.add ~xs ~hvm ~mode:(Device.Vbd.mode_of_string mode)
-	               ~phystype ~physpath ~virtpath ~dev_type ~backend_domid domid
+	               ~phystype ~physdevice:physpath ~virtpath ~dev_type ~backend_domid domid
 
 let find_device ~xs (frontend: endpoint) (backend: endpoint) = 
   let all = list_devices_between ~xs backend.domid frontend.domid in

@@ -83,22 +83,21 @@ let create_vbd ~__context ~xs ~hvm ~protocol domid self =
 	Db.VBD.set_device ~__context ~self ~value:realdevice;
 
 	if empty then begin
-	  let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype:Device.Vbd.File ~physpath:""
+	  let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype:Device.Vbd.File ~physdevice:""
 	    ~virtpath:realdevice ~dev_type ~unpluggable ~protocol ~extra_private_keys:[ "ref", Ref.string_of self ] domid in
 	  Db.VBD.set_currently_attached ~__context ~self ~value:true;
 	end else begin
 	  (* Attach a real VDI *)
 	  let vdi = Db.VBD.get_VDI ~__context ~self in
 	  let sr = Db.VDI.get_SR ~__context ~self:vdi in
-	  let vdi_uuid = Uuid.of_string (Db.VDI.get_uuid ~__context ~self:vdi) in
 
 	  let phystype = Device.Vbd.physty_of_string (Sm.sr_content_type ~__context ~sr)
-	  and physpath = Storage_access.VDI.get_physical_path vdi_uuid in
+	  and physdevice = Storage_access.VDI.get_physical_device ~self:vdi in
 
 	  try
 		  (* The backend can put useful stuff in here on vdi_attach *)
 		  let extra_backend_keys = List.map (fun (k, v) -> "sm-data/" ^ k, v) (Db.VDI.get_xenstore_data ~__context ~self:vdi) in
-		  let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype ~physpath
+		  let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype ~physdevice
 			  ~virtpath:realdevice ~dev_type ~unpluggable ~protocol ~extra_backend_keys ~extra_private_keys:[ "ref", Ref.string_of self ] domid in
 		  
 		  Db.VBD.set_currently_attached ~__context ~self ~value:true;

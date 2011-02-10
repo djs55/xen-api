@@ -136,6 +136,27 @@ let call_emergency_mode_functions hostname f =
     (fun () -> f rpc session_id)
     (fun () -> Client.Client.Session.local_logout rpc session_id)
 
+let call_xapi ~__context vm f = 
+	let ip = 
+		if Db.VM.get_is_control_domain ~__context ~self:vm
+		then
+			let host = Db.VM.get_resident_on ~__context ~self:vm in
+			Db.Host.get_address ~__context ~self:host
+		else
+			try
+				(* XXX: we need a more secure way to determine this IP address *)
+				let metrics = Db.VM.get_guest_metrics ~__context ~self:vm in
+				List.assoc "0/ip" (Db.VM_guest_metrics.get_networks ~__context ~self:metrics)
+			with e ->
+				debug "Caught %s trying to find IP for VM %s" (ExnHelper.string_of_exn e) (Ref.string_of vm);
+				failwith "Unable to determine VM IP address" in
+
+	let rpc xml = Xmlrpcclient.do_secure_xml_rpc ~version:"1.0" ~host:ip ~port:!Xapi_globs.https_port ~path:"/" xml in
+	let session_id = Client.Client.Session.slave_local_login rpc !Xapi_globs.pool_secret in
+	finally
+		(fun () -> f rpc session_id)
+		(fun () -> Client.Client.Session.local_logout rpc session_id)	
+
 let progress ~__context t =
     for i = 0 to int_of_float (t *. 100.) do
         let v = (float_of_int i /. 100.) /. t in

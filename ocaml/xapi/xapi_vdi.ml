@@ -601,14 +601,14 @@ let read_database_pool_uuid ~__context ~self =
 	| None -> ""
 
 let attach ~__context ~self ~mode = 
-	Storage_access.VDI.attach ~__context ~self ~mode
+	Storage_access.VDI_lowlevel.attach ~__context ~self ~mode
 
 let detach ~__context ~self = 
-	Storage_access.VDI.detach ~__context ~self
+	Storage_access.VDI_lowlevel.detach ~__context ~self
 		
 let activate ~__context ~self ~mode = 
-	Storage_access.VDI.activate ~__context ~self ~mode
+	Storage_access.VDI_lowlevel.activate ~__context ~self ~mode
 
 let deactivate ~__context ~self = 
-	Storage_access.VDI.deactivate ~__context ~self
+	Storage_access.VDI_lowlevel.deactivate ~__context ~self
 

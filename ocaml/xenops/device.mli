@@ -50,9 +50,10 @@ sig
 	val device_name : int -> string
 	val device_major_minor : string -> int * int
 	val major_minor_to_device : int * int -> string
+	val physical_device_of_path : string -> string
 
 	val add : xs:Xs.xsh -> hvm:bool -> mode:mode
-	       -> virtpath:string -> phystype:physty -> physpath:string
+	       -> virtpath:string -> phystype:physty -> physdevice:string
 	       -> dev_type:devty
 	       -> unpluggable:bool
 	       -> ?protocol:protocol

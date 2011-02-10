@@ -411,7 +411,7 @@ let receiver ~__context ~localhost is_localhost_migration fd vm xc xs memory_req
   *)
   let delay_device_create_until_after_activate =
     List.fold_left
-      (fun env (vdi,_) -> env || (Storage_access.VDI.check_enclosing_sr_for_capability __context Smint.Vdi_activate vdi))
+      (fun env (vdi,_) -> env || (Storage_access.VDI_lowlevel.check_enclosing_sr_for_capability __context Smint.Vdi_activate vdi))
       false needed_vdis in
 
   let on_error_reply f x = try f x with e -> Handshake.send fd (Handshake.Error (ExnHelper.string_of_exn e)); raise e in
@@ -483,7 +483,7 @@ let receiver ~__context ~localhost is_localhost_migration fd vm xc xs memory_req
      else
        begin
 	 debug "Receiver 7a. Activating VDIs";
-	 List.iter (fun (vdi,mode) -> Storage_access.VDI.activate ~__context ~self:vdi ~mode) needed_vdis
+	 List.iter (fun (vdi,mode) -> ignore(Storage_access.VDI.activate ~__context ~self:vdi ~mode)) needed_vdis
        end;
      
      if delay_device_create_until_after_activate then

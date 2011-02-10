@@ -213,12 +213,10 @@ let insert  ~__context ~vbd ~vdi =
 	      (* ask qemu nicely *)
 	      Sm.call_sm_vdi_functions ~__context ~vdi
 		(fun srconf srtype sr ->
-		   let vdi_uuid = Uuid.uuid_of_string (Db.VDI.get_uuid ~__context ~self:vdi) in
 		   let phystype = Device.Vbd.physty_of_string (Sm.sr_content_type ~__context ~sr) in
 		   let mode = Db.VBD.get_mode ~__context ~self:vbd in
-		   Storage_access.use_vdi ~__context ~vdi ~mode;
+		   let physpath = Storage_access.use_vdi ~__context ~vdi ~mode in
 		   
-		   let physpath = Storage_access.VDI.get_physical_path vdi_uuid in
 		   let virtpath = Db.VBD.get_device ~__context ~self:vbd in
 		   let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:vm) in
 		   with_xs (fun xs -> Device.Vbd.media_insert ~xs ~virtpath ~phystype ~physpath domid)
@@ -278,8 +276,7 @@ let refresh ~__context ~vbd ~vdi =
         let vdi_uuid = Uuid.uuid_of_string (Db.VDI.get_uuid ~__context ~self:vdi) in
         let virtpath = Db.VBD.get_device ~__context ~self:vbd in
         let mode = Db.VBD.get_mode ~__context ~self:vbd in
-        Storage_access.use_vdi ~__context ~vdi ~mode;
-        let physpath = Storage_access.VDI.get_physical_path vdi_uuid in
+        let physpath = Storage_access.use_vdi ~__context ~vdi ~mode in
         let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:vm) in
         with_xs (fun xs -> Device.Vbd.media_refresh ~xs ~virtpath ~physpath domid);
         ()

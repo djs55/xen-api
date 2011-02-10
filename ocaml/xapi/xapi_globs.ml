@@ -639,3 +639,4 @@ let network_reset_trigger = "/tmp/network-reset"
 
 let first_boot_dir = "/etc/firstboot.d/"
 
+let storage_vm = "storage_vm"
