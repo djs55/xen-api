@@ -3068,6 +3068,22 @@ end
 				~extra_sr:(Db.VDI.get_SR ~__context ~self)
 				(fun session_id rpc -> Client.VDI.checksum rpc session_id self)
 
+	let attach ~__context ~self = 
+		info "VDI.attach: VDI = '%s'" (vdi_uuid ~__context self);
+		Local.VDI.attach ~__context ~self
+
+	let detach ~__context ~self = 
+		info "VDI.detach: VDI = '%s'" (vdi_uuid ~__context self);
+		Local.VDI.detach ~__context ~self
+
+	let activate ~__context ~self = 
+		info "VDI.activate: VDI = '%s'" (vdi_uuid ~__context self);
+		Local.VDI.activate ~__context ~self
+
+	let deactivate ~__context ~self = 
+		info "VDI.deactivate: VDI = '%s'" (vdi_uuid ~__context self);
+		Local.VDI.deactivate ~__context ~self
+
   end
   module VBD = struct
 

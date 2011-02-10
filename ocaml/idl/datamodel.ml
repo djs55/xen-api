@@ -2660,6 +2660,52 @@ let host_refresh_pack_info = call
    VDI Management
    ------------------------------------------------------------------------------------------------------------ *)
 
+(** Virtual disk interfaces have a mode parameter: *)
+let vbd_mode = Enum ("vbd_mode", [ "RO", "only read-only access will be allowed";
+				   "RW", "read-write access will be allowed" ])
+
+
+let vdi_attach = call
+	~name:"attach"
+	~in_oss_since:None
+	~in_product_since:rel_cowley
+	~params:[Ref _vdi, "self", "The VDI to attach"; vbd_mode, "mode", "R/O or R/W"]
+	~allowed_roles:_R_POOL_OP
+	~doc:"Internal-only call to attach a VDI"
+	~hide_from_docs:true
+	()
+
+let vdi_activate = call
+	~name:"activate"
+	~in_oss_since:None
+	~in_product_since:rel_cowley
+	~params:[Ref _vdi, "self", "The VDI to activate"; vbd_mode, "mode", "R/O or R/W"]
+	~result:(String, "The physical-device for blkback")
+	~allowed_roles:_R_POOL_OP
+	~doc:"Internal-only call to activate a VDI"
+	~hide_from_docs:true
+	()
+
+let vdi_detach = call
+	~name:"detach"
+	~in_oss_since:None
+	~in_product_since:rel_cowley
+	~params:[Ref _vdi, "self", "The VDI to detach"]
+	~allowed_roles:_R_POOL_OP
+	~doc:"Internal-only call to detach a VDI"
+	~hide_from_docs:true
+	()
+
+let vdi_deactivate = call
+	~name:"deactivate"
+	~in_oss_since:None
+	~in_product_since:rel_cowley
+	~params:[Ref _vdi, "self", "The VDI to deactivate"]
+	~allowed_roles:_R_POOL_OP
+	~doc:"Internal-only call to deactivate a VDI"
+	~hide_from_docs:true
+	()
+
 (* VDI.Snapshot *)
 
 let vdi_snapshot = call
@@ -5002,6 +5048,10 @@ let vdi =
 		 vdi_open_database;
 		 vdi_checksum;
 		 vdi_read_database_pool_uuid;
+		 vdi_attach;
+		 vdi_detach;
+		 vdi_activate;
+		 vdi_deactivate;
 		]
       ~contents:
       ([ uid _vdi;
@@ -5036,10 +5086,6 @@ let vdi =
 	field ~in_product_since:rel_boston ~qualifier:DynamicRO ~ty:Bool ~default_value:(Some (VBool false)) "metadata_latest" "Whether this VDI contains the latest known accessible metadata for the pool";
       ])
 	()
-
-(** Virtual disk interfaces have a mode parameter: *)
-let vbd_mode = Enum ("vbd_mode", [ "RO", "only read-only access will be allowed";
-				   "RW", "read-write access will be allowed" ])
 
 let vbd_type = Enum ("vbd_type",
 		     [ "CD", "VBD will appear to guest as CD"; 
