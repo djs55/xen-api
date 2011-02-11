@@ -677,6 +677,11 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
     let set_vswitch_controller ~__context ~address =
     	info "Pool.set_vswitch_controller: pool = '%s'; address = '%s'" (current_pool_uuid ~__context) address;
     	Local.Pool.set_vswitch_controller ~__context ~address
+
+	let is_simulated ~__context = 
+		(* If the master is a real dom0 then this is a real pool. If the
+		   master is a domU then this must be a simulated pool. *)
+		not (Helpers.is_dom0 ())
   end
 
   module VM = struct

@@ -5360,6 +5360,17 @@ let pool_ping_slave = call ~flags:[`Session]
   ~allowed_roles:_R_POOL_ADMIN
   ()
 
+let pool_is_simulated = call ~flags:[`Session]
+	~name:"is_simulated"
+	~in_oss_since:None
+	~in_product_since:rel_cowley
+	~params:[]
+	~doc:"Internal use only"
+	~result:(Bool, "returns true if the pool is simulated, false if real")
+	~hide_from_docs:true
+	~allowed_roles:_R_POOL_ADMIN
+	()
+
 let pool_ha_prevent_restarts_for = call ~flags:[`Session]
   ~name:"ha_prevent_restarts_for"
   ~in_product_since:rel_orlando_update_1
@@ -5703,6 +5714,7 @@ let pool =
 			; pool_recover_slaves
 			; pool_hello
 			; pool_ping_slave
+			; pool_is_simulated
 			; pool_create_VLAN
 			; pool_create_VLAN_from_PIF
 			; pool_slave_network_report

@@ -196,3 +196,5 @@ val audit_log_append : __context:Context.t -> line:string -> unit
 val test_archive_target : __context:Context.t -> self:API.ref_pool -> config:API.string_to_string_map -> string
 val enable_local_storage_caching : __context:Context.t -> self:API.ref_pool -> unit
 val disable_local_storage_caching : __context:Context.t -> self:API.ref_pool -> unit
+
+val is_simulated : __context:Context.t -> bool

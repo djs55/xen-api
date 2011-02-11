@@ -1589,3 +1589,5 @@ let disable_local_storage_caching ~__context ~self =
 	if List.length failed_hosts > 0 then
 		raise (Api_errors.Server_error (Api_errors.hosts_failed_to_disable_caching, List.map Ref.string_of failed_hosts))
 	else ()
+
+let is_simulated ~__context = assert false
