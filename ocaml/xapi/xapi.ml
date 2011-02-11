@@ -676,7 +676,7 @@ let server_init() =
     ignore(Http_svr.start (localhost_sock, "inet-RPC"));
     in
 
-  let print_server_starting_message() = debug "on_system_boot=%b pool_role=%s" !Xapi_globs.on_system_boot (Pool_role.string_of (Pool_role.get_role ())) in
+  let print_server_starting_message() = debug "on_system_boot=%b pool_role=%s is_dom0=%b" !Xapi_globs.on_system_boot (Pool_role.string_of (Pool_role.get_role ())) (Helpers.is_dom0 ()) in
 
   (* Record the initial value of Master_connection.connection_timeout and set it to 'never'. When we are a slave who
      has just started up we want to wait forever for the master to appear. (See CA-25481) *)

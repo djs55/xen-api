@@ -929,3 +929,22 @@ let set_vm_uncooperative ~__context ~self ~value =
 	end;
 	Db.VM.add_to_other_config ~__context ~self ~key:"uncooperative" ~value:(string_of_bool value)
   end
+
+(** [is_dom0 ()] returns true if this really is the privileged dom0 *)
+let is_dom0 =
+	let m = Mutex.create () in
+	let x = ref None in
+	fun () ->
+		Mutex.execute m
+			(fun () -> match !x with
+				| Some x -> x
+				| None ->
+					let x' = 
+						let xs = Xs.domain_open () in
+						finally
+							(fun () ->
+								xs.Xs.read "domid" = "0"
+							) 
+							(fun () -> Xs.close xs) in
+					x := Some x';
+					x')
