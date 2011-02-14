@@ -117,3 +117,6 @@ let disable_reboot_delay () = fistpoint "disable_reboot_delay"
 
 
 let force_remote_vdi_copy () = fistpoint "force_remote_vdi_copy"
+
+(** Pretends that the master we're joining is actually a real dom0 *)
+let master_is_dom0 () = fistpoint "master_is_dom0"

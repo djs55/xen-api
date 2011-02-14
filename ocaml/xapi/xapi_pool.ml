@@ -567,6 +567,35 @@ let update_non_vm_metadata ~__context ~rpc ~session_id =
 
 	()
 
+(* If we're not a control domain then change our INSTALLATION_UUID to match the Host's uuid
+   and our CONTROL_DOMAIN_UUID to match the domain's uuid *)
+let update_xensource_inventory ~__context ~rpc ~session_id =
+	let domain_uuid = 
+		let xs = Xs.domain_open () in
+		finally
+			(fun () ->
+				match String.split '/' (xs.Xs.read "vm") with
+					| [ ""; "vm"; uuid ] -> uuid
+					| _ -> failwith "Failed to determine VM uuid"
+			) 
+			(fun () -> Xs.close xs) in
+	let current_installation_uuid = Xapi_inventory.lookup Xapi_inventory._installation_uuid in
+	let current_control_domain_uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
+
+	let me = Client.VM.get_by_uuid ~rpc ~session_id ~uuid:domain_uuid in
+	let host = Client.VM.get_resident_on ~rpc ~session_id ~self:me in
+	let host_uuid = Client.Host.get_uuid ~rpc ~session_id ~self:host in
+	Xapi_inventory.update Xapi_inventory._installation_uuid host_uuid;
+	info "xensource-inventory:INSTALLATION_UUID <- %s" host_uuid;
+	Xapi_inventory.update Xapi_inventory._control_domain_uuid domain_uuid;
+	info "xensource-inventory:CONTROL_DOMAIN_UUID <- %s" domain_uuid;
+
+	(* Update our local database to keep everything consistent *)
+	let current_host = Db.Host.get_by_uuid ~__context ~uuid:current_installation_uuid in
+	Db.Host.set_uuid ~__context ~self:current_host ~value:host_uuid;
+	let current_vm = Db.VM.get_by_uuid ~__context ~uuid:current_control_domain_uuid in
+	Db.VM.set_uuid ~__context ~self:current_vm ~value:domain_uuid
+
 let open_tcp ~server =
 	(* We don't bother closing fds since this requires our close_and_exec wrapper *)
 	let port = 443 in
@@ -594,6 +623,18 @@ let update_vm_metadata ~__context ~rpc ~session_id ~master_address =
 			Unixext.http_put ~open_tcp ~uri:import_uri ~filename:temp_file ~server:master_address)
 		(fun () -> Unixext.unlink_safe temp_file)
 
+let update ~__context ~rpc ~session_id ~master_address =
+	(* this is where we try and sync up as much state as we can
+	   with the master. This is "best effort" rather than
+	   critical; if we fail part way through this then we carry
+	   on with the join *)
+	try
+		update_non_vm_metadata ~__context ~rpc ~session_id;
+		update_vm_metadata ~__context ~rpc ~session_id ~master_address;
+	with e ->
+		debug "Error whilst importing db objects into master; aborted: %s" (Printexc.to_string e);
+		warn "Error whilst importing db objects to master. The pool-join operation will continue, but some of the slave's VMs may not be available on the master."
+
 let join_common ~__context ~master_address ~master_username ~master_password ~force =
 	(* get hold of cluster secret - this is critical; if this fails whole pool join fails *)
 	(* Note: this is where the license restrictions are checked on the other side.. if we're trying to join
@@ -608,6 +649,7 @@ let join_common ~__context ~master_address ~master_username ~master_password ~fo
 
 	finally (fun () ->
 		pre_join_checks ~__context ~rpc ~session_id ~force;
+
 		cluster_secret := Client.Pool.initial_auth rpc session_id;
 
 		(* get pool db from new master so I have a backup ready if we failover to me *)
@@ -617,18 +659,22 @@ let join_common ~__context ~master_address ~master_username ~master_password ~fo
 			error "Failed fetching a database backup from the master: %s" (ExnHelper.string_of_exn e)
 		end;
 
-		(* this is where we try and sync up as much state as we can
-		with the master. This is "best effort" rather than
-		critical; if we fail part way through this then we carry
-		on with the join *)
-		try
-			update_non_vm_metadata ~__context ~rpc ~session_id;
-			update_vm_metadata ~__context ~rpc ~session_id ~master_address;
-		with e ->
-			debug "Error whilst importing db objects into master; aborted: %s" (Printexc.to_string e);
-			warn "Error whilst importing db objects to master. The pool-join operation will continue, but some of the slave's VMs may not be available on the master.")
-	(fun () ->
-		Client.Session.logout rpc session_id);
+		let remote_is_dom0 = Xapi_fist.master_is_dom0 () || not(Client.Pool.is_simulated rpc session_id) in
+		let local_is_dom0 = Helpers.is_dom0 () in
+		match remote_is_dom0, local_is_dom0 with
+			| true, false ->
+				info "This is a utility domain.";
+				update_xensource_inventory ~__context ~rpc ~session_id
+			| true, true ->
+				info "This is a physical pool.";
+				update ~__context ~rpc ~session_id ~master_address
+			| false, false ->
+				info "This is a simulated pool.";
+				update ~__context ~rpc ~session_id ~master_address
+			| false, true ->
+				failwith "non-dom0 pool master not currently supported")
+		(fun () ->
+			Client.Session.logout rpc session_id);
 
 	(* Rewrite the pool secret on every host of the current pool, and restart all the agent as slave of the distant pool master. *)
 	Helpers.call_api_functions ~__context (fun my_rpc my_session_id ->
