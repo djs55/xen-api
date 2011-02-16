@@ -111,7 +111,7 @@ let rec ensure_domain_zero_records ~__context (host_info: host_info) : unit =
 	ensure_domain_zero_shadow_record ~__context ~domain_zero_ref
 
 and ensure_domain_zero_record ~__context (host_info: host_info): [`VM] Ref.t =
-	let ref_lookup () = Helpers.get_domain_zero ~__context in
+	let ref_lookup () = Db.VM.get_by_uuid ~__context ~uuid:(Helpers.get_my_uuid ()) in
 	let ref_create () = Ref.make () in
 	let (domain_zero_ref, found) =
 		try       ref_lookup (), true

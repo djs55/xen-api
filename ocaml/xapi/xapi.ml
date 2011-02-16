@@ -330,12 +330,15 @@ let on_master_restart ~__context =
 
 (* Make sure the local database can be read *)
 let init_local_database () =
-  (try
-     let (_: string) = Localdb.get Constants.ha_armed in
-	 ()
-   with Localdb.Missing_key _ ->
-     Localdb.put Constants.ha_armed "false";
-     debug "%s = 'false' (by default)" Constants.ha_armed);
+	let default key value = 
+		try
+			let (_: string) = Localdb.get key in ()
+		with Localdb.Missing_key _ ->
+			Localdb.put key value;
+			debug "%s = '%s' (by default)" key value in
+	default Constants.ha_armed "false";
+	default Constants.has_control_domain_role "true";
+
   (* Add the local session check hook *)
   Session_check.check_local_session_hook := Some (Xapi_local_session.local_session_hook);
   (* Resynchronise the master_scripts flag if this is the first start since system boot *)
@@ -598,7 +601,8 @@ let control_domain_memory () =
 		(fun __context ->
 			Helpers.call_api_functions ~__context
 				(fun rpc session_id ->
-					let self = Helpers.get_domain_zero ~__context in
+					let uuid = Helpers.get_my_uuid () in
+					let self = Db.VM.get_by_uuid ~__context ~uuid in
 					let vm_r = Db.VM.get_record ~__context ~self in
 					Client.Client.VM.set_memory_dynamic_range
 						rpc session_id self
@@ -774,14 +778,15 @@ let server_init() =
   in
 
   try
+	  print_server_starting_message ();
+	  init_local_database ();
+
     Server_helpers.exec_with_new_task "server_init" (fun __context ->
     Startup.run ~__context [
     "Reading config file", [], (fun () -> Xapi_config.read_config !Xapi_globs.config_file);
     "Reading log config file", [ Startup.NoExnRaising ], (fun () -> Xapi_config.read_log_config !Xapi_globs.log_config_file);
     "Initing stunnel path", [], Stunnel.init_stunnel_path;
-    "XAPI SERVER STARTING", [], print_server_starting_message;
     "Parsing inventory file", [], Xapi_inventory.read_inventory;
-    "Initialising local database", [], init_local_database;
     "Reading pool secret", [], Helpers.get_pool_secret;
     "Logging xapi version info", [], Xapi_config.dump_config;
     "Checking control domain", [], check_control_domain;
@@ -794,8 +799,8 @@ let server_init() =
     "Registering master-only http handlers", [ Startup.OnlyMaster ], (fun () -> List.iter Xapi_http.add_handler master_only_http_handlers);
     "Listening unix socket", [], listen_unix_socket;
     "Listening localhost", [], listen_localhost;
-    "Checking HA configuration", [], start_ha;
-	"Checking for non-HA redo-log", [], start_redo_log;
+    "Checking HA configuration", [ Startup.OnlyControlDomain ], start_ha;
+	"Checking for non-HA redo-log", [ Startup.OnlyControlDomain ], start_redo_log;
     (* It is a pre-requisite for starting db engine *)
     "Setup DB configuration", [], setup_db_conf;
     (* Start up database engine if we're a master.
@@ -808,7 +813,7 @@ let server_init() =
 	"hi-level database upgrade", [ Startup.OnlyMaster ], Xapi_db_upgrade.hi_level_db_upgrade_rules ~__context;
     "HA metadata VDI liveness monitor", [ Startup.OnlyMaster; Startup.OnThread ], (fun () -> Redo_log_alert.loop Xapi_ha.ha_redo_log);
     "DR metadata VDI liveness monitor", [ Startup.OnlyMaster; Startup.OnThread ], (fun () -> Xapi_vdi_helpers.metadata_replication_monitor ~__context);
-    "bringing up management interface", [], bring_up_management_if ~__context;
+    "bringing up management interface", [ Startup.OnlyControlDomain ], bring_up_management_if ~__context;
     "Starting periodic scheduler", [Startup.OnThread], Xapi_periodic_scheduler.loop;
     "Remote requests", [Startup.OnThread], Remote_requests.handle_requests;
   ];
@@ -857,7 +862,8 @@ let server_init() =
             Master_connection.restart_on_connection_timeout := false;
             Master_connection.connection_timeout := 10.; (* give up retrying after 10s *)
             Db_cache_impl.initialise ();
-            Dbsync.setup ()
+			if bool_of_string(Localdb.get Constants.has_control_domain_role)
+            then Dbsync.setup ()
           with e ->
             begin
               debug "Failure in slave dbsync; slave will pause and then restart to try again. Entering emergency mode.";
@@ -870,18 +876,18 @@ let server_init() =
     end;
  
     Startup.run ~__context [
-      "Checking emergency network reset", [], check_network_reset;
-      "Synchronising bonds/VLANs on slave with master", [], Sync_networking.sync_slave_with_master ~__context;
-      "Initialise monitor configuration", [], Monitor_rrds.update_configuration_from_master;
-      "Initialising licensing", [], handle_licensing;
-      "control domain memory", [ Startup.OnThread ], control_domain_memory;
-      "message_hook_thread", [ Startup.NoExnRaising ], (Xapi_message.start_message_hook_thread ~__context);
+      "Checking emergency network reset", [ Startup.OnlyControlDomain ], check_network_reset;
+      "Synchronising bonds/VLANs on slave with master", [ Startup.OnlyControlDomain ], Sync_networking.sync_slave_with_master ~__context;
+      "Initialise monitor configuration", [ Startup.OnlyControlDomain ], Monitor_rrds.update_configuration_from_master;
+      "Initialising licensing", [ Startup.OnlyControlDomain ], handle_licensing;
+      "control domain memory", [ Startup.OnThread; Startup.OnlyControlDomain ], control_domain_memory;
+      "message_hook_thread", [ Startup.NoExnRaising; Startup.OnlyControlDomain ], (Xapi_message.start_message_hook_thread ~__context);
       "heartbeat thread", [ Startup.NoExnRaising; Startup.OnThread ], Db_gc.start_heartbeat_thread;
-      "resynchronising HA state", [ Startup.NoExnRaising ], resynchronise_ha_state;
-      "pool db backup", [ Startup.OnlyMaster; Startup.OnThread ], Pool_db_backup.pool_db_backup_thread;
-      "monitor", [ Startup.OnThread ], Monitor.loop;
-      "monitor_dbcalls", [Startup.OnThread], Monitor_dbcalls.monitor_dbcall_thread;
-      "guest_agent_monitor", [ Startup.NoExnRaising ], Xapi_guest_agent.guest_metrics_liveness_thread;
+      "resynchronising HA state", [ Startup.NoExnRaising; Startup.OnlyControlDomain ], resynchronise_ha_state;
+      "pool db backup", [ Startup.OnlyMaster; Startup.OnThread; Startup.OnlyControlDomain ], Pool_db_backup.pool_db_backup_thread;
+      "monitor", [ Startup.OnThread; Startup.OnlyControlDomain ], Monitor.loop;
+      "monitor_dbcalls", [Startup.OnThread; Startup.OnlyControlDomain ], Monitor_dbcalls.monitor_dbcall_thread;
+      "guest_agent_monitor", [ Startup.NoExnRaising; Startup.OnlyControlDomain  ], Xapi_guest_agent.guest_metrics_liveness_thread;
       "touching ready file", [], (fun () -> Helpers.touch_file !Xapi_globs.ready_file);
        (* -- CRITICAL: this check must be performed before touching shared storage *)
       "Performing no-other-masters check", [ Startup.OnlyMaster ], check_no_other_masters;
@@ -890,18 +896,18 @@ let server_init() =
 
       "considering executing on-master-start script", [],
         (fun () -> Xapi_pool_transition.run_external_scripts (Pool_role.is_master ()));
-      "creating networks", [ Startup.OnlyMaster ], Create_networks.create_networks_localhost;
-      "updating the vswitch controller", [], (fun () -> Helpers.update_vswitch_controller ~__context ~host:(Helpers.get_localhost ~__context)); 
+      "creating networks", [ Startup.OnlyMaster; Startup.OnlyControlDomain ], Create_networks.create_networks_localhost;
+      "updating the vswitch controller", [ Startup.OnlyControlDomain ], (fun () -> Helpers.update_vswitch_controller ~__context ~host:(Helpers.get_localhost ~__context)); 
       (* CA-22417: bring up all non-bond slaves so that the SM backends can use storage NIC IP addresses (if the routing
 	 table happens to be right) *)
-      "Best-effort bring up of physical NICs", [ Startup.NoExnRaising ], Xapi_pif.start_of_day_best_effort_bring_up;
-	  "Starting host internal management network", [ Startup.NoExnRaising ], Xapi_network_real.on_server_start;
-      "initialising storage", [ Startup.NoExnRaising ],
+      "Best-effort bring up of physical NICs", [ Startup.NoExnRaising; Startup.OnlyControlDomain ], Xapi_pif.start_of_day_best_effort_bring_up;
+	  "Starting host internal management network", [ Startup.NoExnRaising; Startup.OnlyControlDomain ], Xapi_network_real.on_server_start;
+      "initialising storage", [ Startup.NoExnRaising; Startup.OnlyControlDomain ],
                 (fun () -> Helpers.call_api_functions ~__context Create_storage.create_storage_localhost);
       (* CA-13878: make sure PBD plugging has happened before attempting to reboot any VMs *)
-      "starting events thread", [], (fun () -> if not (!noevents) then ignore (Thread.create Events.listen_xal ()));
-      "SR scanning", [ Startup.OnlyMaster; Startup.OnThread ], Xapi_sr.scanning_thread;
-      "checking/creating templates", [ Startup.OnlyMaster; Startup.NoExnRaising ],
+      "starting events thread", [ Startup.OnlyControlDomain ], (fun () -> if not (!noevents) then ignore (Thread.create Events.listen_xal ()));
+      "SR scanning", [ Startup.OnlyMaster; Startup.OnThread; Startup.OnlyControlDomain ], Xapi_sr.scanning_thread;
+      "checking/creating templates", [ Startup.OnlyMaster; Startup.NoExnRaising; Startup.OnlyControlDomain  ],
                  (fun () -> Helpers.call_api_functions ~__context Create_templates.create_all_templates);
       "writing init complete", [], (fun () -> Helpers.touch_file !Xapi_globs.init_complete);
 (*      "Synchronising HA state with Pool", [ Startup.NoExnRaising ], Xapi_ha.synchronise_ha_state_with_pool; *)
@@ -924,18 +930,18 @@ let server_init() =
       in
 
     Startup.run ~__context [
-      "searching for latest tools VDI", [ Startup.NoExnRaising ], Xapi_pv_driver_version.get_latest_tools_vsn;
-      "fetching database backup", [ Startup.OnlySlave; Startup.NoExnRaising ],
+      "searching for latest tools VDI", [ Startup.NoExnRaising; Startup.OnlyControlDomain ], Xapi_pv_driver_version.get_latest_tools_vsn;
+      "fetching database backup", [ Startup.OnlySlave; Startup.NoExnRaising; Startup.OnlyControlDomain ],
          (fun () -> Pool_db_backup.fetch_database_backup ~master_address:(Pool_role.get_master_address())
 	                                                 ~pool_secret:!Xapi_globs.pool_secret ~force:None);
-      "wait management interface to come up", [ Startup.NoExnRaising ], wait_management_interface;
-      "considering sending a master transition alert", [ Startup.NoExnRaising; Startup.OnlyMaster ], 
+      "wait management interface to come up", [ Startup.NoExnRaising; Startup.OnlyControlDomain ], wait_management_interface;
+      "considering sending a master transition alert", [ Startup.NoExnRaising; Startup.OnlyMaster; Startup.OnlyControlDomain ], 
           Xapi_pool_transition.consider_sending_alert __context;
 
       (* Start the external authentification plugin *)
-      "Calling extauth_hook_script_before_xapi_initialize", [ Startup.NoExnRaising ],
+      "Calling extauth_hook_script_before_xapi_initialize", [ Startup.NoExnRaising; Startup.OnlyControlDomain ],
           (fun () -> call_extauth_hook_script_before_xapi_initialize ~__context);
-      "Calling on_xapi_initialize event hook in the external authentication plugin", [ Startup.NoExnRaising; Startup.OnThread ],
+      "Calling on_xapi_initialize event hook in the external authentication plugin", [ Startup.NoExnRaising; Startup.OnThread; Startup.OnlyControlDomain ],
           (fun () -> event_hook_auth_on_xapi_initialize_async ~__context);
     ];
 

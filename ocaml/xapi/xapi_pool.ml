@@ -570,6 +570,7 @@ let update_non_vm_metadata ~__context ~rpc ~session_id =
 (* If we're not a control domain then change our INSTALLATION_UUID to match the Host's uuid
    and our CONTROL_DOMAIN_UUID to match the domain's uuid *)
 let update_xensource_inventory ~__context ~rpc ~session_id =
+	Localdb.put Constants.has_control_domain_role "false";
 	let domain_uuid = 
 		let xs = Xs.domain_open () in
 		finally
@@ -624,6 +625,7 @@ let update_vm_metadata ~__context ~rpc ~session_id ~master_address =
 		(fun () -> Unixext.unlink_safe temp_file)
 
 let update ~__context ~rpc ~session_id ~master_address =
+	Localdb.put Constants.has_control_domain_role "true";
 	(* this is where we try and sync up as much state as we can
 	   with the master. This is "best effort" rather than
 	   critical; if we fail part way through this then we carry

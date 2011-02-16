@@ -18,7 +18,7 @@
 module D=Debug.Debugger(struct let name="startup" end)
 open D
 
-type flag = OnlyMaster | OnlySlave | NoExnRaising | OnThread
+type flag = OnlyMaster | OnlySlave | OnlyControlDomain | NoExnRaising | OnThread
 
 let thread_exn_wrapper thread_name f =
   begin try
@@ -37,44 +37,51 @@ let run ~__context tasks =
 
   let get_flags_of_list flags =
     let only_master = ref false and only_slave = ref false
-    and exnraise = ref true and onthread = ref false in
+    and exnraise = ref true and onthread = ref false 
+	and only_control_domain = ref false in
     List.iter (fun flag ->
       match flag with
       | OnlyMaster -> only_master := true
       | OnlySlave -> only_slave := true
       | NoExnRaising -> exnraise := false
       | OnThread -> onthread := true
+	  | OnlyControlDomain -> only_control_domain := true
     ) flags;
-    !only_master, !only_slave, !exnraise, !onthread
+    !only_master, !only_slave, !exnraise, !onthread, !only_control_domain
     in
 
   (* get pool role status *)
   let is_master = Pool_role.is_master() in
 
+  let is_control_domain = bool_of_string (Localdb.get Constants.has_control_domain_role) in
+
   (* iterate tasks *)
   List.iter (fun (tsk_name, tsk_flags, tsk_fct) ->
-	(* Wrap the function with a timer *)
-	let tsk_fct () = Stats.time_this tsk_name tsk_fct in
+	  (* Wrap the function with a timer *)
+	  let tsk_fct () = Stats.time_this tsk_name tsk_fct in
 
-    let only_master, only_slave, exnraise, onthread = get_flags_of_list tsk_flags in
-    try
-      if (only_master && is_master)
-      || (only_slave && (not is_master))
-      || ((not only_slave) && (not only_master)) then (
-	if onthread then (
-	  debug "task [starting thread %s]" tsk_name;
-	  ignore (Thread.create (fun tsk_fct ->
-	    Server_helpers.exec_with_new_task ~subtask_of:(Context.get_task_id __context) tsk_name (fun __context ->
-	      thread_exn_wrapper tsk_name tsk_fct)) tsk_fct)
-	) else (
-	  debug "task [%s]" tsk_name;
-	  Server_helpers.exec_with_new_task tsk_name ~subtask_of:(Context.get_task_id __context) (fun __context -> tsk_fct ())
-	)
-      )
-    with exn ->
-      warn "task [%s] exception: %s" tsk_name (Printexc.to_string exn);
-      if exnraise then
-        raise exn
+      let only_master, only_slave, exnraise, onthread, only_control_domain = get_flags_of_list tsk_flags in
+      try
+		  if (only_master && is_master)
+			  || (only_slave && (not is_master))
+			  || ((not only_slave) && (not only_master)) then (
+				  
+				  if (only_control_domain && is_control_domain) || not(only_control_domain) then (
+					  if onthread then (
+						  debug "task [starting thread %s]" tsk_name;
+						  ignore (Thread.create (fun tsk_fct ->
+							  Server_helpers.exec_with_new_task ~subtask_of:(Context.get_task_id __context) tsk_name (fun __context ->
+								  thread_exn_wrapper tsk_name tsk_fct)) tsk_fct)
+					  ) else (
+						  debug "task [%s]" tsk_name;
+						  Server_helpers.exec_with_new_task tsk_name ~subtask_of:(Context.get_task_id __context) (fun __context -> tsk_fct ())
+					  )
+				  )
+			  )
+      with exn ->
+		  warn "task [%s] exception: %s" tsk_name (Printexc.to_string exn);
+		  if exnraise then
+			  raise exn
   ) tasks
 
 let run ~__context tasks = Stats.time_this "overall xapi startup" (fun () -> run ~__context tasks)

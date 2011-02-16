@@ -172,30 +172,9 @@ let get_user ~__context username =
         failwith "Failed to find any users";
     List.hd uuids (* FIXME! it assumes that there is only one element in the list (root), username is not used*)
 
-(* Expects only 1 control domain per host; just return first in list for now if multiple.. *)
-exception No_domain_zero of string
-let domain_zero_ref_cache = ref None
-let domain_zero_ref_cache_mutex = Mutex.create ()
-let get_domain_zero ~__context : API.ref_VM =
-  Threadext.Mutex.execute domain_zero_ref_cache_mutex
-    (fun () ->
-       match !domain_zero_ref_cache with
-       Some r -> r
-     | None ->
-	 (* Read the control domain uuid from the inventory file *)
-	 let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
-	 try
-	   let vm = Db.VM.get_by_uuid ~__context ~uuid in
-	   if not (Db.VM.get_is_control_domain ~__context ~self:vm) then begin
-	     error "VM uuid %s is not a control domain but the uuid is in my inventory file" uuid;
-	     raise (No_domain_zero uuid);
-	   end;
-	   domain_zero_ref_cache := Some vm;
-	   vm
-	 with _ ->
-	   error "Failed to find control domain (uuid = %s)" uuid;
-	   raise (No_domain_zero uuid)
-    )
+(** [get_my_uuid ()] returns a string containing this domain's uuid *)
+let get_my_uuid () : string = 
+	Xapi_inventory.lookup Xapi_inventory._control_domain_uuid
 
 let get_size_with_suffix s =
     let s, suffix = if String.length s > 0 then (

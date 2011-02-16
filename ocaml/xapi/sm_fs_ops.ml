@@ -28,8 +28,8 @@ let make_tmp_dir() =
 
 (** Block-attach a VDI to dom0 and run 'f' with the device name *)
 let with_block_attached_device __context rpc session_id vdi mode f = 
-  let dom0 = Helpers.get_domain_zero ~__context in
-  Attach_helpers.with_vbds rpc session_id __context dom0 [ vdi ] mode
+  let self = Client.VM.get_by_uuid rpc session_id (Helpers.get_my_uuid ()) in
+  Attach_helpers.with_vbds rpc session_id __context self [ vdi ] mode
     (fun vbds ->
        let vbd = List.hd vbds in
        f ("/dev/" ^ (Db.VBD.get_device ~__context ~self:vbd)))

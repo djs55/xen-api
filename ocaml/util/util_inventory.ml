@@ -24,6 +24,7 @@ let inventory_filename = Util_globs_inventory.inventory_filename
 
 (* Keys which must exist: *)
 let _installation_uuid		= "INSTALLATION_UUID"
+(* NB: this is really "this VM uuid". This VM may or may not be a control domain. *)
 let _control_domain_uuid	= "CONTROL_DOMAIN_UUID"
 let _management_interface	= "MANAGEMENT_INTERFACE"
 let _build_number           = "BUILD_NUMBER"

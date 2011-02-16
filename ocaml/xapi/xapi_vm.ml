@@ -999,8 +999,8 @@ let provision ~__context ~vm =
 	       begin
 		 try
 		   debug "install: phase 2/3: running optional script (in domain 0)";
-		   let dom0 = Helpers.get_domain_zero __context in
-		   Xapi_templates_install.post_install_script rpc session_id __context dom0 vm (script, vbds);
+		   let self = Db.VM.get_by_uuid ~__context ~uuid:(Helpers.get_my_uuid ()) in
+		   Xapi_templates_install.post_install_script rpc session_id __context self vm (script, vbds); 
 		   debug "install: phase 3/3: removing install information from VM";
 		   Xapi_templates.post_install rpc session_id vm;
 		   debug "finished install";
