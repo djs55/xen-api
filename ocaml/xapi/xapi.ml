@@ -32,13 +32,15 @@ let info s = info s; debug s (* write info to both info and debug log *)
 module L=Debug.Debugger(struct let name="license" end)
 module W=Debug.Debugger(struct let name="watchdog" end)
 
-
-let check_control_domain () =
+(** Sets this domain's uuid to the value of 
+	/etc/xensource-inventory:CONTROL_DOMAIN_UUID.
+	NB this has probably been done already by /etc/init.d/xen-domain-uuid *)
+let set_domain_uuid () =
   let domuuid = with_xc (fun xc -> Domain.get_uuid ~xc 0) in
 	let domuuid = Uuid.to_string domuuid in
   let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
   if domuuid <> uuid then (
-    info "dom0 uuid mismatch with inventory -- setting it the proper value";
+    info "domain uuid mismatch with inventory -- setting it the proper value";
     with_xc (fun xc -> Xc.domain_sethandle xc 0 uuid)
   )
 
@@ -789,7 +791,7 @@ let server_init() =
     "Parsing inventory file", [], Xapi_inventory.read_inventory;
     "Reading pool secret", [], Helpers.get_pool_secret;
     "Logging xapi version info", [], Xapi_config.dump_config;
-    "Checking control domain", [], check_control_domain;
+    "Setting the domain uuid", [], set_domain_uuid;
     "Setting signal handlers", [], signals_handling;
     "Setting up domain 0 xenstore keys", [], domain0_setup;
     "Initialising random number generator", [], random_setup;
