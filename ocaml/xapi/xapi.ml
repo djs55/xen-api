@@ -170,26 +170,29 @@ let signals_handling () =
   Sys.catch_break false;
   Sys.set_signal Sys.sigint (Sys.Signal_handle cleanup_handler)
 
-let domain0_setup () =
-  with_xc_and_xs (fun xc xs ->
-	     (* Write an initial neutral target in for domain 0 *)
-	     let di = Xc.domain_getinfo xc 0 in
-	     let memory_actual_kib = Xc.pages_to_kib (Int64.of_nativeint di.Xc.total_memory_pages) in
-	     (* Find domain 0's UUID *)
-	     let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
-	     (* setup xenstore domain 0 for blktap, xentop (CA-24231) *)
-	     xs.Xs.writev "/local/domain/0" [ "name", "Domain-0"; "domid", "0"; "vm", "/vm/" ^ uuid ];
-	     xs.Xs.write "/local/domain/0/memory/target" (Int64.to_string memory_actual_kib);
-	     (* XXX: remove when domain 0 gets the same script as the linux domUs *)
-	     xs.Xs.write "/local/domain/0/control/feature-balloon" "1";
+let control_domain_setup () =
+	with_xc_and_xs (fun xc xs ->
+		(* Assumption: someone has already made _control_domain_uuid match
+		   the xen domain uuid *)
+		let all = Xc.domain_getinfolist xc 0 in
+	    let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
+		let di = List.find (fun p -> Uuid.string_of_uuid (Uuid.uuid_of_int_array p.Xc.handle) = uuid) all in
+		let domid = di.Xc.domid in
+	    (* Write an initial neutral target *)
+	    let memory_actual_kib = Xc.pages_to_kib (Int64.of_nativeint di.Xc.total_memory_pages) in
+
+	    (* setup xenstore for blktap, xentop (CA-24231) *)
+	    xs.Xs.writev (Printf.sprintf "/local/domain/%d" domid) [ "name", Printf.sprintf "Domain-%d" domid; "domid", string_of_int domid; "vm", "/vm/" ^ uuid ];
+	    xs.Xs.write (Printf.sprintf "/local/domain/%d/memory/target" domid) (Int64.to_string memory_actual_kib);
+	    xs.Xs.write (Printf.sprintf "/local/domain/%d/control/feature-balloon" domid) "1";
 	     
-	     xs.Xs.writev ("/vm/" ^ uuid) [ "uuid", uuid; "name", "Domain-0" ];
-	     (* add special key demanded by the PV drivers *)
-	     Xs.transaction xs (fun t ->
-				  t.Xst.write Xapi_globs.xe_key Xapi_globs.xe_val;
-				  t.Xst.setperms Xapi_globs.xe_key (0, Xsraw.PERM_READ, [])
-			       )
-          )
+	    xs.Xs.writev ("/vm/" ^ uuid) [ "uuid", uuid; "name", Printf.sprintf "Domain-%d" domid ];
+	    (* add special key demanded by the PV drivers *)
+	    Xs.transaction xs (fun t ->
+			t.Xst.write Xapi_globs.xe_key Xapi_globs.xe_val;
+			t.Xst.setperms Xapi_globs.xe_key (domid, Xsraw.PERM_READ, [])
+		)
+    )
 
 let random_setup () =
   Random.self_init ();
@@ -793,7 +796,7 @@ let server_init() =
     "Logging xapi version info", [], Xapi_config.dump_config;
     "Setting the domain uuid", [], set_domain_uuid;
     "Setting signal handlers", [], signals_handling;
-    "Setting up domain 0 xenstore keys", [], domain0_setup;
+    "Setting up control-domain xenstore keys", [ Startup.OnlyControlDomain ], control_domain_setup;
     "Initialising random number generator", [], random_setup;
     "Running startup check", [], startup_check;
     "Registering SR plugins", [], Sm.register;
