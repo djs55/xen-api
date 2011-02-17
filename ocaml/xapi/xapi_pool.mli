@@ -21,10 +21,6 @@ val rpc : string -> Xml.xml -> Xml.xml
 val get_master :
   rpc:(XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
   session_id:API.ref_session -> API.ref_host
-val pre_join_checks :
-  __context:Context.t ->
-  rpc:(XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  session_id:API.ref_session -> force:bool -> unit
 val create_or_get_host_on_master :
   Context.t ->
   (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->

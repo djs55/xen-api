@@ -41,7 +41,7 @@ let get_master ~rpc ~session_id =
 	Client.Pool.get_master rpc session_id pool
 	
 (* Pre-join asserts *)
-let pre_join_checks ~__context ~rpc ~session_id ~force =
+let pre_join_checks ~__context ~rpc ~session_id ~force ~is_control_domain =
 	(* I cannot join a Pool if I have HA already enabled on me *)
 	let ha_is_not_enable_on_me () =
 		let pool = List.hd (Db.Pool.get_all ~__context) in
@@ -279,7 +279,8 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 	(* call pre-join asserts *)
 	ha_is_not_enable_on_me ();
 	ha_is_not_enable_on_the_distant_pool ();
-	assert_not_joining_myself();
+	if is_control_domain
+	then assert_not_joining_myself();
 	assert_i_know_of_no_other_hosts();
 	assert_no_running_vms_on_me ();
 	assert_no_vms_with_current_ops ();
@@ -650,7 +651,12 @@ let join_common ~__context ~master_address ~master_username ~master_password ~fo
 	let cluster_secret = ref "" in
 
 	finally (fun () ->
-		pre_join_checks ~__context ~rpc ~session_id ~force;
+		let is_control_domain = 
+			let remote_is_dom0 = Xapi_fist.master_is_dom0 () || not(Client.Pool.is_simulated rpc session_id) in
+			let local_is_dom0 = Helpers.is_dom0 () in
+			remote_is_dom0 && local_is_dom0 in
+
+		pre_join_checks ~__context ~rpc ~session_id ~force ~is_control_domain;
 
 		cluster_secret := Client.Pool.initial_auth rpc session_id;
 
@@ -661,20 +667,13 @@ let join_common ~__context ~master_address ~master_username ~master_password ~fo
 			error "Failed fetching a database backup from the master: %s" (ExnHelper.string_of_exn e)
 		end;
 
-		let remote_is_dom0 = Xapi_fist.master_is_dom0 () || not(Client.Pool.is_simulated rpc session_id) in
-		let local_is_dom0 = Helpers.is_dom0 () in
-		match remote_is_dom0, local_is_dom0 with
-			| true, false ->
-				info "This is a utility domain.";
-				update_xensource_inventory ~__context ~rpc ~session_id
-			| true, true ->
-				info "This is a physical pool.";
-				update ~__context ~rpc ~session_id ~master_address
-			| false, false ->
-				info "This is a simulated pool.";
-				update ~__context ~rpc ~session_id ~master_address
-			| false, true ->
-				failwith "non-dom0 pool master not currently supported")
+		if is_control_domain then begin
+			info "This is a control domain.";
+			update ~__context ~rpc ~session_id ~master_address;
+		end else begin
+			info "This is a utility domain.";
+			update_xensource_inventory ~__context ~rpc ~session_id
+		end)
 		(fun () ->
 			Client.Session.logout rpc session_id);
 
