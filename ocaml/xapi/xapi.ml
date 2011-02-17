@@ -844,17 +844,22 @@ let server_init() =
           (* Grab the management IP address (wait forever for it if necessary) *)
           let ip = wait_for_management_ip_address () in
 
-          debug "Attempting to communicate with master";
-          (* Try to say hello to the pool *)
-          begin match attempt_pool_hello ip with
-          | None -> finished := true
-          | Some Temporary ->
-              debug "I think the error is a temporary one, retrying in 5s";
-              Thread.delay 5.;
-          | Some Permanent ->
-              error "Permanent error in Pool.hello, will retry after %.0fs just in case" Xapi_globs.permanent_master_failure_retry_timeout;
-              Thread.delay Xapi_globs.permanent_master_failure_retry_timeout
-          end;
+		  if bool_of_string (Localdb.get Constants.has_control_domain_role) then begin
+			  debug "Attempting to communicate with master";
+			  (* Try to say hello to the pool *)
+
+			  match attempt_pool_hello ip with
+				  | None -> finished := true
+				  | Some Temporary ->
+					  debug "I think the error is a temporary one, retrying in 5s";
+					  Thread.delay 5.;
+				  | Some Permanent ->
+					  error "Permanent error in Pool.hello, will retry after %.0fs just in case" Xapi_globs.permanent_master_failure_retry_timeout;
+					  Thread.delay Xapi_globs.permanent_master_failure_retry_timeout
+          end else begin
+			  debug "This is a utility domain, no need to Pool.hello";
+			  finished := true
+		  end
         done;
         debug "Startup successful";
         Xapi_globs.slave_emergency_mode := false;
