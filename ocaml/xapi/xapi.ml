@@ -886,6 +886,7 @@ let server_init() =
     end;
  
     Startup.run ~__context [
+		"Initialsising VDI refcounts", [ (* Startup.OnlyStorageDomain *) ], Storage_access.VDI_lowlevel.initialise_refcounts_from_db;
       "Checking emergency network reset", [ Startup.OnlyControlDomain ], check_network_reset;
       "Synchronising bonds/VLANs on slave with master", [ Startup.OnlyControlDomain ], Sync_networking.sync_slave_with_master ~__context;
       "Initialise monitor configuration", [ Startup.OnlyControlDomain ], Monitor_rrds.update_configuration_from_master;
