@@ -91,8 +91,7 @@ let on_database_connection_established = ref (fun () -> ())
 let open_secure_connection () =
   let host = Pool_role.get_master_address () in
   let port = !Xapi_globs.https_port in
-  let st_proc = Stunnel.connect
-    ~write_to_log:(fun x -> debug "stunnel: %s\n" x) host port in
+  let st_proc = Stunnel.connect host port in
   my_connection := Some st_proc;
   !on_database_connection_established ()
     
@@ -105,13 +104,17 @@ let connection_timeout = ref 10. (* -ve means retry forever *)
    can't reconnect after reboot]. if this is false then xapi will just throw exception if retries
    are exceeded *)
 let restart_on_connection_timeout = ref true
-  
+
+(* Remember when we last successfully used the persistent connection so we have an idea of
+   "how idle" the connection was when it was reset *)
+let last_successful_rpc = ref (-1.) (* never *)
+
 let do_db_xml_rpc_persistent_with_reopen ~host ~path (req: string) : string = 
   let time_call_started = Unix.gettimeofday() in
   let write_ok = ref false in
   let result = ref "" in
   let surpress_no_timeout_logs = ref false in
-  let backoff_delay = ref 2.0 in (* initial delay = 2s *)
+  let backoff_delay = ref 0.0 in (* initial delay = 0s *)
   let update_backoff_delay () =
     backoff_delay := !backoff_delay *. 2.0;
     if !backoff_delay < 2.0 then backoff_delay := 2.0 
@@ -139,6 +142,7 @@ let do_db_xml_rpc_persistent_with_reopen ~host ~path (req: string) : string =
 			Unixext.really_read fd buffer 0 content_length;
 			buffer
 		) in
+		last_successful_rpc := (Unix.gettimeofday ());
 	    write_ok := true;
 	    result := res (* yippeee! return and exit from while loop *)
       with
@@ -149,7 +153,7 @@ let do_db_xml_rpc_persistent_with_reopen ~host ~path (req: string) : string =
 	  exit Xapi_globs.restart_return_code
       |	_ ->
 	  begin
-	    (* RPC failed - there's no way we can recover from this so try reopening connection every 2s + backoff delay *)
+
 	    begin
 	      match !my_connection with
 		None -> ()
@@ -160,18 +164,18 @@ let do_db_xml_rpc_persistent_with_reopen ~host ~path (req: string) : string =
 	    let time_sofar = Unix.gettimeofday() -. time_call_started in
 	    if !connection_timeout < 0. then
 	      begin
-		if not !surpress_no_timeout_logs then
+		if not !surpress_no_timeout_logs && (!last_successful_rpc > 0.) then
 		  begin
-		    debug "Connection to master died. I will continue to retry indefinitely (supressing future logging of this message).";
-		    error "Connection to master died. I will continue to retry indefinitely (supressing future logging of this message).";
+			  info "Connection to master reset after being idle for %.0f seconds" (time_call_started -. !last_successful_rpc);
 		  end;
 		surpress_no_timeout_logs := true
 	      end
 	    else
-	      debug "Connection to master died: time taken so far in this call '%f'; will %s"
-		time_sofar (if !connection_timeout < 0. 
+	      debug "Connection to master reset after being idle for %.0f seconds; will %s"
+			  (time_call_started -. !last_successful_rpc)
+			  (if !connection_timeout < 0. 
 			    then "never timeout" 
-			    else Printf.sprintf "timeout after '%f'" !connection_timeout);
+			    else Printf.sprintf "timeout after %.0f seconds" !connection_timeout);
 	    if time_sofar > !connection_timeout && !connection_timeout >= 0. then
 	      begin
 		if !restart_on_connection_timeout then
@@ -185,7 +189,8 @@ let do_db_xml_rpc_persistent_with_reopen ~host ~path (req: string) : string =
 		    raise Cannot_connect_to_master
 		  end
 	      end;
-	    debug "Sleeping %f seconds before retrying master connection..." !backoff_delay;
+		if !backoff_delay > 0.
+		then debug "Will (re)connect to master in %.0f seconds" !backoff_delay;
 	    Thread.delay !backoff_delay;
 	    update_backoff_delay ();
 	    try
