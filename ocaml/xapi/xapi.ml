@@ -865,6 +865,7 @@ let server_init() =
         Xapi_globs.slave_emergency_mode := false;
         Master_connection.connection_timeout := initial_connection_timeout;
         
+		let has_control_domain_role = bool_of_string(Localdb.get Constants.has_control_domain_role) in
         begin
           try
             (* We can't tolerate an exception in db synchronization so fall back into emergency mode
@@ -872,7 +873,7 @@ let server_init() =
             Master_connection.restart_on_connection_timeout := false;
             Master_connection.connection_timeout := 10.; (* give up retrying after 10s *)
             Db_cache_impl.initialise ();
-			if bool_of_string(Localdb.get Constants.has_control_domain_role)
+			if has_control_domain_role
             then Dbsync.setup ()
           with e ->
             begin
@@ -882,7 +883,9 @@ let server_init() =
         end;
         Master_connection.connection_timeout := Xapi_globs.master_connect_retry_timeout;
         Master_connection.restart_on_connection_timeout := true;
-        Master_connection.on_database_connection_established := (fun () -> on_master_restart ~__context);
+
+		if has_control_domain_role
+        then Master_connection.on_database_connection_established := (fun () -> on_master_restart ~__context);
     end;
  
     Startup.run ~__context [
