@@ -1,0 +1,30 @@
+
+To-do:
+
+1. Switch from XenAPI calls for VDI.attach, activate to a single call
+   Host.call_smapi(host, string driver, string payload)
+
+   ... ie something in sm_exec?
+
+   OR
+   in message_forwarding where we forward SR ops to the SRmaster, make this aware of
+   the difference between control domains and storage domains?
+
+
+   LONGER TERM: an SMAPI proxy daemon from dom0 to domU
+
+2. Discover the maximum number of blkfronts I can have in dom0 for qemu
+
+
+3. Create a blkfront in the qemu domain and point it at this via 'params'
+
+
+
+
+
+
+
+Problems to solve:
+
+1. vdi_attach, vdi_activate is incoherent: vdi_attach returns a path which must not be used?
+2. the path returned by vdi_attach is not what's needed: we need the physical-device string for blkback
