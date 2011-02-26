@@ -34,6 +34,7 @@ socket = r:TCP_NODELAY=1
 socket = a:TCP_NODELAY=1
 socket = l:TCP_NODELAY=1
 compression = zlib
+control_socket = /tmp/control_socket
 
 [localhost-xapi]
 accept = 127.0.0.1:443
