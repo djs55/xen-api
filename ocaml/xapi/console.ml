@@ -38,12 +38,18 @@ let real_proxy __context console s =
   debug "VM %s has console on port %d" (Ref.string_of vm) vnc_port;
   begin try
     let vnc_sock = Unixext.open_connection_fd "127.0.0.1" vnc_port in
-    (* Unixext.proxy closes fds itself so we must dup here *)
-    let s' = Unix.dup s in
-    debug "Connected; running proxy (between fds: %d and %d)" 
-		(Unixext.int_of_file_descr vnc_sock) (Unixext.int_of_file_descr s');
-    Unixext.proxy vnc_sock s';
-    debug "Proxy exited"
+
+	(* Get the name of the other end of the socket *)
+	let ip, port = match Unix.getpeername s with
+		| Unix.ADDR_INET(inet, port) -> Unix.string_of_inet_addr inet, port
+		| _ -> failwith "Unsupported socket type for console" in
+
+	let handle = "/tmp/control_socket" in
+	Stunnel.splice handle ip port vnc_sock;
+	(* From this point SSL writes go to vnc_sock but reads come from s until s is closed. *)
+
+	Unix.close vnc_sock;
+    Http_svr.headers s (Http.http_200_ok ());
   with
     exn -> debug "error: %s" (ExnHelper.string_of_exn exn)
   end
@@ -131,6 +137,4 @@ let handler proxy_fn (req: request) s =
 	  (* Check VM is actually running locally *)
 	  check_vm_is_running_here __context console;
 
-      Http_svr.headers s (Http.http_200_ok ());
-      
       proxy_fn __context console s)
