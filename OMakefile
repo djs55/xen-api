@@ -151,6 +151,7 @@ OCAML_PHASE3_NOXEN = \
 	ocaml/perftest/perftest \
 	ocaml/perftest/histogram \
 	ocaml/perftest/cumulative_time \
+	ocaml/perftest/apiperf \
 	ocaml/lvhdrt/lvhdrt \
 	ocaml/mpathalert/mpathalert \
 	ocaml/multipathrt/multipathrt
