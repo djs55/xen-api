@@ -64,7 +64,7 @@ let render (x: t) output =
       (match output with
        | Ps _ -> "postscript eps enhanced color"
        | Gif _ -> "gif"
-       | X11 -> "wxt 0");
+       | X11 -> "x11 0");
     Printf.sprintf "set output %s"
       (match output with
        | Ps filename -> "\"" ^ filename ^ "\""
