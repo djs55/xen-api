@@ -93,6 +93,8 @@ let test rpc session hosts nthreads time_limit =
   let samples xs = 
     Mutex.execute m
       (fun () ->
+		  output_string stdout (String.concat " " (List.map (fun x -> Printf.sprintf "%.02f" (x*.1000.)) xs));
+		  output_string stdout "\n";
 	 n := !n + (List.length xs);
 	 sigma_x := List.fold_left (+.) !sigma_x xs
       ) in
