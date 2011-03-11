@@ -580,11 +580,11 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 	let hvm = Helpers.is_hvm snapshot in
 
 	let platform = snapshot.API.vM_platform in
-	let pv_qemu = Xapi_globs.xenclient_enabled && (has_platform_flag platform "pv_qemu") in
+	let pv_qemu = has_platform_flag platform "pv_qemu" in
 	
 	(* Examine the boot method if the guest is HVM and do something about it *)
 	if hvm || pv_qemu then begin
-	        let policy = snapshot.API.vM_HVM_boot_policy in
+		let policy = snapshot.API.vM_HVM_boot_policy in
 
 		if (policy <> Constants.hvm_boot_policy_bios_order) && (not pv_qemu) then
 			failwith (sprintf "Unknown HVM boot policy: %s" policy);
@@ -669,9 +669,9 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 		if not disable_pv_vnc then Device.PV_Vnc.start ~xs domid ?statefile:vnc_statefile else 0
 	end
 
-let create_vfb_vkbd ~xc ~xs protocol domid =
-  Device.Vfb.add ~xc ~xs ~hvm:false ~protocol domid;
-  Device.Vkbd.add ~xc ~xs ~hvm:false ~protocol domid
+let create_vfb_vkbd ~xc ~xs ?protocol domid =
+  Device.Vfb.add ~xc ~xs ~hvm:false ?protocol domid;
+  Device.Vkbd.add ~xc ~xs ~hvm:false ?protocol domid
 
 (* get CD VBDs required to resume *)
 let get_required_CD_VBDs ~__context ~vm =
@@ -1181,10 +1181,11 @@ let start_paused ?(progress_cb = fun _ -> ()) ~pcidevs ~__context ~vm ~snapshot 
 								progress_cb 0.70;
 								if not hvm
 									then attach_pcis ~__context ~xc ~xs ~hvm domid pcidevs;
-								if (Xapi_globs.xenclient_enabled)
+								if true
 									&& (not hvm)
 									&& (has_platform_flag snapshot.API.vM_platform "pv_qemu")
-								then progress_cb 0.75;
+								then create_vfb_vkbd ~xc ~xs domid; 
+								progress_cb 0.75;
 								debug "adjusting CPU number against startup-number";
 								set_cpus_number ~__context ~xs ~self:vm domid snapshot;
 								progress_cb 0.80;
