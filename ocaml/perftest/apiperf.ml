@@ -130,6 +130,8 @@ let test rpc session hosts nthreads time_limit =
   Printf.fprintf stdout "%.1f\n" ms
 
 let time = ref 30.
+let username = ref "root"
+let password = ref ""
 
 let _ =
   Arg.parse [ "-master", (Arg.Set master), (Printf.sprintf "test the master only [default:%b]" !master);
@@ -138,6 +140,8 @@ let _ =
 	      "-time", (Arg.Set_float time), (Printf.sprintf "set test time in seconds [default:%.2f]" !time);
 	      "-cache", (Arg.Set use_stunnel_cache), (Printf.sprintf "use the stunnel client cache [default:%b]" !use_stunnel_cache);
 	      "-url", (Arg.Set_string url), (Printf.sprintf "specify the URL to use [default:%s]" !url);
+		  "-u", (Arg.Set_string username), (Printf.sprintf "specify the username to log in as [default:%s]" !username);
+		  "-pw", (Arg.Set_string password), (Printf.sprintf "specify the password to use [default:%s]" !password);
 	    ]
     (fun x -> Printf.fprintf stderr "Skipping unknown argument: %s\n" x)
     "Test the performance of the XMLRPC request forwarding engine";
@@ -149,7 +153,7 @@ let _ =
 
   Stunnel.init_stunnel_path ();
 
-  let session = Client.Session.login_with_password rpc "root" "xenroot" "1.2" in
+  let session = Client.Session.login_with_password rpc !username !password "1.2" in
   finally
     (fun () ->
        let hosts = Client.Host.get_all rpc session in
