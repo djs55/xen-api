@@ -26,6 +26,8 @@ let _ =
   let log_axis = ref false in
   let min_percentile = ref 1. in
   let max_percentile = ref 95. in
+  let xlabel = ref "XenAPI call latency / ms" in
+
   Arg.parse [
     "-format", Arg.Symbol ([ "eps"; "gif"; "x11" ], 
 			   (function 
@@ -41,6 +43,7 @@ let _ =
     "-log", Arg.Set log_axis, Printf.sprintf                       " Use a log x axis (default: %b)" !log_axis;
     "-minpercentile", Arg.Set_float min_percentile, Printf.sprintf " Minimum percentile to plot (default: %.2f)" !min_percentile;
     "-maxpercentile", Arg.Set_float max_percentile, Printf.sprintf " Maximum percentile to plot (default: %.2f)" !max_percentile;
+	"-xlabel", Arg.Set_string xlabel, Printf.sprintf               " Label for the x axis";
   ]
     (fun x -> inputs := x :: !inputs)
     "Generate a histogram by convolving sample points with a gaussian.\nusage:";
@@ -115,7 +118,7 @@ let _ =
 	 then "Cumulative probability"
 	 else "Estimate of the probability density function" in
        List.iter (fun result ->
-		let g = { Gnuplot.xlabel = Printf.sprintf "Time for %s XenAPI calls to complete / seconds" (string_of_result result);
+		let g = { Gnuplot.xlabel = !xlabel;
 		 ylabel = ylabel;
                  y2label = None;
 		 lines = List.filter (fun l -> l.Gnuplot.graphname = result) ls;
