@@ -1431,6 +1431,7 @@ let get_state ~xs domid =
 
 (* Returns the allocated vnc port number *)
 let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
+	debug "Device.Dm.start domid=%d" domid;
 	let usb' =
 		if info.usb = [] then
 			[]
@@ -1489,11 +1490,7 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		    (["-intel"] @ vga_type_opts @ dom0_input_opts), false
 	in
 
-	let xenclient_specific_options = 
-	  if info.xenclient_enabled 
-	  then xenclient_specific ~xs info domid
-	  else [] 
-	in
+	let xenclient_specific_options = xenclient_specific ~xs info domid in
 
 	let l = [ string_of_int domid; (* absorbed by qemu-dm-wrapper *)
 		  log;                 (* absorbed by qemu-dm-wrapper *)
