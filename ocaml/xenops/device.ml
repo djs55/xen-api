@@ -1562,9 +1562,11 @@ let suspend ~xs domid =
 let resume ~xs domid =
 	signal ~xs ~domid "continue" ~wait_for:"running"
 
+let qemu_pid_path domid = sprintf "/local/domain/%d/qemu-pid" domid
+
 (* Called by every domain destroy, even non-HVM *)
 let stop ~xs domid  =
-	let qemu_pid_path = sprintf "/local/domain/%d/qemu-pid" domid in
+	let qemu_pid_path = qemu_pid_path domid in
 	let qemu_pid =
 		try int_of_string (xs.Xs.read qemu_pid_path)
 		with _ -> 0 in
@@ -1648,7 +1650,10 @@ let stop ~xs domid  =
 end
 
 let vnc_port_path ~xc ~xs domid = 
-  if (Xc.domain_getinfo xc domid).Xc.hvm_guest
-  then Dm.vnc_port_path domid
-  else PV_Vnc.vnc_port_path domid
+	(* Check whether a qemu exists for this domain *)
+	let qemu_exists = try ignore(xs.Xs.read (Dm.qemu_pid_path domid)); true with Xb.Noent -> false in
+	if qemu_exists
+	then Dm.vnc_port_path domid
+	else PV_Vnc.vnc_port_path domid
+
 
