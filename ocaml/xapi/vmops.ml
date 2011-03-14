@@ -580,13 +580,13 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 	let hvm = Helpers.is_hvm snapshot in
 
 	let platform = snapshot.API.vM_platform in
-	let pv_qemu = has_platform_flag platform "pv_qemu" in
+	let pvfb = has_platform_flag platform "pvfb" in
 	
 	(* Examine the boot method if the guest is HVM and do something about it *)
-	if hvm || pv_qemu then begin
+	if hvm || pvfb then begin
 		let policy = snapshot.API.vM_HVM_boot_policy in
 
-		if (policy <> Constants.hvm_boot_policy_bios_order) && (not pv_qemu) then
+		if (policy <> Constants.hvm_boot_policy_bios_order) && (not pvfb) then
 			failwith (sprintf "Unknown HVM boot policy: %s" policy);
 
 		let params = snapshot.API.vM_HVM_boot_params in
@@ -1183,7 +1183,7 @@ let start_paused ?(progress_cb = fun _ -> ()) ~pcidevs ~__context ~vm ~snapshot 
 									then attach_pcis ~__context ~xc ~xs ~hvm domid pcidevs;
 								if true
 									&& (not hvm)
-									&& (has_platform_flag snapshot.API.vM_platform "pv_qemu")
+									&& (has_platform_flag snapshot.API.vM_platform "pvfb")
 								then create_vfb_vkbd ~xc ~xs domid; 
 								progress_cb 0.75;
 								debug "adjusting CPU number against startup-number";
