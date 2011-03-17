@@ -602,11 +602,26 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 		let serial = try List.assoc "hvm_serial" other_config with _ -> "pty" in
 		let vnc_keymap = try List.assoc "keymap" platform with _ -> "en-us" in
 
-		(* Xenclient specific *)
-		let dom0_input = try if Xapi_globs.xenclient_enabled then Some (int_of_string (List.assoc "dom0_input" platform)) else None with _ -> 
-		  warn "failed to parse dom0_input platform flag.";
-		  None
-		in
+		(* Display and input devices are usually conflated *)
+		let disp, usb = 
+			let make_vnc mode = Device.Dm.VNC (mode, true, 0, vnc_keymap), ["tablet"] in
+			let dom0_input = 
+				try 
+					Some(int_of_string (List.assoc "dom0_input" platform)) 
+				with _ ->
+					warn "failed to parse dom0_input platform flag.";
+					None in			
+			try 
+				match List.assoc "vga" platform with
+					| "cirrus" -> make_vnc Device.Dm.Cirrus
+					| "std-vga" -> make_vnc Device.Dm.Std_vga
+					| "passthrough" -> Device.Dm.Passthrough dom0_input, []
+					| "intel" -> Device.Dm.Intel (Device.Dm.Std_vga, dom0_input), []
+					| "none" -> Device.Dm.NONE, []
+					| x ->
+						warn "Unknown platform:vga option (%s) expected cirrus, std-vga or none" x;
+						make_vnc Device.Dm.Cirrus 
+			with _ -> make_vnc Device.Dm.Cirrus in
 
 		let pci_emulations =
 			let s = try Some (List.assoc "mtc_pci_emulations" other_config) with _ -> None in
@@ -620,24 +635,6 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 			in
 		let dmpath = "/opt/xensource/libexec/qemu-dm-wrapper" in
 		let dmstart = if restore then Device.Dm.restore else Device.Dm.start in
-
-		(* Display and input devices are usually conflated *)
-		let disp,usb = 
-		  let default_disp_usb = (Device.Dm.VNC (Device.Dm.Cirrus, true, 0, vnc_keymap), ["tablet"]) in
-		  if Xapi_globs.xenclient_enabled then begin 
-		    try 
-		      match List.assoc "vga_mode" platform with
-			| "passthrough" -> 
-			    (Device.Dm.Passthrough dom0_input,[])
-			| "intel" ->
-			    (Device.Dm.Intel (Device.Dm.Std_vga,dom0_input),[])
-			| "none" -> 
-			    (Device.Dm.NONE,[])
-		    with _ -> 
-		      warn "Failed to parse 'vga_mode' parameter - expecting 'passthrough' or 'intel'. Defaulting to VNC mode";
-		      default_disp_usb
-		  end else default_disp_usb		    
-		in
 
 		let info = {
 			Device.Dm.memory = mem_max_kib;
