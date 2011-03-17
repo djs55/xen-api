@@ -1401,8 +1401,8 @@ let xenclient_specific ~xs info domid =
       | Some device -> [ "-soundhw"; device ]
   in
 
-  ["-videoram"; string_of_int info.videoram;
-   "-M"; (if info.hvm then "xenfv" else "xenpv")] 
+  ["-videoram"; string_of_int info.videoram ]
+  @ (if info.hvm then [] else [ "-M"; "xenpv" ])
   @ sound_options
    
 let signal ~xs ~domid ?wait_for ?param cmd =
