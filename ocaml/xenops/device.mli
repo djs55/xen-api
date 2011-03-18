@@ -195,10 +195,13 @@ sig
 		power_mgmt: int option;
 		oem_features: int option;
 		inject_sci: int option;
-		videoram: int;
+		videoram: int option;
 	       
 		extras: (string * string option) list;
 	}
+			
+	type qemu_cmdline
+	val qemu_cmdline_of_info : info -> qemu_cmdline
 
 	val write_logfile_to_log : int -> unit
 	val unlink_logfile : int -> unit
@@ -208,8 +211,8 @@ sig
 	val signal : xs:Xs.xsh -> domid:Xc.domid -> ?wait_for:string -> ?param:string
 	          -> string -> unit
 
-	val start : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> info -> Xc.domid -> int
-	val restore : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> info -> Xc.domid -> int
+	val start : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> qemu_cmdline -> Xc.domid -> int
+	val restore : xs:Xs.xsh -> dmpath:string -> ?timeout:float -> qemu_cmdline -> Xc.domid -> int
 	val suspend : xs:Xs.xsh -> Xc.domid -> unit
 	val resume : xs:Xs.xsh -> Xc.domid -> unit
 	val stop : xs:Xs.xsh -> Xc.domid -> unit

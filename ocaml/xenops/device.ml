@@ -1344,7 +1344,7 @@ type info = {
 	power_mgmt : int option;
 	oem_features : int option;
 	inject_sci : int option;
-	videoram : int;
+	videoram : int option;
 
 	extras: (string * string option) list;
 }
@@ -1377,7 +1377,7 @@ let power_mgmt_path domid = sprintf "/local/domain/0/device-model/%d/xen_extende
 let oem_features_path domid = sprintf "/local/domain/0/device-model/%d/oem_features" domid
 let inject_sci_path domid = sprintf "/local/domain/0/device-model/%d/inject-sci" domid
 
-let xenclient_specific ~xs info domid =
+let write_xenclient_specific ~xs info domid =
   (match info.power_mgmt with 
     | Some i -> begin
 	try 
@@ -1393,18 +1393,9 @@ let xenclient_specific ~xs info domid =
   
   (match info.inject_sci with 
     | Some i -> xs.Xs.write (inject_sci_path domid) (string_of_int i)
-    | None -> ());
-  
-  let sound_options =
-    match info.sound with
-      | None        -> []
-      | Some device -> [ "-soundhw"; device ]
-  in
+    | None -> ())
 
-  ["-videoram"; string_of_int info.videoram ]
-  @ (if info.hvm then [] else [ "-M"; "xenpv" ])
-  @ sound_options
-   
+
 let signal ~xs ~domid ?wait_for ?param cmd =
 	let cmdpath = device_model_path domid in
 	Xs.transaction xs (fun t ->
@@ -1429,15 +1420,30 @@ let get_state ~xs domid =
 	try Some (xs.Xs.read statepath)
 	with _ -> None
 
-(* Returns the allocated vnc port number *)
-let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
-	debug "Device.Dm.start domid=%d" domid;
+(** A list of these makes up a single item on the commandline: *)
+type qemu_cmdline_fragment =
+	| Str of string (** constant string *)
+	| Domid         (** will be replaced by the actual domid in use *)
+
+type qemu_cmdline = qemu_cmdline_fragment list list
+
+(** Return a concrete commandline with all unknowns filled in *)
+let qemu_cmdline qemu_cmdline domid = 
+	let string_of_fragment = function
+		| Str x -> x
+		| Domid -> string_of_int domid in
+	List.map
+		(fun fragments ->
+			String.concat "" (List.map string_of_fragment fragments))
+		qemu_cmdline
+
+let qemu_cmdline_of_info info =
 	let usb' =
 		if info.usb = [] then
 			[]
 		else
-			("-usb" :: (List.concat (List.map (fun device ->
-					   [ "-usbdevice"; device ]) info.usb))) in
+			( [Str "-usb"] :: (List.concat (List.map (fun device ->
+					   [ [Str "-usbdevice"]; [Str device] ]) info.usb))) in
 	(* Sort the VIF devices by devid *)
 	let nics = List.stable_sort (fun (_,_,a) (_,_,b) -> compare a b) info.nics in
 	if List.length nics > max_emulated_nics then debug "Limiting the number of emulated NICs to %d" max_emulated_nics;
@@ -1449,66 +1455,74 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 	let vlan_id = ref 0 in
 	let nics' = List.map (fun (mac, bridge, devid) ->
 		let r = [
-		"-net"; sprintf "nic,vlan=%d,macaddr=%s,model=rtl8139" !vlan_id mac;
-		"-net"; sprintf "tap,vlan=%d,bridge=%s,ifname=%s" !vlan_id bridge (Printf.sprintf "tap%d.%d" domid devid)] in
+			[ Str "-net" ]; [ Str (sprintf "nic,vlan=%d,macaddr=%s,model=rtl8139" !vlan_id mac) ];
+			[ Str "-net" ]; [ Str (sprintf "tap,vlan=%d,bridge=%s,ifname=tap" !vlan_id bridge); Domid; Str (sprintf ".%d" devid) ]
+		] in
 		incr vlan_id;
 		r
 	) nics in
-	let qemu_pid_path = xs.Xs.getdomainpath domid ^ "/qemu-pid" in
-
-	let log = logfile domid in
-	let restorefile = sprintf "/tmp/xen.qemu-dm.%d" domid in
 	let vga_type_opts x = 
 	  match x with
-	    | Std_vga -> ["-std-vga"]
+	    | Std_vga -> [ [Str "-std-vga"] ]
 	    | Cirrus -> []
 	in
 	let dom0_input_opts x =
-	  (maybe_with_default [] (fun i -> ["-dom0-input"; string_of_int i]) x)
+	  (maybe_with_default [] (fun i -> [ [Str "-dom0-input"]; [Str (string_of_int i)] ]) x)
 	in
-	let disp_options, wait_for_port =
+	let disp_options =
 		match info.disp with
 		| NONE -> 
-		    ([], false)
+		    []
 		| Passthrough dom0_input -> 
-		    let vga_type_opts = ["-vga-passthrough"] in
+		    let vga_type_opts = [ [ Str "-vga-passthrough"] ] in
 		    let dom0_input_opts = dom0_input_opts dom0_input in
-		    (vga_type_opts @ dom0_input_opts), false		
+		    vga_type_opts @ dom0_input_opts
 		| SDL (opts,x11name) ->
-		    ( [], false)
+		    []
 		| VNC (disp_intf, auto, port, keymap) ->
 		    let vga_type_opts = vga_type_opts disp_intf in
 		    let vnc_opts = 
 		      if auto
-		      then [ "-vncunused"; "-k"; keymap ]
-		      else [ "-vnc"; string_of_int port; "-k"; keymap ]
+		      then [ [Str "-vncunused"]; [Str "-k"]; [Str keymap] ]
+		      else [ [Str "-vnc"]; [Str (string_of_int port)]; [Str "-k"]; [Str keymap] ]
 		    in
-		    (vga_type_opts @ vnc_opts), true
+		    vga_type_opts @ vnc_opts
 		| Intel (opt,dom0_input) -> 
 		    let vga_type_opts = vga_type_opts opt in
 		    let dom0_input_opts = dom0_input_opts dom0_input in
-		    (["-intel"] @ vga_type_opts @ dom0_input_opts), false
+		    [ [Str "-intel"] ] @ vga_type_opts @ dom0_input_opts
 	in
+	[
+		[ Str "-m" ]; [ Str (Int64.to_string (Int64.div info.memory 1024L)) ];
+		[ Str "-boot" ]; [Str info.boot] ;
+		[ Str "-serial"]; [Str info.serial ];
+		[ Str "-vcpus"]; [Str (string_of_int info.vcpus)] ; ]
+	@ disp_options @ usb' @ (List.concat nics')
+	@ (if info.acpi then [ [Str "-acpi"] ] else [])
+	@ (List.fold_left (fun l pci -> [Str "-pciemulation"] :: [Str pci] :: l) [] (List.rev info.pci_emulations))
+	@ (if info.pci_passthrough then [ [Str "-priv"] ] else [])
+	@ (Opt.default [] (Opt.map (fun videoram -> [ [Str "-videoram"]; [Str (string_of_int videoram)] ]) info.videoram))
+	@ (if info.hvm then [] else [ [Str "-M"]; [Str "xenpv"] ])
+	@ (Opt.default [] (Opt.map (fun device -> [ [Str "-soundhw"]; [Str device] ]) info.sound))
 
-	let xenclient_specific_options = xenclient_specific ~xs info domid in
+(* Returns the allocated vnc port number *)
+let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) cmdline domid =
+	debug "Device.Dm.start domid=%d" domid;
+
+	let qemu_pid_path = xs.Xs.getdomainpath domid ^ "/qemu-pid" in
+
+	let log = logfile domid in
+	let restorefile = sprintf "/tmp/xen.qemu-dm.%d" domid in
+
+	let base_args = qemu_cmdline cmdline domid in
 
 	let l = [ string_of_int domid; (* absorbed by qemu-dm-wrapper *)
 		  log;                 (* absorbed by qemu-dm-wrapper *)
 		  (* everything else goes straight through to qemu-dm: *)
-		  "-d"; string_of_int domid;
-		  "-m"; Int64.to_string (Int64.div info.memory 1024L);
-		  "-boot"; info.boot;
-		  "-serial"; info.serial;
-		  "-vcpus"; string_of_int info.vcpus; ]
-	   @ disp_options @ usb' @ (List.concat nics')
-	   @ (if info.acpi then [ "-acpi" ] else [])
-	   @ (if restore then [ "-loadvm"; restorefile ] else [])
-	   @ (List.fold_left (fun l pci -> "-pciemulation" :: pci :: l) [] (List.rev info.pci_emulations))
-	   @ (if info.pci_passthrough then ["-priv"] else [])
-	   @ xenclient_specific_options
-	   @ (List.fold_left (fun l (k, v) -> ("-" ^ k) :: (match v with None -> l | Some v -> v :: l)) [] info.extras)
-	   @ [ "-monitor"; "pty"; "-vnclisten"; "127.0.0.1:1" ]
-		in
+		  "-d"; string_of_int domid ]
+		@ (if restore then [ "-loadvm"; restorefile ] else [])
+		@ base_args in
+
 	(* Now add the close fds wrapper *)
 	let pid = Forkhelpers.safe_close_and_exec None None None [] dmpath l in
 
@@ -1548,19 +1562,16 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 	Forkhelpers.dontwaitpid pid;
 
 	(* Block waiting for it to write the VNC port into the store *)
-	if wait_for_port then (
-		try
-			let port = Watch.wait_for ~xs (Watch.value_to_appear (vnc_port_path domid)) in
-			debug "qemu-dm: wrote vnc port %s into the store" port;
-			int_of_string port
-		with Watch.Timeout _ ->
-			warn "qemu-dm: Timed out waiting for qemu's VNC server to start";
-			raise (Ioemu_failed (Printf.sprintf "The qemu-dm process (pid %d) failed to write a vnc port" qemu_pid)) 
-	) else
-		(-1)	
+	try
+		let port = Watch.wait_for ~xs (Watch.value_to_appear (vnc_port_path domid)) in
+		debug "qemu-dm: wrote vnc port %s into the store" port;
+		int_of_string port
+	with Watch.Timeout _ ->
+		warn "qemu-dm: Timed out waiting for qemu's VNC server to start";
+		raise (Ioemu_failed (Printf.sprintf "The qemu-dm process (pid %d) failed to write a vnc port" qemu_pid)) 
 
-let start ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:false ~dmpath ?timeout info domid
-let restore ~xs ~dmpath ?timeout info domid = __start ~xs ~restore:true ~dmpath ?timeout info domid
+let start ~xs ~dmpath ?timeout qemu_cmdline domid = __start ~xs ~restore:false ~dmpath ?timeout qemu_cmdline domid
+let restore ~xs ~dmpath ?timeout qemu_cmdline domid = __start ~xs ~restore:true ~dmpath ?timeout qemu_cmdline domid
 
 (* suspend/resume is a done by sending signals to qemu *)
 let suspend ~xs domid =

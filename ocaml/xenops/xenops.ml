@@ -303,11 +303,11 @@ let add_dm ~xs ~domid ~static_max_kib ~vcpus ~boot =
 	  Device.Dm.power_mgmt=None;
 	  Device.Dm.oem_features=None;
 	  Device.Dm.inject_sci=None;
-	  Device.Dm.videoram=0;
+	  Device.Dm.videoram=None;
 
  	  Device.Dm.extras = []
  	} in
-	Device.Dm.start ~xs ~dmpath info domid
+	Device.Dm.start ~xs ~dmpath (Device.Dm.qemu_cmdline_of_info info) domid
 
 let add_ioport ~xc ~domid ~ioport_start ~ioport_end =
 	Domain.add_ioport ~xc domid ioport_start ioport_end

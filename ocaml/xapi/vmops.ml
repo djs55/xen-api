@@ -634,7 +634,6 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 				with _ -> []
 			in
 		let dmpath = "/opt/xensource/libexec/qemu-dm-wrapper" in
-		let dmstart = if restore then Device.Dm.restore else Device.Dm.start in
 
 		let info = {
 			Device.Dm.memory = mem_max_kib;
@@ -654,11 +653,15 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 			Device.Dm.power_mgmt=None;
 			Device.Dm.oem_features=None;
 			Device.Dm.inject_sci = None;
-			Device.Dm.videoram=4;
+			Device.Dm.videoram=None;
 
 			Device.Dm.extras = [];
 		} in
-		dmstart ~xs ~dmpath info domid
+		(* XXX: need to remember the old qemu cmdline *)
+		
+		let qemu_cmdline = Device.Dm.qemu_cmdline_of_info info in
+
+		(if restore then Device.Dm.restore else Device.Dm.start) ~xs ~dmpath qemu_cmdline domid
 	end else begin
 	        (* if we have a "disable_pv_vnc" entry in other_config we disable
 		   VNC for PV *)
