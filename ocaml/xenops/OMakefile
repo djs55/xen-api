@@ -9,6 +9,8 @@ OCAMLFLAGS    += -thread
 
 LIBFILES = xenops_helpers xenbus balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc
 
+UseCamlp4(rpc-light.syntax, device)
+
 StaticCLibrary(statdev_stubs, statdev_stubs)
 OCamlLibraryClib(xenops, $(LIBFILES), statdev_stubs)
 OCamlDocLibrary(xenops, $(LIBFILES))
