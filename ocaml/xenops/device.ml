@@ -1424,8 +1424,13 @@ let get_state ~xs domid =
 type qemu_cmdline_fragment =
 	| Str of string (** constant string *)
 	| Domid         (** will be replaced by the actual domid in use *)
+with rpc
 
 type qemu_cmdline = qemu_cmdline_fragment list list
+with rpc
+
+let qemu_cmdline_of_string x = qemu_cmdline_of_rpc (Jsonrpc.of_string x)
+let string_of_qemu_cmdline x = Jsonrpc.to_string (rpc_of_qemu_cmdline x)
 
 (** Return a concrete commandline with all unknowns filled in *)
 let qemu_cmdline qemu_cmdline domid = 

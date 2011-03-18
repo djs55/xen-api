@@ -203,6 +203,10 @@ sig
 	type qemu_cmdline
 	val qemu_cmdline_of_info : info -> qemu_cmdline
 
+	val qemu_cmdline_of_string : string -> qemu_cmdline
+	val string_of_qemu_cmdline : qemu_cmdline -> string
+
+
 	val write_logfile_to_log : int -> unit
 	val unlink_logfile : int -> unit
 
