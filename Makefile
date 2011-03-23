@@ -105,6 +105,9 @@ version:
  .PHONY: clean
  clean:
 
+xapi.spec: xapi.spec.in
+	sed -e 's/@RPM_RELEASE@/$(shell git rev-list HEAD | wc -l)/g' < $< > $@
+
 
 .PHONY: srpm
 srpm: 
