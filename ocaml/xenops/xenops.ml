@@ -21,20 +21,30 @@ let print_xen_dmesg ~xc =
 	let s = Xc.readconsolering xc in
 	printf "%s\n" s
 
-let print_xen_physinfo ~xc =
-	let physinfo = Xc.physinfo xc in
-	let totalmib = Xc.pages_to_mib (Int64.of_nativeint physinfo.Xc.total_pages)
-	and freemib = Xc.pages_to_mib (Int64.of_nativeint physinfo.Xc.free_pages)
-	and scrubmib = Xc.pages_to_mib (Int64.of_nativeint physinfo.Xc.scrub_pages) in
-	printf "nr_cpus = %d\n" physinfo.Xc.nr_cpus;
-	printf "threads_per_core = %d\n" physinfo.Xc.threads_per_core;
-	printf "cores_per_socket = %d\n" physinfo.Xc.cores_per_socket;
-	(*printf "sockets_per_node = %d\n" physinfo.Xc.sockets_per_node;*)
-	(*printf "nr_nodes = %d\n" physinfo.Xc.nr_nodes;*)
-	printf "cpu_khz = %d\n" physinfo.Xc.cpu_khz;
-	printf "total_pages = %s (%Ld Mb)\n" (Nativeint.to_string physinfo.Xc.total_pages) totalmib;
-	printf "free_pages = %s (%Ld Mb)\n" (Nativeint.to_string physinfo.Xc.free_pages) freemib;
-	printf "scrub_pages = %s (%Ld Mb)\n" (Nativeint.to_string physinfo.Xc.scrub_pages) scrubmib
+let print_xen_physinfo () =
+	let physinfo = Xl.physinfo () in
+	printf "nr_cpus = %d\n" physinfo.Xl.nr_cpus;
+	printf "threads_per_core = %d\n" physinfo.Xl.threads_per_core;
+	printf "cores_per_socket = %d\n" physinfo.Xl.cores_per_socket;
+	printf "cpu_khz = %d\n" physinfo.Xl.cpu_khz;
+	let totalmib = Xc.pages_to_mib physinfo.Xl.total_pages
+	and freemib = Xc.pages_to_mib physinfo.Xl.free_pages
+	and scrubmib = Xc.pages_to_mib physinfo.Xl.scrub_pages in
+	printf "total_pages = %Ld (%Ld Mb)\n" physinfo.Xl.total_pages totalmib;
+	printf "free_pages = %Ld (%Ld Mb)\n" physinfo.Xl.free_pages freemib;
+	printf "scrub_pages = %Ld (%Ld Mb)\n" physinfo.Xl.scrub_pages scrubmib
+
+let print_xen_topologyinfo () = 
+	let topologyinfo = Xl.topologyinfo () in
+    printf "cpu_topology           :\n";
+    printf "cpu:    core    socket     node\n";
+
+	Array.iteri
+		(fun i ->
+			Opt.iter
+				(fun t -> printf "%3d:    %4d     %4d     %4d\n" i t.Xl.core t.Xl.socket t.Xl.node)
+		) topologyinfo
+	
 
 let print_pcpus_info ~xc =
 	let physinfo = Xc.physinfo xc in
@@ -607,6 +617,7 @@ let do_cmd_parsing cmd =
 		("dmesg"          , []);
 		("debugkeys"      , []);
 		("physinfo"       , []);
+		("topologyinfo"   , []);
 		("pcpuinfo"       , []);
 		("help"           , []);
 	] in
@@ -820,8 +831,8 @@ let _ =
 		with_xc (fun xc -> print_xen_dmesg ~xc);
 	| "debugkeys" ->
 		with_xc (fun xc -> debugkeys ~xc otherargs);
-	| "physinfo" ->
-		with_xc (fun xc -> print_xen_physinfo ~xc);
+	| "physinfo" -> print_xen_physinfo ()
+	| "topologyinfo" -> print_xen_topologyinfo ()
 	| "pcpuinfo" ->
 		with_xc (fun xc -> print_pcpus_info ~xc);
 	| "capabilities" ->

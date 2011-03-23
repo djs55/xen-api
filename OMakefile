@@ -42,7 +42,7 @@ if $(not $(defined-env XEN_ROOT))
   export
 
 XEN_CFLAGS=-I$(XEN_ROOT)/usr/include
-XEN_OCAML_LINK_FLAGS=-cclib -L$(XEN_ROOT)/usr/$(LIBDIR)
+XEN_OCAML_LINK_FLAGS=-cclib -L$(XEN_ROOT)/usr/$(LIBDIR) -cclib -lxenctrl -cclib -lxenguest -cclib -lxenstore -cclib -lblktapctl -cclib -lxlutil -cclib -lxenlight -cclib -luuid -cclib -lutil
 XEN_OCAML_CLIBS=
 
 # For the Zurich chroot environment
