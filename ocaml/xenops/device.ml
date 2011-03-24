@@ -704,7 +704,7 @@ let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
 
 let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) ?(other_config=[]) ?(extra_private_keys=[]) domid =
 	debug "Device.Vif.add domid=%d devid=%d mac=%s carrier=%b rate=%s other_config=[%s] extra_private_keys=[%s]" domid devid mac carrier
-	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b)
+	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%ld,%ld)" a b)
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) other_config))
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) extra_private_keys));
 	(* extra_private_keys are used (eg) to communicate with the hotplug script *)
@@ -722,7 +722,7 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 	     | Netman.Vswitch b -> [ "bridge", b; "bridge-MAC", if(Xc.is_fake ()) then "fe:fe:fe:fe:fe:fe" else "fe:ff:ff:ff:ff:ff"; ]
 	     | Netman.DriverDomain -> []
 	     | Netman.Nat -> [] in
-		let rate = Opt.default [] (Opt.map (fun (rate, timeslice) -> [ "rate", Int64.to_string rate; "timeslice", Int64.to_string timeslice ]) rate) in
+		let rate = Opt.default [] (Opt.map (fun (rate, timeslice) -> [ "rate", Int32.to_string rate; "timeslice", Int32.to_string timeslice ]) rate) in
 		extra_private_keys @ other_config @ mtu @ netty @ rate in
 	let device = {
 		backend = { domid = backend_domid; kind = Vif; devid = devid };
@@ -743,7 +743,9 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 			| Netman.Nat -> failwith "nat not supported");
 		ifname = sprintf "vif%d.%d" domid devid;
 		script = "/etc/xensource/scripts/vif"; (* XXX try "" *)
-		nictype = Xl.NICTYPE_VIF
+		nictype = Xl.NICTYPE_VIF;
+		qos_kib_per_sec = Opt.default 0l (Opt.map fst rate);
+		qos_timeslice_usec = Opt.default 0l (Opt.map snd rate);
 	} in
 	Xl.nic_add nic_info domid;
 
@@ -752,7 +754,7 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 	set_carrier ~xs device carrier;
 
 (* 1. disconnect - done
-   2. rate
+   2. rate - done
    2. protocol *)
 (*
 	let back_options =
