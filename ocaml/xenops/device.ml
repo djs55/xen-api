@@ -43,15 +43,24 @@ let vif_udev_keys = "promiscuous" :: (List.map (fun x -> "ethtool-" ^ x) [ "rx";
 (****************************************************************************************)
 
 module Generic = struct
+
+	let add_private_keys ~xs device private_list =
+		let private_data_path = Hotplug.get_private_data_path_of_device device in
+		
+		Xs.transaction xs (fun t ->
+			t.Xst.mkdir private_data_path;
+			t.Xst.setperms private_data_path (device.backend.domid, Xsraw.PERM_NONE, []);
+			t.Xst.writev private_data_path private_list;
+		)
+
 (* this transactionally hvm:bool
            -> add entries to add a device
    specified by backend and frontend *)
-let add_device ~xs device backend_list frontend_list private_list =
+let add_device ~xs device backend_list frontend_list =
 
 	let frontend_path = frontend_path_of_device ~xs device
 	and backend_path = backend_path_of_device ~xs device
-	and hotplug_path = Hotplug.get_hotplug_path device
-	and private_data_path = Hotplug.get_private_data_path_of_device device in
+	and hotplug_path = Hotplug.get_hotplug_path device in
 
 	debug "adding device  B%d[%s]  F%d[%s]  H[%s]" device.backend.domid backend_path device.frontend.domid frontend_path hotplug_path;
 	Xs.transaction xs (fun t ->
@@ -82,9 +91,6 @@ let add_device ~xs device backend_list frontend_list private_list =
 		t.Xst.writev backend_path
 		             (("frontend", frontend_path) :: backend_list);
 
-		t.Xst.mkdir private_data_path;
-		t.Xst.setperms private_data_path (device.backend.domid, Xsraw.PERM_NONE, []);
-		t.Xst.writev private_data_path private_list;
 	)
 
 let safe_rm ~xs path =
@@ -537,7 +543,8 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 	let front = Hashtbl.to_list front_tbl in
 
 
-	Generic.add_device ~xs device back front extra_private_keys;
+	Generic.add_private_keys ~xs device extra_private_keys;
+	Generic.add_device ~xs device back front;
 	Hotplug.wait_for_plug ~xs device;
 	(* 'Normally' we connect devices to other domains, and cannot know whether the
 	   device is 'available' from their userspace (or even if they have a userspace).
@@ -643,13 +650,24 @@ module Vif = struct
 
 exception Invalid_Mac of string
 
-let check_mac mac =
-        try
-                if String.length mac <> 17 then failwith "mac length";
-	        Scanf.sscanf mac "%2x:%2x:%2x:%2x:%2x:%2x" (fun a b c d e f -> ());
-	        mac
-        with _ ->
-		raise (Invalid_Mac mac)
+let int_array_of_mac mac = 
+	try
+		if String.length mac <> 17 then failwith "mac length";
+		let m = Array.make 6 0 in
+		Scanf.sscanf mac "%2x:%2x:%2x:%2x:%2x:%2x" 
+			(fun a b c d e f -> 
+				m.(0) <- a; m.(1) <- b; m.(2) <- c;
+				m.(3) <- d; m.(4) <- e; m.(5) <- f
+			);
+		m
+	with _ -> raise (Invalid_Mac mac)
+
+(* Currently used in the XCP windows PV drivers to indicate link status *)
+let set_carrier ~xs (x: device) carrier = 
+	debug "Device.Vif.set_carrier %s <- %b" (string_of_device x) carrier;
+	let disconnect_path = disconnect_path_of_device ~xs x in
+	xs.Xs.write disconnect_path (if carrier then "0" else "1")
+
 
 (** Plug in the backend of a guest's VIF in dom0. Note that a guest may disconnect and
     then reconnect their network interface: we have to re-run this code every time we
@@ -689,19 +707,59 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%Ld,%Ld)" a b)
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) other_config))
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) extra_private_keys));
-	(* Filter the other_config keys using vif_udev_keys as a whitelist *)
-	let other_config = List.filter (fun (x, _) -> List.mem x vif_udev_keys) other_config in
-	let frontend = { domid = domid; kind = Vif; devid = devid } in
-	let backend = { domid = backend_domid; kind = Vif; devid = devid } in
-	let device = { backend = backend; frontend = frontend } in
+	(* extra_private_keys are used (eg) to communicate with the hotplug script *)
+	let extra_private_keys = 
+		(* Lots of VIF parameters are currently passed via VIF.other_config keys.
+		   See the whitelist in vif_udev_keys. *)
+		let other_config = 
+			let whitelisted = List.filter 
+				(fun (x, _) -> List.mem x vif_udev_keys) other_config in
+			List.map (fun (k, v) -> "other-config/" ^ k, v) whitelisted in
+		
+		let mtu = Opt.default [] (Opt.map (fun mtu -> if mtu > 0 then [ "MTU", string_of_int mtu ] else []) mtu) in
+		let netty = match netty with
+	     | Netman.Bridge b -> [ "bridge", b; "bridge-MAC", if(Xc.is_fake ()) then "fe:fe:fe:fe:fe:fe" else "fe:ff:ff:ff:ff:ff"; ]
+	     | Netman.Vswitch b -> [ "bridge", b; "bridge-MAC", if(Xc.is_fake ()) then "fe:fe:fe:fe:fe:fe" else "fe:ff:ff:ff:ff:ff"; ]
+	     | Netman.DriverDomain -> []
+	     | Netman.Nat -> [] in
+		let rate = Opt.default [] (Opt.map (fun (rate, timeslice) -> [ "rate", Int64.to_string rate; "timeslice", Int64.to_string timeslice ]) rate) in
+		extra_private_keys @ other_config @ mtu @ netty @ rate in
+	let device = {
+		backend = { domid = backend_domid; kind = Vif; devid = devid };
+		frontend = { domid = domid; kind = Vif; devid = devid } 
+	} in
+	Generic.add_private_keys ~xs device extra_private_keys;
 
-	let mac = check_mac mac in
+	let nic_info = {
+		Xl.Nic_info.backend_domid = backend_domid;
+		devid = devid;
+		mtu = Opt.default 1500 mtu;
+		model = "rtl8139";
+		mac = int_array_of_mac mac;
+		bridge = (match netty with
+			| Netman.Bridge b -> b
+			| Netman.Vswitch b -> b
+			| Netman.DriverDomain -> failwith "driverdomain not supported"
+			| Netman.Nat -> failwith "nat not supported");
+		ifname = sprintf "vif%d.%d" domid devid;
+		script = "/etc/xensource/scripts/vif"; (* XXX try "" *)
+		nictype = Xl.NICTYPE_VIF
+	} in
+	Xl.nic_add nic_info domid;
 
+	Hotplug.wait_for_plug ~xs device;
+
+	set_carrier ~xs device carrier;
+
+(* 1. disconnect - done
+   2. rate
+   2. protocol *)
+(*
 	let back_options =
 		match rate with
 		| None                              -> []
 		| Some (kbytes_per_s, timeslice_us) ->
-			let (^*) = Int64.mul and (^/) = Int64.div in
+			let ( ^* ) = Int64.mul and ( ^/ ) = Int64.div in
 			let timeslice_us =
 				if timeslice_us > 0L then
 					timeslice_us
@@ -739,20 +797,8 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 		"mac", mac;
 		"disconnect", if carrier then "0" else "1";
 	] @ front_options in
+*)
 
-	let extra_private_keys = List.map (fun (k, v) -> "other-config/" ^ k, v) other_config @ extra_private_keys in
-	(* Add the rest of the important configuration to the private bit of xenstore so we can access it later *)
-	let extra_private_keys = extra_private_keys @
-	  (match mtu with | Some mtu when mtu > 0 -> [ "MTU", string_of_int mtu ] | _ -> []) @
-	  (match netty with
-	     | Netman.Bridge b -> [ "bridge", b; "bridge-MAC", if(Xc.is_fake ()) then "fe:fe:fe:fe:fe:fe" else "fe:ff:ff:ff:ff:ff"; ]
-	     | Netman.Vswitch b -> [ "bridge", b; "bridge-MAC", if(Xc.is_fake ()) then "fe:fe:fe:fe:fe:fe" else "fe:ff:ff:ff:ff:ff"; ]
-	     | Netman.DriverDomain -> []
-	     | Netman.Nat -> []) @
-	  (match rate with | None -> [] | Some(rate, timeslice) -> [ "rate", Int64.to_string rate; "timeslice", Int64.to_string timeslice ]) in
-
-	Generic.add_device ~xs device back front extra_private_keys;
-	Hotplug.wait_for_plug ~xs device;
 	device
 
 (** When hot-unplugging a device we ask nicely *)
@@ -803,11 +849,6 @@ let hard_shutdown ~xs (x: device) =
 	(* blow away the backend and error paths *)
 	debug "Device.Vif.hard_shutdown about to blow away backend and error paths";
 	Generic.rm_device_state ~xs x
-
-let set_carrier ~xs (x: device) carrier = 
-	debug "Device.Vif.set_carrier %s <- %b" (string_of_device x) carrier;
-	let disconnect_path = disconnect_path_of_device ~xs x in
-	xs.Xs.write disconnect_path (if carrier then "0" else "1")
 
 let release ~xs (x: device) =
 	debug "Device.Vif.release %s" (string_of_device x);
@@ -1025,7 +1066,7 @@ let add_noexn ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?(flrscript=None) pcide
 		"backend-id", "0";
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
-	Generic.add_device ~xs device (others @ xsdevs @ backendlist) frontendlist [];
+	Generic.add_device ~xs device (others @ xsdevs @ backendlist) frontendlist;
 	()
 
 let add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt ?flrscript pcidevs domid devid =
@@ -1242,7 +1283,7 @@ let add ~xc ~xs ~hvm ?(protocol=Protocol_Native) domid =
 		"protocol", (string_of_protocol protocol);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
-	Generic.add_device ~xs device back front [];
+	Generic.add_device ~xs device back front;
 	()
 
 let hard_shutdown ~xs (x: device) =
@@ -1274,7 +1315,7 @@ let add ~xc ~xs ~hvm ?(protocol=Protocol_Native) domid =
 		"protocol", (string_of_protocol protocol);
 		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
 	] in
-	Generic.add_device ~xs device back front []; 
+	Generic.add_device ~xs device back front; 
 	()
 
 let hard_shutdown ~xs (x: device) =
