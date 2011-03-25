@@ -753,53 +753,8 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 
 	set_carrier ~xs device carrier;
 
-(* 1. disconnect - done
-   2. rate - done
-   2. protocol *)
-(*
-	let back_options =
-		match rate with
-		| None                              -> []
-		| Some (kbytes_per_s, timeslice_us) ->
-			let ( ^* ) = Int64.mul and ( ^/ ) = Int64.div in
-			let timeslice_us =
-				if timeslice_us > 0L then
-					timeslice_us
-				else
-					50000L (* 50ms by default *) in
-			let bytes_per_interval = ((kbytes_per_s ^* 1024L) ^* timeslice_us)
-			                         ^/ 1000000L in
-			if bytes_per_interval > 0L && bytes_per_interval < 0xffffffffL then
-				[ "rate", sprintf "%Lu,%Lu" bytes_per_interval timeslice_us ]
-			else (
-				debug "VIF qos: invalid value for byte/interval: %Lu" bytes_per_interval;
-				[]
-			)
-		in
-
-	let back = [
-		"frontend-id", sprintf "%u" domid;
-		"online", "1";
-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
-		"script", "/etc/xensource/scripts/vif";
-		"mac", mac;
-		"handle", string_of_int devid
-	] @ back_options in
-
-	let front_options =
-		if protocol <> Protocol_Native then
-			[ "protocol", string_of_protocol protocol; ]
-		else
-			[] in
-
-	let front = [
-		"backend-id", string_of_int backend_domid;
-		"state", string_of_int (Xenbus.int_of Xenbus.Initialising);
-		"handle", string_of_int devid;
-		"mac", mac;
-		"disconnect", if carrier then "0" else "1";
-	] @ front_options in
-*)
+	(* We nolonger set the protocol field in the frontend since we believe it is
+	   not needed any more. Old bug reference: CA-25297 *)
 
 	device
 
