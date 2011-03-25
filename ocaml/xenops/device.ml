@@ -671,6 +671,25 @@ let set_carrier ~xs (x: device) carrier =
 	let disconnect_path = disconnect_path_of_device ~xs x in
 	xs.Xs.write disconnect_path (if carrier then "0" else "1")
 
+let make_nic_info ~devid ~mtu ~mac ~netty ~rate ~backend_domid domid =
+	{
+		Xl.Nic_info.backend_domid = backend_domid;
+		devid = devid;
+		mtu = Opt.default 1500 mtu;
+		model = "rtl8139";
+		mac = int_array_of_mac mac;
+		bridge = (match netty with
+			| Netman.Bridge b -> b
+			| Netman.Vswitch b -> b
+			| Netman.DriverDomain -> failwith "driverdomain not supported"
+			| Netman.Nat -> failwith "nat not supported");
+		ifname = sprintf "vif%d.%d" domid devid;
+		script = "/etc/xensource/scripts/vif"; (* XXX try "" *)
+		nictype = Xl.NICTYPE_VIF;
+		qos_kib_per_sec = Opt.default 0l (Opt.map fst rate);
+		qos_timeslice_usec = Opt.default 0l (Opt.map snd rate);
+	}
+
 let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(backend_domid=0) ?(other_config=[]) ?(extra_private_keys=[]) domid =
 	debug "Device.Vif.add domid=%d devid=%d mac=%s carrier=%b rate=%s other_config=[%s] extra_private_keys=[%s]" domid devid mac carrier
 	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%ld,%ld)" a b)
@@ -699,23 +718,7 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(backend_domid=0) ?(o
 	} in
 	Generic.add_private_keys ~xs device extra_private_keys;
 
-	let nic_info = {
-		Xl.Nic_info.backend_domid = backend_domid;
-		devid = devid;
-		mtu = Opt.default 1500 mtu;
-		model = "rtl8139";
-		mac = int_array_of_mac mac;
-		bridge = (match netty with
-			| Netman.Bridge b -> b
-			| Netman.Vswitch b -> b
-			| Netman.DriverDomain -> failwith "driverdomain not supported"
-			| Netman.Nat -> failwith "nat not supported");
-		ifname = sprintf "vif%d.%d" domid devid;
-		script = "/etc/xensource/scripts/vif"; (* XXX try "" *)
-		nictype = Xl.NICTYPE_VIF;
-		qos_kib_per_sec = Opt.default 0l (Opt.map fst rate);
-		qos_timeslice_usec = Opt.default 0l (Opt.map snd rate);
-	} in
+	let nic_info = make_nic_info ~devid ~mtu ~mac ~netty ~rate ~backend_domid domid in
 	Xl.nic_add nic_info domid;
 
 	Hotplug.wait_for_plug ~xs device;
