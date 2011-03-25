@@ -16,7 +16,7 @@ CFLAGS += -std=gnu99 -Wall -Werror -I$(shell ocamlc -where)
 # (the same holds for OCaml packages)
 XEN_OCAML_LIBS = ../xenops/xenops ../auth/pam
 XEN_OCAMLINCLUDES =
-XEN_OCAMLPACKS = xc xs cpuid
+XEN_OCAMLPACKS = xc xs xl cpuid
 OCAML_CLIBS = $(XEN_OCAML_CLIBS) $(OCAML_CLIBS)
 OCAML_LINK_FLAGS = $(XEN_OCAML_LINK_FLAGS) $(OCAML_LINK_FLAGS)
 CFLAGS = $(XEN_CFLAGS) $(CFLAGS)

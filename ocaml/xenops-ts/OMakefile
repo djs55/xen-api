@@ -3,6 +3,6 @@ OCAML_LIBS       = ../util/stats ../xenops/xenops
 OCAML_CLIBS      += $(XEN_OCAML_CLIBS)
 OCAML_LINK_FLAGS += $(XEN_OCAML_LINK_FLAGS)
 CFLAGS           += $(XEN_CFLAGS)
-OCAMLPACKS	     = xc xs stdext log cdrom netdev
+OCAMLPACKS	     = xc xs xl stdext log cdrom netdev
 
 OCamlProgram(runtest, runtest test ../xenops/xenvmlib)
