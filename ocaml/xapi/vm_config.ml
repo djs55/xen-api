@@ -26,18 +26,17 @@ type vif = {
   vif_ref: API.ref_VIF;
   network_ref: API.ref_network;
   devid: int;
-  protocol: Device_common.protocol; 
   mac: string;
   mtu: int;
   bridge: string; (** name of the bridge in domain 0 *)
-  rate: (int64 * int64) option;
+  rate: (int32 * int32) option;
   other_config: (string * string) list;
 }
 
 (* Note: we always pass in the VM's domid rather than use the one from the VM record because
    during migration the VM actually has two domids. *)
 
-let vif_of_vif ~__context ~vm vm_r domid protocol vif = 
+let vif_of_vif ~__context ~vm vm_r domid vif = 
   let vif_r = Db.VIF.get_record ~__context ~self:vif in
   let log_qos_failure reason = 
     warn "vif QoS failed: %s (vm=%s,vif=%s)" reason vm_r.API.vM_uuid vif_r.API.vIF_uuid in
@@ -51,11 +50,11 @@ let vif_of_vif ~__context ~vm vm_r domid protocol vif =
   let rate = match qos_type with
     | "ratelimit" -> 
 	let timeslice =
-	  try Int64.of_string (List.assoc "timeslice_us" qos_params)
-	  with _ -> 0L in
+	  try Int32.of_string (List.assoc "timeslice_us" qos_params)
+	  with _ -> 0l in
 	begin
 	  try
-	    let rate = Int64.of_string (List.assoc "kbps" qos_params) in
+	    let rate = Int32.of_string (List.assoc "kbps" qos_params) in
 	    Some (rate, timeslice)
 	  with
 	  | Failure "int_of_string" ->
@@ -80,7 +79,6 @@ let vif_of_vif ~__context ~vm vm_r domid protocol vif =
       vif_ref = vif;
       network_ref = network_ref;
       devid = int_of_string vif_r.API.vIF_device;
-      protocol = protocol;
       mac = mac;
       mtu = mtu;
       bridge = bridge;
@@ -92,9 +90,8 @@ let vif_of_vif ~__context ~vm vm_r domid protocol vif =
 (** Return a list of vif records corresponding to all the non-dangling VIF references *)
 let vifs_of_vm ~__context ~vm domid = 
   let vm_r = Db.VM.get_record ~__context ~self:vm in
-  let protocol = Helpers.device_protocol_of_string vm_r.API.vM_domarch in
   
-  List.concat (List.map Opt.to_list (List.map (vif_of_vif ~__context ~vm vm_r domid protocol) vm_r.API.vM_VIFs))
+  List.concat (List.map Opt.to_list (List.map (vif_of_vif ~__context ~vm vm_r domid) vm_r.API.vM_VIFs))
 
 let device_of_vif vif = 
   let backend = { Device_common.domid = 0; 

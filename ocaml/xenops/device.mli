@@ -88,13 +88,13 @@ sig
 	val add : xs:Xs.xsh -> devid:int -> netty:Netman.netty
 	       -> mac:string -> carrier:bool 
 	       -> ?mtu:int -> ?rate:(int32 * int32) option
-	       -> ?protocol:protocol -> ?backend_domid:Xc.domid 
+	       -> ?backend_domid:Xc.domid 
 	       -> ?other_config:((string * string) list) 
 	       -> ?extra_private_keys:(string * string) list -> Xc.domid
 	       -> device
 	val plug : xs:Xs.xsh -> netty:Netman.netty
 	        -> mac:string -> ?mtu:int -> ?rate:(int32 * int32) option
-	        -> ?protocol:protocol -> device
+	        -> device
 	        -> device
 	val set_carrier : xs:Xs.xsh -> device -> bool -> unit
 	val release : xs:Xs.xsh -> device -> unit

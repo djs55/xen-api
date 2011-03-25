@@ -30,8 +30,7 @@ let dynamic_create ~__context ~vif token =
 
 	if Db.VIF.get_currently_attached ~__context ~self:vif then
 	  raise (Api_errors.Server_error (Api_errors.device_already_attached,[Ref.string_of vif]));
-	let protocol = Helpers.device_protocol_of_string vm_r.API.vM_domarch in
-	match Vm_config.vif_of_vif ~__context ~vm vm_r (Int64.to_int vm_r.API.vM_domid) protocol vif with
+	match Vm_config.vif_of_vif ~__context ~vm vm_r (Int64.to_int vm_r.API.vM_domid) vif with
 	| None -> 
 	    warn "Failed to plug VIF %s: appears to be dangling?" (Ref.string_of vif);
 	    raise (Api_errors.Server_error(Api_errors.handle_invalid, [ "VIF"; Ref.string_of vif ]))

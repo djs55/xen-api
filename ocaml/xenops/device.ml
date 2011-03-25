@@ -493,6 +493,9 @@ let add ~xs ~hvm ~mode ~virtpath ~phystype ~physpath ~dev_type ~unpluggable
 	  in  device_of_backend backend domid
 	in
 
+	(* We believe the protocol field is not needed any more. Old bug reference: CA-25297 *)
+
+
 	debug "Device.Vbd.add (virtpath=%s | physpath=%s | phystype=%s)"
 	  virtpath physpath (string_of_physty phystype);
 	(* Notes:
@@ -672,7 +675,7 @@ let set_carrier ~xs (x: device) carrier =
 (** Plug in the backend of a guest's VIF in dom0. Note that a guest may disconnect and
     then reconnect their network interface: we have to re-run this code every time we
     see a hotplug online event. *)
-let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
+let plug ~xs ~netty ~mac ?(mtu=0) ?rate (x: device) =
 	let backend_dev = try
 		let path = Hotplug.get_hotplug_path x in
 		xs.Xs.read (path ^ "/vif")
@@ -702,7 +705,7 @@ let plug ~xs ~netty ~mac ?(mtu=0) ?rate ?protocol (x: device) =
 	x
 
 
-let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Native) ?(backend_domid=0) ?(other_config=[]) ?(extra_private_keys=[]) domid =
+let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(backend_domid=0) ?(other_config=[]) ?(extra_private_keys=[]) domid =
 	debug "Device.Vif.add domid=%d devid=%d mac=%s carrier=%b rate=%s other_config=[%s] extra_private_keys=[%s]" domid devid mac carrier
 	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%ld,%ld)" a b)
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) other_config))
@@ -753,8 +756,6 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 
 	set_carrier ~xs device carrier;
 
-	(* We nolonger set the protocol field in the frontend since we believe it is
-	   not needed any more. Old bug reference: CA-25297 *)
 
 	device
 
