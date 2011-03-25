@@ -53,6 +53,10 @@ module Generic = struct
 			t.Xst.writev private_data_path private_list;
 		)
 
+	let remove_private_keys ~xs device = 
+		let private_data_path = Hotplug.get_private_data_path_of_device device in
+		xs.Xs.rm private_data_path
+
 (* this transactionally hvm:bool
            -> add entries to add a device
    specified by backend and frontend *)
@@ -671,11 +675,11 @@ let set_carrier ~xs (x: device) carrier =
 	let disconnect_path = disconnect_path_of_device ~xs x in
 	xs.Xs.write disconnect_path (if carrier then "0" else "1")
 
-let make_nic_info ~devid ~mtu ~mac ~netty ~rate ~backend_domid domid =
+let make_nic_info ?(mtu=1500) ?(mac="de:ad:be:ef:00:00") ?(netty=Netman.Bridge "") ?(rate=None) ~backend_domid ~devid domid =
 	{
 		Xl.Nic_info.backend_domid = backend_domid;
 		devid = devid;
-		mtu = Opt.default 1500 mtu;
+		mtu = mtu;
 		model = "rtl8139";
 		mac = int_array_of_mac mac;
 		bridge = (match netty with
@@ -690,8 +694,8 @@ let make_nic_info ~devid ~mtu ~mac ~netty ~rate ~backend_domid domid =
 		qos_timeslice_usec = Opt.default 0l (Opt.map snd rate);
 	}
 
-let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(backend_domid=0) ?(other_config=[]) ?(extra_private_keys=[]) domid =
-	debug "Device.Vif.add domid=%d devid=%d mac=%s carrier=%b rate=%s other_config=[%s] extra_private_keys=[%s]" domid devid mac carrier
+let add ~xs ~devid ~netty ?mac ~carrier ?mtu ?rate ?(backend_domid=0) ?(other_config=[]) ?(extra_private_keys=[]) domid =
+	debug "Device.Vif.add domid=%d devid=%d mac=%s carrier=%b rate=%s other_config=[%s] extra_private_keys=[%s]" domid devid (Opt.default "unknown" mac) carrier
 	      (match rate with None -> "none" | Some (a, b) -> sprintf "(%ld,%ld)" a b)
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) other_config))
 	      (String.concat "; " (List.map (fun (k, v) -> k ^ "=" ^ v) extra_private_keys));
@@ -718,7 +722,7 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(backend_domid=0) ?(o
 	} in
 	Generic.add_private_keys ~xs device extra_private_keys;
 
-	let nic_info = make_nic_info ~devid ~mtu ~mac ~netty ~rate ~backend_domid domid in
+	let nic_info = make_nic_info ?mtu ?mac ~netty ~rate ~backend_domid ~devid domid in
 	Xl.nic_add nic_info domid;
 
 	Hotplug.wait_for_plug ~xs device;
@@ -727,28 +731,16 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(backend_domid=0) ?(o
 
 	device
 
-(** When hot-unplugging a device we ask nicely *)
-let request_closure ~xs (x: device) =
-	let backend_path = backend_path_of_device ~xs x in
-	let state_path = backend_path ^ "/state" in
-	Xs.transaction xs (fun t ->
-		let online_path = backend_path ^ "/online" in
-		debug "xenstore-write %s = 0" online_path;
-		t.Xst.write online_path "0";
-		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
-		if state <> Xenbus.Closed then (
-			debug "Device.del_device setting backend to Closing";
-			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
-		)
-	)
-
 let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.status_node x))
 let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x) 
 
-let clean_shutdown ~xs (x: device) =
-	debug "Device.Vif.clean_shutdown %s" (string_of_device x);
+let shutdown ~xs (x: device) =
+	debug "Device.Vif.shutdown %s" (string_of_device x);
 
-	request_closure ~xs x;
+	let nic_info = make_nic_info ~backend_domid:x.backend.domid ~devid:x.frontend.devid x.frontend.domid in
+	Xl.nic_del nic_info x.frontend.domid;
+	Generic.remove_private_keys ~xs x;
+
 	match Watch.wait_for ~xs (Watch.any_of [ `OK, unplug_watch ~xs x; `Failed, error_watch ~xs x ]) with
 	| `OK, _ ->
 	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
@@ -758,23 +750,9 @@ let clean_shutdown ~xs (x: device) =
 	    debug "Device.Vif.shutdown_common: read an error: %s" error;
 	    raise (Device_error (x, error))	
 
-let hard_shutdown ~xs (x: device) =
-	debug "Device.Vif.hard_shutdown %s" (string_of_device x);
-
-	let backend_path = backend_path_of_device ~xs x in
-	let online_path = backend_path ^ "/online" in
-	debug "xenstore-write %s = 0" online_path;
-	xs.Xs.write online_path "0";
-
-	debug "Device.Vif.hard_shutdown about to blow away frontend";
-	let frontend_path = frontend_path_of_device ~xs x in
-	Generic.safe_rm xs frontend_path;
-	
-	ignore_string (Watch.wait_for ~xs (unplug_watch ~xs x));
-
-	(* blow away the backend and error paths *)
-	debug "Device.Vif.hard_shutdown about to blow away backend and error paths";
-	Generic.rm_device_state ~xs x
+(* For VIFs there is no difference between "clean" and "hard" shutdown. *)
+let hard_shutdown = shutdown
+let clean_shutdown = shutdown
 
 let release ~xs (x: device) =
 	debug "Device.Vif.release %s" (string_of_device x);

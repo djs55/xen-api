@@ -86,8 +86,8 @@ sig
 	exception Invalid_Mac of string
 
 	val add : xs:Xs.xsh -> devid:int -> netty:Netman.netty
-	       -> mac:string -> carrier:bool 
-	       -> ?mtu:int -> ?rate:(int32 * int32) option
+	       -> ?mac:string -> carrier:bool 
+	       -> ?mtu:int -> ?rate:(int32 * int32)
 	       -> ?backend_domid:Xc.domid 
 	       -> ?other_config:((string * string) list) 
 	       -> ?extra_private_keys:(string * string) list -> Xc.domid
