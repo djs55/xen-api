@@ -22,17 +22,17 @@ let print_xen_dmesg ~xc =
 	printf "%s\n" s
 
 let print_xen_physinfo () =
-	let physinfo = Xl.physinfo () in
-	printf "nr_cpus = %d\n" physinfo.Xl.nr_cpus;
-	printf "threads_per_core = %d\n" physinfo.Xl.threads_per_core;
-	printf "cores_per_socket = %d\n" physinfo.Xl.cores_per_socket;
-	printf "cpu_khz = %d\n" physinfo.Xl.cpu_khz;
-	let totalmib = Xc.pages_to_mib physinfo.Xl.total_pages
-	and freemib = Xc.pages_to_mib physinfo.Xl.free_pages
-	and scrubmib = Xc.pages_to_mib physinfo.Xl.scrub_pages in
-	printf "total_pages = %Ld (%Ld Mb)\n" physinfo.Xl.total_pages totalmib;
-	printf "free_pages = %Ld (%Ld Mb)\n" physinfo.Xl.free_pages freemib;
-	printf "scrub_pages = %Ld (%Ld Mb)\n" physinfo.Xl.scrub_pages scrubmib
+	let physinfo = Xl.Physinfo.get () in
+	printf "nr_cpus = %d\n" physinfo.Xl.Physinfo.nr_cpus;
+	printf "threads_per_core = %d\n" physinfo.Xl.Physinfo.threads_per_core;
+	printf "cores_per_socket = %d\n" physinfo.Xl.Physinfo.cores_per_socket;
+	printf "cpu_khz = %d\n" physinfo.Xl.Physinfo.cpu_khz;
+	let totalmib = Xc.pages_to_mib physinfo.Xl.Physinfo.total_pages
+	and freemib = Xc.pages_to_mib physinfo.Xl.Physinfo.free_pages
+	and scrubmib = Xc.pages_to_mib physinfo.Xl.Physinfo.scrub_pages in
+	printf "total_pages = %Ld (%Ld Mb)\n" physinfo.Xl.Physinfo.total_pages totalmib;
+	printf "free_pages = %Ld (%Ld Mb)\n" physinfo.Xl.Physinfo.free_pages freemib;
+	printf "scrub_pages = %Ld (%Ld Mb)\n" physinfo.Xl.Physinfo.scrub_pages scrubmib
 
 let print_xen_topologyinfo () = 
 	let topologyinfo = Xl.topologyinfo () in

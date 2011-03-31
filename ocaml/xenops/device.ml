@@ -675,9 +675,9 @@ let set_carrier ~xs (x: device) carrier =
 	let disconnect_path = disconnect_path_of_device ~xs x in
 	xs.Xs.write disconnect_path (if carrier then "0" else "1")
 
-let make_nic_info ?(mtu=1500) ?(mac="de:ad:be:ef:00:00") ?(netty=Netman.Bridge "") ?(rate=None) ~backend_domid ~devid domid =
+let make_device_nic ?(mtu=1500) ?(mac="de:ad:be:ef:00:00") ?(netty=Netman.Bridge "") ?(rate=None) ~backend_domid ~devid domid =
 	{
-		Xl.Nic_info.backend_domid = backend_domid;
+		Xl.Device_nic.backend_domid = backend_domid;
 		devid = devid;
 		mtu = mtu;
 		model = "rtl8139";
@@ -690,7 +690,7 @@ let make_nic_info ?(mtu=1500) ?(mac="de:ad:be:ef:00:00") ?(netty=Netman.Bridge "
 		ifname = sprintf "vif%d.%d" domid devid;
 		script = "/etc/xensource/scripts/vif"; (* XXX try "" *)
 		nictype = Xl.NICTYPE_VIF;
-		qos_kib_per_sec = Opt.default 0l (Opt.map fst rate);
+		qos_kb_per_sec = Opt.default 0l (Opt.map fst rate);
 		qos_timeslice_usec = Opt.default 0l (Opt.map snd rate);
 	}
 
@@ -722,8 +722,8 @@ let add ~xs ~devid ~netty ?mac ~carrier ?mtu ?rate ?(backend_domid=0) ?(other_co
 	} in
 	Generic.add_private_keys ~xs device extra_private_keys;
 
-	let nic_info = make_nic_info ?mtu ?mac ~netty ~rate ~backend_domid ~devid domid in
-	Xl.nic_add nic_info domid;
+	let device_nic = make_device_nic ?mtu ?mac ~netty ~rate ~backend_domid ~devid domid in
+	Xl.Device_nic.add device_nic domid;
 
 	Hotplug.wait_for_plug ~xs device;
 
@@ -737,8 +737,8 @@ let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~x
 let shutdown ~xs (x: device) =
 	debug "Device.Vif.shutdown %s" (string_of_device x);
 
-	let nic_info = make_nic_info ~backend_domid:x.backend.domid ~devid:x.frontend.devid x.frontend.domid in
-	Xl.nic_del nic_info x.frontend.domid;
+	let device_nic = make_device_nic ~backend_domid:x.backend.domid ~devid:x.frontend.devid x.frontend.domid in
+	Xl.Device_nic.del device_nic x.frontend.domid;
 	Generic.remove_private_keys ~xs x;
 
 	match Watch.wait_for ~xs (Watch.any_of [ `OK, unplug_watch ~xs x; `Failed, error_watch ~xs x ]) with
