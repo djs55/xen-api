@@ -466,8 +466,8 @@ let is_paused ~xs (x: device) =
 (* Add the VBD to the domain, When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
    performs a 'waitForDevices') *)
-let add ~xs ~hvm ~mode ~device_number ~phystype ~physpath ~dev_type ~unpluggable
-        ?(protocol=Protocol_Native) ?extra_backend_keys ?(extra_private_keys=[]) ?(backend_domid=0) domid  =
+let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device ?params ~dev_type ~unpluggable
+        ?(protocol=Protocol_Native) ?extra_backend_keys ?(extra_private_keys=[]) domid  =
 	let back_tbl = Hashtbl.create 16 and front_tbl = Hashtbl.create 16 in
 	let devid = Device_number.to_xenstore_key device_number in
 	let device = 
@@ -475,8 +475,9 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~physpath ~dev_type ~unpluggable
 	  in  device_of_backend backend domid
 	in
 
-	debug "Device.Vbd.add (device_number=%s | physpath=%s | phystype=%s)"
-	  (Device_number.to_debug_string device_number) physpath (string_of_physty phystype);
+	debug "Device.Vbd.add vbd:%s backend_domid:%d physical_device:%s params:%s type:%s"
+		(Device_number.to_debug_string device_number) backend_domid physical_device 
+		(Opt.default "None" (Opt.map (fun x -> "Some " ^ x) params)) (string_of_physty phystype);
 	(* Notes:
 	   1. qemu accesses devices images itself and so needs the path of the original
               file (in params)
@@ -499,7 +500,7 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~physpath ~dev_type ~unpluggable
 		"device-type", if dev_type = CDROM then "cdrom" else "disk";
 	];
 	Hashtbl.add_list back_tbl [
-		"physical-device", (string_of_major_minor physpath);
+		"physical-device", physical_device;
 		"frontend-id", sprintf "%u" domid;
 		(* Prevents the backend hotplug scripts from running if the frontend disconnects.
 		   This allows the xenbus connection to re-establish itself *)
@@ -509,8 +510,9 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~physpath ~dev_type ~unpluggable
 		"dev", Device_number.to_linux_device device_number;
 		"type", backendty_of_physty phystype;
 		"mode", string_of_mode mode;
-		"params", physpath;
 	];
+	Opt.iter (fun params -> Hashtbl.add back_tbl "params" params) params;
+
 	if protocol <> Protocol_Native then
 		Hashtbl.add front_tbl "protocol" (string_of_protocol protocol);
 
@@ -548,11 +550,14 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~physpath ~dev_type ~unpluggable
 		if phystype = Phys then begin
 		  try
 			(* Speculatively query the physical device as if a CDROM *)
-			  match Cdrom.query_cdrom_drive_status physpath with
-			  | Cdrom.DISC_OK -> () (* nothing unusual here *)
-			  | x -> 
-					error "CDROM device %s: %s" physpath (Cdrom.string_of_cdrom_drive_status x);
-					raise Cdrom
+			  Opt.iter
+				  (fun physpath ->
+					  match Cdrom.query_cdrom_drive_status physpath with
+						  | Cdrom.DISC_OK -> () (* nothing unusual here *)
+						  | x -> 
+							  error "CDROM device %s: %s" physpath (Cdrom.string_of_cdrom_drive_status x);
+							  raise Cdrom
+				  ) params
 		  with 
 		  | Cdrom as e' -> raise e'
 		  | _ -> () (* assume it wasn't a CDROM *)

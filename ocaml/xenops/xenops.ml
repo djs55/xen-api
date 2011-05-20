@@ -219,12 +219,12 @@ let list_devices ~xs ~domid =
 		       (string_of_state be)
 		  ) all
 
-let add_vbd ~xs ~hvm ~domid ~device_number ~phystype ~physpath ~dev_type ~mode ~backend_domid =
+let add_vbd ~xs ~hvm ~domid ~device_number ~phystype ~backend_domid ~physical_device ?params ~dev_type ~mode=
 	let phystype = Device.Vbd.physty_of_string phystype in
 	let dev_type = Device.Vbd.devty_of_string dev_type in
 
 	Device.Vbd.add ~xs ~hvm ~mode:(Device.Vbd.mode_of_string mode)
-	               ~phystype ~physpath ~device_number ~dev_type ~backend_domid domid
+	               ~phystype ~backend_domid ~physical_device ?params ~device_number ~dev_type domid
 
 let find_device ~xs (frontend: endpoint) (backend: endpoint) = 
   let all = list_devices_between ~xs backend.domid frontend.domid in
@@ -431,7 +431,8 @@ let do_cmd_parsing cmd =
 	and file = ref ""
 	and mode = ref ""
 	and phystype = ref ""
-	and physpath = ref ""
+	and physical_device = ref ""
+	and params = ref None
 	and device_number = ref (Device_number.make (Device_number.Xen(0, 0)))
 	and dev_type = ref "disk"
 	and devid = ref 0
@@ -499,7 +500,8 @@ let do_cmd_parsing cmd =
 	and vbd_args = [
 		"-mode", Arg.Set_string mode, "Vbd Mode";
 		"-phystype", Arg.Set_string phystype, "Vbd set physical type (file|phy)";
-		"-physpath", Arg.Set_string physpath, "Vbd set physical path";
+		"-physical-device", Arg.Set_string physical_device, "Vbd set physical_device";
+		"-params", Arg.String (fun x -> params := Some x), "Vbd set params";
 		"-device-number", Arg.String (fun x -> device_number := (Device_number.of_string false x)), "Vbd set device_number";
 		"-devtype", Arg.Set_string dev_type, "Vbd dev type";
 	]
@@ -628,7 +630,7 @@ let do_cmd_parsing cmd =
 		!domid, !backend_domid, !hvm, !vcpus, !vcpu, !kernel,
 		!ramdisk, !cmdline, Int64.of_int !mem_max_kib, Int64.of_int !mem_mib,
 		!pae, !apic, !acpi, !nx, !viridian, !verbose, !file,
-		!mode, !phystype, !physpath, !device_number, !dev_type, !devid, !mac, !pci,
+		!mode, !phystype, !physical_device, !params, !device_number, !dev_type, !devid, !mac, !pci,
 		!reason, !sysrq, !script, !sync, !netty, !weight, !cap, !bitmap, !cooperative,
 		!boot, !ioport_start, !ioport_end, !iomem_start, !iomem_end, !irq,
 		!slot, !timeout, List.rev !otherargs
@@ -648,7 +650,7 @@ let _ =
 
 	let domid, backend_domid, hvm, vcpus, vcpu, kernel, ramdisk, cmdline,
 	    max_kib, mem_mib, pae, apic, acpi, nx, viridian, verbose, file, mode,
-	    phystype, physpath, device_number, dev_type, devid, mac, pci, reason, sysrq,
+	    phystype, physical_device, params, device_number, dev_type, devid, mac, pci, reason, sysrq,
 	    script, sync, netty, weight, cap, bitmap, cooperative,
 	    boot, ioport_start, ioport_end, iomem_start, iomem_end, irq,
 	    slot, timeout, otherargs = do_cmd_parsing cmd in
@@ -740,7 +742,7 @@ let _ =
 		assert_domid ();
 		with_xc_and_xs (fun xc xs ->
 			let hvm = is_domain_hvm xc domid in
-			ignore(add_vbd ~xs ~hvm ~domid ~device_number ~phystype ~physpath ~dev_type ~unpluggable:false ~mode ~backend_domid)
+			ignore(add_vbd ~xs ~hvm ~domid ~device_number ~phystype ~physical_device ?params ~dev_type ~unpluggable:false ~mode ~backend_domid)
 		)
 	| "del_vbd" ->
 		assert_domid ();
