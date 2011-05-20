@@ -111,21 +111,15 @@ module Builtin_impl = struct
 
 		let attach context ~task ~dp ~sr ~vdi ~read_write =
 			try
-				let block_device_path, (major, minor) =
+				let physical_device =
 					for_vdi ~task ~sr ~vdi "VDI.attach"
 						(fun device_config _type sr self ->
-							let path = Sm.vdi_attach device_config _type sr self read_write in
-							(* XXX: egregious hack because the path won't exist until after activate *)
-							Sm.vdi_activate device_config _type sr self read_write;
-							let major, minor = Statdev.get_major_minor path in
-							Sm.vdi_deactivate device_config _type sr self;
-							path, (major, minor)
+							Sm.vdi_attach device_config _type sr self read_write
 						) in
-				let physical_device = Printf.sprintf "%x:%x" major minor in
 
 				Mutex.execute vdi_read_write_m
 					(fun () -> Hashtbl.replace vdi_read_write (sr, vdi) read_write);
-				Success (Vdi { backend_domain = Some 0; physical_device = physical_device; local_path = block_device_path })
+				Success (Vdi { backend_domain = Some 0; physical_device = physical_device })
 			with Api_errors.Server_error(code, params) ->
 				Failure (Backend_error(code, params))
 
