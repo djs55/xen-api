@@ -209,9 +209,9 @@ let insert  ~__context ~vbd ~vdi =
 		   let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:vm) in
 		   let device_number = Device_number.of_string true (Db.VBD.get_device ~__context ~self:vbd) in
 		   Storage_access.attach_and_activate ~__context ~vbd ~domid
-			   (fun physpath ->
+			   (fun blkback ->
 				   with_xs (fun xs ->
-					   Device.Vbd.media_insert ~xs ~device_number ~phystype ~physpath domid
+					   Device.Vbd.media_insert ~xs ~device_number ~phystype ~physpath:blkback.Storage_interface.local_path domid
 				   )
 			   )
 	    end else begin
@@ -267,10 +267,10 @@ let refresh ~__context ~vbd ~vdi =
 		let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:vm) in
         let device_number = Device_number.of_string true (Db.VBD.get_device ~__context ~self:vbd) in
 		Storage_access.attach_and_activate ~__context ~vbd ~domid
-			(fun physpath ->
+			(fun blkback ->
 				with_xs 
 					(fun xs -> 
-						Device.Vbd.media_refresh ~xs ~device_number ~physpath domid
+						Device.Vbd.media_refresh ~xs ~device_number ~physpath:blkback.Storage_interface.local_path domid
 					)
 			)
       )

@@ -28,13 +28,17 @@ type task = string
 
 (** The result of a successful VDI.attach: this information (eg) can be used to
 	connect a VBD backend to a VBD frontend *)
-type physical_device = string
+type blkback = {
+	backend_domain: int option; (** the domain hosting the blkback instance, if not us *)
+	physical_device: string;    (** the xenstore physical-device key needed by blkback *)
+	local_path: string;         (** XXX: temporary hack to help qemu read the disk *)
+}
 
 (** Each VDI is associated with one or more "attached" or "activated" "datapaths". *)
 type dp = string
 
 type success_t =
-	| Vdi of physical_device                  (** success (from VDI.attach) *)
+	| Vdi of blkback                          (** success (from VDI.attach) *)
 	| Unit                                    (** success *)
 	| State of Vdi_automaton.state            (** success (from VDI.stat) *)
 
@@ -49,8 +53,10 @@ type result =
 	| Success of success_t
 	| Failure of failure_t
 
+let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; physical_device = %s; local_path = %s }" (match x.backend_domain with None -> "None" | Some x -> Printf.sprintf "Some %d" x) x.physical_device x.local_path
+
 let string_of_success = function
-	| Vdi x -> "VDI " ^ x
+	| Vdi x -> Printf.sprintf "VDI %s" (string_of_blkback x)
 	| Unit -> "()"
 	| State s -> Vdi_automaton.string_of_state s
 
@@ -108,7 +114,7 @@ module VDI = struct
 	(** Functions which operate on particular VDIs.
 		These functions are all idempotent from the point of view of a given [dp]. *)
 
-	(** [attach task dp sr vdi read_write] returns the [physical_device] for a given
+	(** [attach task dp sr vdi read_write] returns the [blkback] for a given
 		[vdi] in [sr] which can be written to if (but not necessarily only if) [read_write]
 		is true *)
 	external attach : task:task -> dp:dp -> sr:sr -> vdi:vdi -> read_write:bool -> result = ""
@@ -125,7 +131,7 @@ module VDI = struct
 		[vdi]. *)
     external deactivate : task:task -> dp:dp -> sr:sr -> vdi:vdi -> result = ""
 
-	(** [detach task dp sr vdi] signals that this client no-longer needs the [physical_device]
+	(** [detach task dp sr vdi] signals that this client no-longer needs the [blkback]
 		to be valid. *)
     external detach : task:task -> dp:dp -> sr:sr -> vdi:vdi -> result = ""
 end

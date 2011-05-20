@@ -52,13 +52,15 @@ sig
 
 	val add : xs:Xs.xsh -> hvm:bool -> mode:mode
 	       -> device_number:Device_number.t
-	       -> phystype:physty -> physpath:string
+	       -> phystype:physty 
+		   -> backend_domid:int
+		   -> physical_device:string
+		   -> ?params:string
 	       -> dev_type:devty
 	       -> unpluggable:bool
 	       -> ?protocol:protocol
 	       -> ?extra_backend_keys:(string*string) list
 	       -> ?extra_private_keys:(string*string) list 
-	       -> ?backend_domid:Xc.domid
 	       -> Xc.domid -> device
 
 	val release : xs:Xs.xsh -> device -> unit
