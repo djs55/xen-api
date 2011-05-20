@@ -90,7 +90,7 @@ let create_vbd ~__context ~xs ~hvm ~protocol domid self =
 					let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype 
 						~backend_domid:(Opt.default 0 blkback.Storage_interface.backend_domain)
 						~physical_device:blkback.Storage_interface.physical_device
-						~params:blkback.Storage_interface.local_path
+						~params:blkback.Storage_interface.physical_device
 						~device_number ~dev_type ~unpluggable ~protocol ~extra_backend_keys ~extra_private_keys:[ "ref", Ref.string_of self ] domid in
 					Db.VBD.set_currently_attached ~__context ~self ~value:true;
 					debug "set_currently_attached to true for VBD uuid %s" (Db.VBD.get_uuid ~__context ~self)

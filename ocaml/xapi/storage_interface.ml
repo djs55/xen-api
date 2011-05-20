@@ -31,7 +31,6 @@ type task = string
 type blkback = {
 	backend_domain: int option; (** the domain hosting the blkback instance, if not us *)
 	physical_device: string;    (** the xenstore physical-device key needed by blkback *)
-	local_path: string;         (** XXX: temporary hack to help qemu read the disk *)
 }
 
 (** Each VDI is associated with one or more "attached" or "activated" "datapaths". *)
@@ -53,7 +52,7 @@ type result =
 	| Success of success_t
 	| Failure of failure_t
 
-let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; physical_device = %s; local_path = %s }" (match x.backend_domain with None -> "None" | Some x -> Printf.sprintf "Some %d" x) x.physical_device x.local_path
+let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; physical_device = %s }" (match x.backend_domain with None -> "None" | Some x -> Printf.sprintf "Some %d" x) x.physical_device
 
 let string_of_success = function
 	| Vdi x -> Printf.sprintf "VDI %s" (string_of_blkback x)

@@ -492,6 +492,14 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device 
 	     List.iter (fun (k, v) -> Hashtbl.add back_tbl k v) keys
 	 | None -> ());
 
+	(* XXX: egregious hack: if the physical_device is actually a path
+	   in domain0, then convert to the correct format now. *)
+	let physical_device = 
+		if physical_device <> "" && physical_device.[0] = '/'
+		then
+			let major, minor = Statdev.get_major_minor physical_device in
+			sprintf "%x:%x" major minor 
+		else physical_device in
 
 	Hashtbl.add_list front_tbl [
 		"backend-id", string_of_int backend_domid;
