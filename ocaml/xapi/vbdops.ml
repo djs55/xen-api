@@ -48,7 +48,9 @@ let string_of_vbd ~__context ~vbd =
   name ^ ":" ^ vdi
 
 let qemu_needs_blkfront ~__context ~self hvm =
-	match Device_number.spec (Device_number.of_string hvm (Db.VBD.get_device ~__context ~self)) with
+	let userdevice = Db.VBD.get_userdevice ~__context ~self in
+	let device_number = translate_vbd_device self userdevice hvm in
+	match Device_number.spec device_number with
 		| Device_number.Ide(n, _) when n < 4 -> true
 		| _ -> false
 
@@ -69,9 +71,11 @@ let create_qemu_blkfront_for_vbd ~__context ~self hvm =
 let get_qemu_blkfront_vbd_for_vbd ~__context ~self =
 	let vdi = Db.VBD.get_VDI ~__context ~self in
 	let vm = Helpers.get_domain_zero ~__context in
-	match List.filter (fun self -> Db.VBD.get_VM ~__context ~self = vm) (Db.VDI.get_VBDs ~__context ~self:vdi) with
+	if Db.is_valid_ref __context vdi
+	then match List.filter (fun self -> Db.VBD.get_VM ~__context ~self = vm) (Db.VDI.get_VBDs ~__context ~self:vdi) with
 		| vbd :: _ -> Some vbd
 		| [] -> None
+	else None
 
 let qemu_blkfront_for_vbd ~__context ~self =
 	let vbd = get_qemu_blkfront_vbd_for_vbd ~__context ~self in
