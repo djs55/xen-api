@@ -435,6 +435,7 @@ let destroy_domain ?(preserve_xs_vm=false) ?(clear_currently_attached=true)  ~__
 	let all_vbds = Db.VM.get_VBDs ~__context ~self in
 	List.iter
 		(fun vbd ->
+			destroy_qemu_blkfront_for_vbd ~__context ~self:vbd;
 			if not(Db.VBD.get_empty ~__context ~self:vbd)
 			then Helpers.log_exn_continue (Printf.sprintf "Vmops.destroy_domain: detaching associated with VBD %s" (Ref.string_of vbd))
 				(fun () ->
@@ -1036,9 +1037,11 @@ let start_paused ?(progress_cb = fun _ -> ()) ~pcidevs ~__context ~vm ~snapshot 
 								let protocol =
 									Helpers.device_protocol_of_string
 										(Db.VM.get_domarch ~__context ~self:vm) in
+
 								(* If any VBDs cannot be attached, let the exn propagate *)
 								List.iter
 									(fun self ->
+										create_qemu_blkfront_for_vbd ~__context ~self hvm;
 										create_vbd ~__context ~xs ~hvm ~protocol domid self)
 									vbds;
 								progress_cb 0.60;

@@ -47,6 +47,48 @@ let string_of_vbd ~__context ~vbd =
   let vdi = if r.API.vBD_empty then "empty" else try Db.VDI.get_uuid ~__context ~self:r.API.vBD_VDI with _ -> "missing" in
   name ^ ":" ^ vdi
 
+let qemu_needs_blkfront ~__context ~self hvm =
+	match Device_number.spec (Device_number.of_string hvm (Db.VBD.get_device ~__context ~self)) with
+		| Device_number.Ide(n, _) when n < 4 -> true
+		| _ -> false
+
+let create_qemu_blkfront_for_vbd ~__context ~self hvm =
+	let vdi = Db.VBD.get_VDI ~__context ~self in
+	let vm = Helpers.get_domain_zero ~__context in
+	if qemu_needs_blkfront ~__context ~self hvm
+	then Helpers.call_api_functions ~__context
+		(fun rpc session_id ->
+			let vbd = Client.VBD.create 
+			    ~rpc ~session_id ~vM:vm ~vDI:vdi ~other_config:[] 
+			    ~userdevice:"autodetect" ~bootable:false ~mode:`RW
+			    ~_type:`Disk ~empty:false ~unpluggable:true
+			    ~qos_algorithm_type:"" ~qos_algorithm_params:[] in
+			Client.VBD.plug rpc session_id vbd
+		)
+
+let get_qemu_blkfront_vbd_for_vbd ~__context ~self =
+	let vdi = Db.VBD.get_VDI ~__context ~self in
+	let vm = Helpers.get_domain_zero ~__context in
+	match List.filter (fun self -> Db.VBD.get_VM ~__context ~self = vm) (Db.VDI.get_VBDs ~__context ~self:vdi) with
+		| vbd :: _ -> Some vbd
+		| [] -> None
+
+let qemu_blkfront_for_vbd ~__context ~self =
+	let vbd = get_qemu_blkfront_vbd_for_vbd ~__context ~self in
+	let path_of vbd = 
+		"/dev/" ^ (Device_number.to_linux_device (Device_number.of_string false (Db.VBD.get_device ~__context ~self:vbd))) in
+	Opt.map path_of vbd
+
+let destroy_qemu_blkfront_for_vbd ~__context ~self = 
+	let vbd = get_qemu_blkfront_vbd_for_vbd ~__context ~self in
+	Opt.iter
+		(fun vbd ->
+			Helpers.call_api_functions ~__context
+				(fun rpc session_id ->
+					Attach_helpers.safe_unplug rpc session_id vbd;
+					Client.VBD.destroy rpc session_id vbd
+				)
+		) vbd
 
 (* real helpers *)
 let create_vbd ~__context ~xs ~hvm ~protocol domid self =
@@ -87,10 +129,12 @@ let create_vbd ~__context ~xs ~hvm ~protocol domid self =
 				try
 					(* The backend can put useful stuff in here on vdi_attach *)
 					let extra_backend_keys = List.map (fun (k, v) -> "sm-data/" ^ k, v) (Db.VDI.get_xenstore_data ~__context ~self:vdi) in
+
+					let params = Opt.default "" (qemu_blkfront_for_vbd ~__context ~self) in
 					let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm ~mode ~phystype 
 						~backend_domid:(Opt.default 0 blkback.Storage_interface.backend_domain)
 						~physical_device:blkback.Storage_interface.physical_device
-						~params:blkback.Storage_interface.physical_device
+						~params
 						~device_number ~dev_type ~unpluggable ~protocol ~extra_backend_keys ~extra_private_keys:[ "ref", Ref.string_of self ] domid in
 					Db.VBD.set_currently_attached ~__context ~self ~value:true;
 					debug "set_currently_attached to true for VBD uuid %s" (Db.VBD.get_uuid ~__context ~self)
