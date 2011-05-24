@@ -62,9 +62,11 @@ let create_qemu_blkfront_for_vbd ~__context ~self hvm =
 	if qemu_needs_blkfront ~__context ~self hvm
 	then Helpers.call_api_functions ~__context
 		(fun rpc session_id ->
+			let read_only = Db.VDI.get_read_only ~__context ~self:vdi in
+			let mode = if read_only then `RO else `RW in
 			let vbd = Client.VBD.create 
 			    ~rpc ~session_id ~vM:vm ~vDI:vdi ~other_config:[] 
-			    ~userdevice:"autodetect" ~bootable:false ~mode:`RW
+			    ~userdevice:"autodetect" ~bootable:false ~mode
 			    ~_type:`Disk ~empty:false ~unpluggable:true
 			    ~qos_algorithm_type:"" ~qos_algorithm_params:[] in
 			Client.VBD.plug rpc session_id vbd
