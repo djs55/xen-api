@@ -222,7 +222,9 @@ let set_vbd_qos ~__context ~self domid devid pid =
 	set_vbd_qos_norestrictions ~__context ~self domid devid pid ty params alert_fct
 
 let eject_vbd ~__context ~self =
-	if not (Db.VBD.get_empty ~__context ~self) then (
+	(* qemu will 'eject' emulated disks when the PV drivers kick in. We
+	   need to avoid ejecting the PV disk too *)
+	if not (Db.VBD.get_empty ~__context ~self) && (Db.VBD.get_type ~__context ~self = `CD) then (
 		let vdi = Db.VBD.get_VDI ~__context ~self in
 
 		let is_sr_local_cdrom sr =
