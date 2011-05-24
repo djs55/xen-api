@@ -121,14 +121,18 @@ module SR = struct
 end
 
 module VDI = struct
-	(** Functions which operate on particular VDIs.
-		These functions are all idempotent from the point of view of a given [dp]. *)
+	(** Functions which operate on VDIs. *)
 
 	(** [create task sr name_label name_description virtual_size type] creates a
 	    new VDI in [sr] of size [virtual_size] with arbitrary [ty], [name_label] and
 	    [name_description] *)
 	external create : task:task -> sr:sr -> name_label:string -> name_description:string
 		-> virtual_size:int64 -> ty:string -> params:(string*string) list -> result = ""
+
+	(** [destroy task sr vdi] removes [vdi] from [sr] *)
+	external destroy : task:task -> sr:sr -> vdi:vdi -> result = ""
+
+	(** These functions are all idempotent from the point of view of a given [dp]. *)
 
 	(** [attach task dp sr vdi read_write] returns the [blkback] for a given
 		[vdi] in [sr] which can be written to if (but not necessarily only if) [read_write]

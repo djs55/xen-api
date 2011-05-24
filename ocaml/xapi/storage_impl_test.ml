@@ -45,15 +45,38 @@ module Debug_print_impl = struct
 		let m = Mutex.create ()
 		let attached = Hashtbl.create 10
 		let activated = Hashtbl.create 10
+		let created = Hashtbl.create 10
 		let key_of sr vdi = Printf.sprintf "%s/%s" sr vdi
 
 		let stat context ~task ?dp ~sr ~vdi () = assert false
 
 		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
-			if List.mem_assoc "toosmall" params
-			then Success (NewVdi { vdi = "newvdi"; virtual_size = Int64.sub virtual_size 1L })
-			else Success (NewVdi { vdi = "newvdi"; virtual_size = virtual_size })
-
+			let vdi = "newvdi" in
+			let info =
+				if List.mem_assoc "toosmall" params
+				then { vdi = vdi; virtual_size = Int64.sub virtual_size 1L }
+				else { vdi = vdi; virtual_size = virtual_size } in
+			Mutex.execute m
+				(fun () ->
+					let key = key_of sr vdi in
+					Hashtbl.replace created key info
+				);
+			Success (NewVdi info)
+		let destroy context ~task ~sr ~vdi =
+			Mutex.execute m
+				(fun () ->
+					let key = key_of sr vdi in
+					if not(Hashtbl.mem created key)
+					then Failure (Backend_error("ENOENT", [ sr; vdi ]))
+					else if Hashtbl.mem activated key
+					then Failure (Backend_error("Still activated", [ sr; vdi]))
+					else if Hashtbl.mem attached key
+					then Failure (Backend_error("Still attached", [ sr; vdi]))
+					else begin
+						Hashtbl.remove created key;
+						Success Unit
+					end
+				)
 		let attach context ~task ~dp ~sr ~vdi ~read_write =
 			info "VDI.attach dp:%s sr:%s vdi:%s read_write:%b" dp sr vdi read_write;
 			if dp = "error"
@@ -347,13 +370,19 @@ let test_sr_detach_cleanup_errors_2 sr vdi =
 		(Client.SR.detach rpc ~task ~sr)
 
 let create_vdi_test sr = 
+	let dp = datapath_of_id "datapath" in
 	expect "()" (fun x -> x = Success Unit)
 		(Client.SR.attach rpc ~task ~sr);
 	let name_label = "name_label" and name_description = "name_description" in
 	let virtual_size = 10L and ty = "user" in
 	expect "too_small_backend_error" too_small_backend_error
 		(Client.VDI.create rpc ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params:["toosmall", ""]);
-	expect "NewVdi" (function Success (NewVdi _) -> true | _ -> false)
+	expect "NewVdi" (function 
+		| Success (NewVdi v) -> 
+			expect "Vdi _" (function Success (Vdi _) -> true | _ -> false)
+				(Client.VDI.attach rpc ~task ~dp ~sr ~vdi:v.vdi ~read_write:false);
+			true 
+		| _ -> false)
 		(Client.VDI.create rpc ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params:[]);
 	debug "Detaching and cleaning up";
 	expect "()" (fun x -> x = Success Unit)

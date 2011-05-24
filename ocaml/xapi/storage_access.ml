@@ -190,6 +190,18 @@ module Builtin_impl = struct
 					let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
 					Success (NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size })
 				)
+
+		let destroy context ~task ~sr ~vdi =
+			try
+				for_vdi ~task ~sr ~vdi "VDI.destroy"
+					(fun device_config _type sr self ->
+						Sm.vdi_delete device_config _type sr self
+					);
+				Mutex.execute vdi_read_write_m
+					(fun () -> Hashtbl.remove vdi_read_write (sr, vdi));
+				Success Unit
+			with Api_errors.Server_error(code, params) ->
+				Failure (Backend_error(code, params))
 	end
 end
 

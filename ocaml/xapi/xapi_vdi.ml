@@ -356,7 +356,8 @@ let snapshot ~__context ~vdi ~driver_params =
   newvdi
 
 let destroy ~__context ~self =
-  Sm.assert_pbd_is_plugged ~__context ~sr:(Db.VDI.get_SR ~__context ~self);
+	let sr = Db.VDI.get_SR ~__context ~self in
+  Sm.assert_pbd_is_plugged ~__context ~sr;
   Xapi_vdi_helpers.assert_managed ~__context ~vdi:self;
 
   let vbds = Db.VDI.get_VBDs ~__context ~self in
@@ -368,16 +369,19 @@ let destroy ~__context ~self =
       raise (Api_errors.Server_error (Api_errors.vdi_in_use, []))
     else
       begin
-	Sm.call_sm_vdi_functions ~__context ~vdi:self
-	  (fun srconf srtype sr ->
-	    Sm.vdi_detach srconf srtype sr self;
-	    Sm.vdi_delete srconf srtype sr self);
-	(* destroy all the VBDs now rather than wait for the GC thread. This helps
-	   prevent transient glitches but doesn't totally prevent races. *)
-	List.iter (fun vbd ->
-		     Helpers.log_exn_continue (Printf.sprintf "destroying VBD: %s" (Ref.string_of vbd))
-		       (fun vbd -> Db.VBD.destroy ~__context ~self:vbd) vbd) vbds;
-	(* Db.VDI.destroy ~__context ~self *)
+		  let open Storage_access in
+		  let open Storage_interface in
+		  let task = Context.get_task_id __context in
+		  expect_unit (fun () -> ())
+			  (Client.VDI.destroy rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sr) ~vdi:(Ref.string_of self));
+
+		  (* destroy all the VBDs now rather than wait for the GC thread. This helps
+			 prevent transient glitches but doesn't totally prevent races. *)
+		  List.iter (fun vbd ->
+			  Helpers.log_exn_continue (Printf.sprintf "destroying VBD: %s" (Ref.string_of vbd))
+				  (fun vbd -> Db.VBD.destroy ~__context ~self:vbd) vbd) vbds;
+		  if Db.is_valid_ref __context self
+		  then Db.VDI.destroy ~__context ~self
       end
 
 let after_resize ~__context ~vdi ~size vdi_info = 
