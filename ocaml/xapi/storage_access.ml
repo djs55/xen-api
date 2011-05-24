@@ -167,6 +167,29 @@ module Builtin_impl = struct
 
 		let stat context ~task ?dp ~sr ~vdi () = assert false
 
+		let require_uuid vdi_info = 
+			match vdi_info.Smint.vdi_info_uuid with
+				| Some uuid -> uuid
+				| None -> failwith "SM backend failed to return <uuid> field" 
+
+		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
+			Server_helpers.exec_with_new_task "VDI.create" ~subtask_of:(Ref.of_string task)
+				(fun __context ->
+
+					let sr = Ref.of_string sr in
+					let vi = 
+						Sm.call_sm_functions ~__context ~sR:sr
+							(fun device_config _type ->
+								Sm.vdi_create device_config _type sr params ty 
+									virtual_size name_label name_description
+							) in
+					(* The current backends stash data directly in the db *)
+					let uuid = require_uuid vi in
+					let ref = Db.VDI.get_by_uuid ~__context ~uuid in
+
+					let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
+					Success (NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size })
+				)
 	end
 end
 
@@ -209,6 +232,10 @@ let unexpected_result expected x = match x with
 let expect_vdi f x = match x with
 	| Success (Vdi v) -> f v
 	| _ -> unexpected_result "Vdi _" x
+
+let expect_newvdi f x = match x with
+	| Success (NewVdi v) -> f v
+	| _ -> unexpected_result "NewVdi _" x
 
 let expect_unit f x = match x with
 	| Success Unit -> f ()
@@ -339,7 +366,7 @@ let refresh_local_vdi_activations ~__context =
 						remember (sr, vdi) RW
 					| Success (State Detached) ->
 						unlock_vdi (vdi_ref, vdi_rec)
-					| Success (Vdi _ | Unit)
+					| Success (Vdi _ | NewVdi _ | Unit)
 					| Failure _ as r -> error "Unable to query state of VDI: %s, %s" vdi (string_of_result r)
 			else unlock_vdi (vdi_ref, vdi_rec)
 		) all_vdi_recs

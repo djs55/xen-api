@@ -49,6 +49,11 @@ module Debug_print_impl = struct
 
 		let stat context ~task ?dp ~sr ~vdi () = assert false
 
+		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
+			if List.mem_assoc "toosmall" params
+			then Success (NewVdi { vdi = "newvdi"; virtual_size = Int64.sub virtual_size 1L })
+			else Success (NewVdi { vdi = "newvdi"; virtual_size = virtual_size })
+
 		let attach context ~task ~dp ~sr ~vdi ~read_write =
 			info "VDI.attach dp:%s sr:%s vdi:%s read_write:%b" dp sr vdi read_write;
 			if dp = "error"
@@ -64,7 +69,7 @@ module Debug_print_impl = struct
 						error "VDI.attach dp:%s sr:%s vdi:%s : double attach" dp sr vdi;
 						failwith "double attach"
 						end else Hashtbl.replace attached key ());
-				Success (Storage_interface.Vdi { Storage_interface.backend_domain = None; physical_device = "XXX"; local_path = "YYY" })
+				Success (Storage_interface.Vdi { Storage_interface.backend_domain = None; physical_device = "XXX" })
 			end
 		let activate context ~task ~dp ~sr ~vdi =
 			Mutex.execute m
@@ -163,8 +168,12 @@ let expect expected f x =
 		inc_errors ();
 	end
 
-let backend_error = function
+let test_backend_error = function
 	| Failure (Backend_error(code, params)) when code = "SR_BACKEND_FAILURE_test" -> true
+	| _ -> false
+
+let too_small_backend_error = function
+	| Failure (Backend_error(code, params)) when code = "SR_BACKEND_FAILURE" && (List.hd params = "Disk too small") -> true
 	| _ -> false
 
 let internal_error = function
@@ -255,7 +264,7 @@ let test_sr sr =
 		(Client.VDI.attach rpc ~task ~dp ~sr ~vdi:"leaked" ~read_write:true);
 	let dp = datapath_of_id "error2" in
 	debug "This VDI.attach should fail:";
-	expect "backend_error" backend_error
+	expect "test_backend_error" test_backend_error
 		(Client.VDI.attach rpc ~task ~dp ~sr ~vdi:"leaked" ~read_write:true);
 	debug "Detaching and cleaning up";
 	expect "()" (fun x -> x = Success Unit)
@@ -308,7 +317,7 @@ let test_sr_detach_cleanup_errors_1 sr vdi =
 	expect "()" (fun x -> x = Success Unit)
 		(Client.VDI.deactivate rpc ~task ~dp ~sr ~vdi);
 	if vdi = "error2"
-	then expect "backend_error" backend_error
+	then expect "test_backend_error" test_backend_error
 		(Client.VDI.detach rpc ~task ~dp ~sr ~vdi)
 	else expect "internal_error" internal_error
 		(Client.VDI.detach rpc ~task ~dp ~sr ~vdi);
@@ -325,7 +334,7 @@ let test_sr_detach_cleanup_errors_2 sr vdi =
 	let dp = datapath_of_id "datapath" in
 	leak dp sr true vdi;
 	if vdi = "error2"
-	then expect "backend_error" backend_error
+	then expect "test_backend_error" test_backend_error
 		(Client.DP.destroy rpc ~task ~dp ~allow_leak:false)
 	else expect "internal_error" internal_error
 		(Client.DP.destroy rpc ~task ~dp ~allow_leak:false);
@@ -337,6 +346,19 @@ let test_sr_detach_cleanup_errors_2 sr vdi =
 	expect "()" (fun x -> x = Success Unit)
 		(Client.SR.detach rpc ~task ~sr)
 
+let create_vdi_test sr = 
+	expect "()" (fun x -> x = Success Unit)
+		(Client.SR.attach rpc ~task ~sr);
+	let name_label = "name_label" and name_description = "name_description" in
+	let virtual_size = 10L and ty = "user" in
+	expect "too_small_backend_error" too_small_backend_error
+		(Client.VDI.create rpc ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params:["toosmall", ""]);
+	expect "NewVdi" (function Success (NewVdi _) -> true | _ -> false)
+		(Client.VDI.create rpc ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params:[]);
+	debug "Detaching and cleaning up";
+	expect "()" (fun x -> x = Success Unit)
+		(Client.SR.detach rpc ~task ~sr)		
+
 let _ =
 	Storage_impl.print_debug := true;
 	Storage_impl.host_state_path := "/tmp/storage.db";
@@ -344,6 +366,7 @@ let _ =
 	Unixext.unlink_safe !Storage_impl.host_state_path;
 	Storage_impl.Local_domain_socket.start path Server.process;
 	info "Listening on %s" Storage_impl.Local_domain_socket.path;
+
 	test_sr "sr";
 
 	test_sr_detach_cleanup_errors_1 "sr" "error2";
@@ -353,6 +376,8 @@ let _ =
 	test_sr_detach_cleanup_errors_2 "sr" "error";
 
 	test_stat "sr" "vdi";
+
+	create_vdi_test "sr";
 
 	if !total_errors = 0 then begin
 		info "OK";

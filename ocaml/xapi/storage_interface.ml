@@ -33,11 +33,21 @@ type blkback = {
 	physical_device: string;    (** the xenstore physical-device key needed by blkback *)
 }
 
+(** The result of an operation which creates or examines a VDI *)
+type vdi_info = {
+	vdi: vdi;
+	virtual_size: int64;
+}
+
+let string_of_vdi_info x =
+	Printf.sprintf "{ vdi = %s; virtual_size = %Ld }" x.vdi x.virtual_size
+
 (** Each VDI is associated with one or more "attached" or "activated" "datapaths". *)
 type dp = string
 
 type success_t =
 	| Vdi of blkback                          (** success (from VDI.attach) *)
+	| NewVdi of vdi_info                      (** success (from VDI.create) *)
 	| Unit                                    (** success *)
 	| State of Vdi_automaton.state            (** success (from VDI.stat) *)
 
@@ -56,6 +66,7 @@ let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; physical_device
 
 let string_of_success = function
 	| Vdi x -> Printf.sprintf "VDI %s" (string_of_blkback x)
+	| NewVdi x -> Printf.sprintf "NewVdi %s" (string_of_vdi_info x)
 	| Unit -> "()"
 	| State s -> Vdi_automaton.string_of_state s
 
@@ -112,6 +123,12 @@ end
 module VDI = struct
 	(** Functions which operate on particular VDIs.
 		These functions are all idempotent from the point of view of a given [dp]. *)
+
+	(** [create task sr name_label name_description virtual_size type] creates a
+	    new VDI in [sr] of size [virtual_size] with arbitrary [ty], [name_label] and
+	    [name_description] *)
+	external create : task:task -> sr:sr -> name_label:string -> name_description:string
+		-> virtual_size:int64 -> ty:string -> params:(string*string) list -> result = ""
 
 	(** [attach task dp sr vdi read_write] returns the [blkback] for a given
 		[vdi] in [sr] which can be written to if (but not necessarily only if) [read_write]

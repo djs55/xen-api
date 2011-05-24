@@ -33,6 +33,8 @@ val datapath_of_vbd: domid:int -> device:string -> Storage_interface.dp
 
 val expect_vdi: (Storage_interface.blkback -> 'a) -> Storage_interface.result -> 'a
 
+val expect_newvdi: (Storage_interface.vdi_info -> 'a) -> Storage_interface.result -> 'a
+
 val expect_unit: (unit -> 'a) -> Storage_interface.result -> 'a
 
 (** [attach_and_activate __context vbd domid f] calls [f blkback] where

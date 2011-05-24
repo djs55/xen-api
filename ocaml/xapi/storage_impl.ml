@@ -291,7 +291,8 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 							| Success Unit
 							| Failure _ ->
 								result, vdi_t
-							| Success (State _) ->
+							| Success (State _) 
+							| Success (NewVdi _) ->
 								Failure (Internal_error (Printf.sprintf "VDI.attach type error, received: %s" (string_of_result result))), vdi_t in
 								result, vdi_t
 							| Vdi_automaton.Activate ->
@@ -457,6 +458,16 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 					remove_leaked_datapaths_andthen_nolock context ~task ~sr ~vdi
 						(fun () ->
 							fst (perform_nolock context ~task ~dp ~sr ~vdi Vdi_automaton.Detach)))
+
+		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
+			info "VDI.create task:%s sr:%s name_label:%s name_description:%s virtual_size:%Ld ty:%s params:%s" task sr name_label name_description virtual_size ty (String.concat ";" (List.map (fun (k, v) -> k ^ ":" ^ v) params));
+			let result = Impl.VDI.create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params in
+			match result with
+				| Success (NewVdi { virtual_size = virtual_size' }) when virtual_size' < virtual_size ->
+					error "VDI.create task:%s sr:%s name_label:%s virtual_size:%Ld created a smaller VDI (%Ld)" task sr name_label virtual_size virtual_size';
+					Failure(Backend_error("SR_BACKEND_FAILURE", ["Disk too small"; Int64.to_string virtual_size; Int64.to_string virtual_size']))
+				| result -> result
+
 	end
 
 	module DP = struct

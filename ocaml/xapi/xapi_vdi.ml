@@ -203,27 +203,27 @@ let create ~__context ~name_label ~name_description
 	| `suspend -> "suspend"
 	| `system -> "system"
 	| `user -> "user" in
-	let vdi_info = 
-	    Sm.call_sm_functions ~__context ~sR
-	      (fun device_config sr_type ->
-		Sm.vdi_create device_config sr_type sR sm_config vdi_type virtual_size name_label name_description)
- 	in
-	let uuid = require_uuid vdi_info in
-	let ref = Db.VDI.get_by_uuid ~__context ~uuid in
 
-	let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
-	debug "created VDI on disk, requested size = %Ld; actual size = %Ld" virtual_size actual_size;
+	let open Storage_access in
+	let rpc = rpc_of_sr ~__context ~sr:sR in
+	let task = Context.get_task_id __context in	
+	let open Storage_interface in
+	expect_newvdi
+		(fun newvdi ->
+			if virtual_size < newvdi.virtual_size 
+			then info "sr:%s vdi:%s requested virtual size %Ld < actual virtual size %Ld" (Ref.string_of sR) newvdi.vdi virtual_size newvdi.virtual_size;
+			let self = Ref.of_string newvdi.vdi in
+			let old_backend = Db.is_valid_ref __context self in
+			let uuid = if old_backend then Db.VDI.get_uuid ~__context ~self else Uuid.string_of_uuid (Uuid.make_uuid ()) in
+			let location = if old_backend then Db.VDI.get_location ~__context ~self else newvdi.vdi in
+			if old_backend then Db.VDI.destroy ~__context ~self;
+			Db.VDI.create ~__context ~ref:self ~uuid ~name_label ~name_description ~allowed_operations:[] ~current_operations:[] ~sR ~virtual_size:newvdi.virtual_size ~physical_utilisation:0L ~_type ~sharable ~read_only ~other_config ~storage_lock:false ~location ~managed:true ~missing:false ~parent:Ref.null ~xenstore_data ~sm_config ~is_a_snapshot:false ~snapshot_of:Ref.null ~snapshot_time:Date.never ~tags ~allow_caching:false ~on_boot:`persist ~metadata_of_pool:Ref.null ~metadata_latest:false;
 
-	(* Set the fields which belong to the higher-level API: *)
-	Db.VDI.set_other_config ~__context ~self:ref ~value:other_config;
-	Db.VDI.set_xenstore_data ~__context ~self:ref ~value:xenstore_data;
-	Db.VDI.set_sharable ~__context ~self:ref ~value:sharable;
-	Db.VDI.set_type ~__context ~self:ref ~value:_type;
-	Db.VDI.set_name_label ~__context ~self:ref ~value:name_label;
-	Db.VDI.set_name_description ~__context ~self:ref ~value:name_description;
+			update_allowed_operations ~__context ~self;
+			self
+		) (Client.VDI.create rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sR)
+			~name_label ~name_description ~virtual_size ~ty:vdi_type ~params:sm_config)
 
-	update_allowed_operations ~__context ~self:ref;
-	ref
 
 (* Make the database record only *)
 let introduce_dbonly  ~__context ~uuid ~name_label ~name_description ~sR ~_type ~sharable ~read_only ~other_config ~location ~xenstore_data ~sm_config =
