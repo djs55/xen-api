@@ -215,7 +215,12 @@ let rpc_inprocess call = Server.process () call
 (** [rpc_of_sr __context sr] returns an Rpc.call -> Rpc.response function
     for talking to the implementation of [sr], which could be in xapi, in domain 0
     or in a driver domain. *)
-let rpc_of_sr ~__context ~sr = rpc_inprocess
+let rpc_of_sr ~__context ~sr = 
+	let other_config = Db.SR.get_other_config ~__context ~self:sr in
+	if not(List.mem_assoc "driver" other_config)
+	then rpc_inprocess
+	else
+		fun call -> Rpc_client.do_rpc ~version:"1.0" ~host:"localhost" ~port:8080 ~path:"/" call
 
 (** [rpc_of_vbd __context vbd] returns an Rpc.call -> Rpc.response function
     for talking to the SR underlying the VDI corresponding to [vbd]. See rpc_of_sr *)
