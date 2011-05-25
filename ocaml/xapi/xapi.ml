@@ -789,6 +789,7 @@ let server_init() =
     "Running startup check", [], startup_check;
     "Registering SR plugins", [], Sm.register;
 	"Initialising SM state", [], Storage_impl.initialise;
+	"Initialising SM dispatcher", [], Storage_access.initialise;
     "Registering http handlers", [], (fun () -> List.iter Xapi_http.add_handler common_http_handlers);
     "Registering master-only http handlers", [ Startup.OnlyMaster ], (fun () -> List.iter Xapi_http.add_handler master_only_http_handlers);
     "Listening unix socket", [], listen_unix_socket;

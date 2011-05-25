@@ -14,6 +14,10 @@
 (**
  * @group Storage
  *)
+
+(** [initialise ()] should be called by the startup code before any storage operations
+	are attempted. *)
+val initialise: unit -> unit
  
 (** [rpc_of_sr __context sr] returns an Rpc.call -> Rpc.response function
     for talking to the implementation of [sr], which could be in xapi, in domain 0
@@ -23,9 +27,6 @@ val rpc_of_sr: __context:Context.t -> sr:API.ref_SR -> Rpc.call -> Rpc.response
 (** [rpc_of_vbd __context vbd] returns an Rpc.call -> Rpc.response function
     for talking to the SR underlying the VDI corresponding to [vbd]. See rpc_of_sr *)
 val rpc_of_vbd: __context:Context.t -> vbd:API.ref_VBD -> Rpc.call -> Rpc.response
-
-(** RPC function for calling the main storage multiplexor *)
-val rpc: Rpc.call -> Rpc.response
 
 (** [datapath_of_vbd domid device] returns the name of the datapath which corresponds
     to device [device] on domain [domid] *)
