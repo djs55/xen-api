@@ -24,7 +24,8 @@ let timeout = 300. (* 5 minutes, should never take this long *)
 let safe_unplug rpc session_id self = 
   try
     Client.VBD.unplug rpc session_id self
-  with Api_errors.Server_error(error, _) as e when error = Api_errors.device_detach_rejected ->
+  with 
+	  | Api_errors.Server_error(error, _) as e when error = Api_errors.device_detach_rejected ->
     debug "safe_unplug caught device_detach_rejected: polling the currently_attached flag of the VBD";
     let start = Unix.gettimeofday () in
     let unplugged = ref false in
@@ -36,6 +37,8 @@ let safe_unplug rpc session_id self =
       debug "Timeout waiting for dom0 device to be unplugged";
       raise e
     end
+	  | Api_errors.Server_error(error, _) when error = Api_errors.device_already_detached ->
+		  debug "safe_unplug: DEVICE_ALREADY_DETACHED: no work to do"
 
 (** For a VBD attached to a control domain, check to see if a valid task_id is present in
     the other-config. If a VBD exists for a task which has been cancelled or deleted then
