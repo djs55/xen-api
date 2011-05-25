@@ -209,9 +209,15 @@ module Local=Server(Storage_impl.Wrapper(Builtin_impl))
 
 module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"localhost" ~port:8080 ~path:"/" call end)))
 
+let printer rpc call = 
+	debug "Rpc.call = %s" (Xmlrpc.string_of_call call);
+	let result = rpc call in
+	debug "Rpc.response = %s" (Xmlrpc.string_of_response result);
+	result
+
 let driver_of_sr ~__context ~sr = 
 	let other_config = Db.SR.get_other_config ~__context ~self:sr in
-	if List.mem_assoc "driver" other_config then Remote.process () else Local.process ()
+	printer (if List.mem_assoc "driver" other_config then Remote.process () else Local.process ())
 
 let bind ~__context ~sr = 
 	Storage_mux.register sr (driver_of_sr ~__context ~sr)	
