@@ -48,6 +48,7 @@ type dp = string
 type success_t =
 	| Vdi of blkback                          (** success (from VDI.attach) *)
 	| NewVdi of vdi_info                      (** success (from VDI.create) *)
+	| String of string                        (** success (from DP.diagnostics) *)
 	| Unit                                    (** success *)
 	| State of Vdi_automaton.state            (** success (from VDI.stat) *)
 
@@ -67,6 +68,7 @@ let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; physical_device
 let string_of_success = function
 	| Vdi x -> Printf.sprintf "VDI %s" (string_of_blkback x)
 	| NewVdi x -> Printf.sprintf "NewVdi %s" (string_of_vdi_info x)
+	| String x -> x
 	| Unit -> "()"
 	| State s -> Vdi_automaton.string_of_state s
 
@@ -97,7 +99,7 @@ module DP = struct
 	(** [diagnostics ()]: returns a printable set of diagnostic information,
 		typically including lists of all registered datapaths and their allocated
 		resources. *)
-	external diagnostics: unit -> string = ""
+	external diagnostics: unit -> result = ""
 end
 
 module SR = struct

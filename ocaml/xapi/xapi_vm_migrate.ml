@@ -267,9 +267,10 @@ let transmitter ~xal ~__context is_localhost_migration fd vm_migrate_failed host
 	   debug "Sender 5a. Deactivating VDIs";
 	   List.iter
 		   (fun vbd ->
-			   Storage_access.on_vdi ~__context ~vbd ~domid
-				   (fun rpc task datapath_id sr vdi ->
-					   Storage_access.expect_unit (fun () -> ())
+			   let open Storage_access in
+			   on_vdi ~__context ~vbd ~domid
+				   (fun task datapath_id sr vdi ->
+					   expect_unit (fun () -> ())
 						   (Storage_interface.Client.VDI.deactivate rpc task datapath_id sr vdi)
 				   )
 		   ) vbds;
@@ -283,9 +284,10 @@ let transmitter ~xal ~__context is_localhost_migration fd vm_migrate_failed host
 	   debug "Sender 6a. Detaching VDIs";
 	   List.iter
 		   (fun vbd ->
-			   Storage_access.on_vdi ~__context ~vbd ~domid
-				   (fun rpc task datapath_id sr vdi ->
-					   Storage_access.expect_unit (fun () -> ())
+			   let open Storage_access in
+			   on_vdi ~__context ~vbd ~domid
+				   (fun task datapath_id sr vdi ->
+					   expect_unit (fun () -> ())
 						   (Storage_interface.Client.VDI.detach rpc task datapath_id sr vdi)
 				   )
 		   ) (Storage_access.vbd_detach_order ~__context vbds);
@@ -400,9 +402,10 @@ let receiver ~__context ~localhost is_localhost_migration fd vm xc xs memory_req
 		  List.iter
 			  (fun vbd ->
 				  let read_write = Db.VBD.get_mode ~__context ~self:vbd = `RW in
-				  Storage_access.on_vdi ~__context ~vbd ~domid
-					  (fun rpc task datapath_id sr vdi ->
-						  Storage_access.expect_vdi (fun _ -> ())
+				  let open Storage_access in
+				  on_vdi ~__context ~vbd ~domid
+					  (fun task datapath_id sr vdi ->
+						  expect_vdi (fun _ -> ())
 						  (Storage_interface.Client.VDI.attach rpc task datapath_id sr vdi read_write)
 					  )
 			  ) (Storage_access.vbd_attach_order ~__context vbds);
@@ -471,9 +474,10 @@ let receiver ~__context ~localhost is_localhost_migration fd vm xc xs memory_req
 	 debug "Receiver 7a. Activating VDIs";
 	  List.iter
 		  (fun vbd ->
-			  Storage_access.on_vdi ~__context ~vbd ~domid
-				  (fun rpc task datapath_id sr vdi ->
-					  Storage_access.expect_unit (fun () -> ())
+			  let open Storage_access in
+			  on_vdi ~__context ~vbd ~domid
+				  (fun task datapath_id sr vdi ->
+					  expect_unit (fun () -> ())
 						   (Storage_interface.Client.VDI.activate rpc task datapath_id sr vdi)
 				  )
 		  ) vbds;

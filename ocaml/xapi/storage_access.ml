@@ -209,33 +209,23 @@ module Local=Server(Storage_impl.Wrapper(Builtin_impl))
 
 module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"localhost" ~port:8080 ~path:"/" call end)))
 
+let driver_of_sr ~__context ~sr = 
+	let other_config = Db.SR.get_other_config ~__context ~self:sr in
+	if List.mem_assoc "driver" other_config then Remote.process () else Local.process ()
+
+let bind ~__context ~sr = 
+	Storage_mux.register sr (driver_of_sr ~__context ~sr)	
+
+let unbind ~__context ~sr =
+	Storage_mux.unregister sr
+
 let initialise () = 
 	Server_helpers.exec_with_new_task "storage_access.initialise"
 		(fun __context ->
-			List.iter (fun sr ->
-				Storage_mux.register sr (module Local: Storage_mux.Processor)
-			) (Db.SR.get_all ~__context)
+			List.iter (fun sr -> bind ~__context ~sr) (Db.SR.get_all ~__context)
 		)
 
-
-let rpc_unix call = Rpc_client.do_rpc_unix ~version:"1.0" ~path:"/"
-	~filename:Xapi_globs.storage_unix_domain_socket call
-
-let rpc_inprocess call = Local.process () call
-
-(** [rpc_of_sr __context sr] returns an Rpc.call -> Rpc.response function
-    for talking to the implementation of [sr], which could be in xapi, in domain 0
-    or in a driver domain. *)
-let rpc_of_sr ~__context ~sr = 
-	let other_config = Db.SR.get_other_config ~__context ~self:sr in
-	if not(List.mem_assoc "driver" other_config)
-	then rpc_inprocess
-	else Remote.process ()
-
-
-(** [rpc_of_vbd __context vbd] returns an Rpc.call -> Rpc.response function
-    for talking to the SR underlying the VDI corresponding to [vbd]. See rpc_of_sr *)
-let rpc_of_vbd ~__context ~vbd = rpc_inprocess
+let rpc call = Storage_mux.Server.process () call
 
 (** [datapath_of_vbd domid device] returns the name of the datapath which corresponds
     to device [device] on domain [domid] *)
@@ -266,16 +256,19 @@ let expect_unit f x = match x with
 	| Success Unit -> f ()
 	| _ -> unexpected_result "()" x
 
+let expect_string f x = match x with
+	| Success (String x) -> f x
+	| _ -> unexpected_result "String _" x
+
 (** [on_vdi __context vbd domid f] calls [f rpc dp sr vdi] which is
     useful for executing Storage_interface.Client.VDI functions  *)
 let on_vdi ~__context ~vbd ~domid f =
 	let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
 	let sr = Db.VDI.get_SR ~__context ~self:vdi in
-	let rpc = rpc_of_sr ~__context ~sr in
 	let device = Db.VBD.get_device ~__context ~self:vbd in
 	let task = Context.get_task_id __context in
 	let dp = Client.DP.create rpc (Ref.string_of task) (datapath_of_vbd ~domid ~device) in
-	f rpc (Ref.string_of task) dp (Ref.string_of sr) (Ref.string_of vdi)
+	f (Ref.string_of task) dp (Ref.string_of sr) (Ref.string_of vdi)
 
 (** [attach_and_activate __context vbd domid f] calls [f physical_device] where
     [physical_device] is the result of attaching a VDI which is also activated.
@@ -284,7 +277,7 @@ let on_vdi ~__context ~vbd ~domid f =
 let attach_and_activate ~__context ~vbd ~domid f =
 	let read_write = Db.VBD.get_mode ~__context ~self:vbd = `RW in
 	on_vdi ~__context ~vbd ~domid
-		(fun rpc task dp sr vdi ->
+		(fun task dp sr vdi ->
 			expect_vdi
 				(fun blkback ->
 					expect_unit
@@ -300,27 +293,21 @@ let deactivate_and_detach ~__context ~vbd ~domid =
 	(* It suffices to destroy the datapath: any attached or activated VDIs will be
 	   automatically detached and deactivated. *)
 	on_vdi ~__context ~vbd ~domid
-		(fun rpc task dp sr vdi ->
+		(fun task dp sr vdi ->
 			expect_unit (fun () -> ())
 				(Client.DP.destroy rpc task dp false)
 		)
 
 let diagnostics ~__context =
-	(* XXX: Assumes the existence of a main storage multiplexor *)
-	let rpc = rpc_inprocess in
-	Storage_interface.Client.DP.diagnostics rpc ()
+	expect_string (fun x -> x) (Client.DP.diagnostics rpc ())
 
 let dp_destroy ~__context dp allow_leak =
-	(* XXX: Assumes the existence of a main storage multiplexor *)
-	let rpc = rpc_inprocess in
 	let task = Context.get_task_id __context in
 	expect_unit (fun () -> ())
 		(Client.DP.destroy rpc (Ref.string_of task) dp allow_leak)
 
 (* Set my PBD.currently_attached fields in the Pool database to match the local one *)
 let resynchronise_pbds ~__context ~pbds =
-	(* XXX: Assumes the existence of a main storage multiplexor *)
-	let rpc = rpc_inprocess in
 	let task = Context.get_task_id __context in
 	let srs = Client.SR.list rpc (Ref.string_of task) in
 	debug "Currently-attached SRs: [ %s ]" (String.concat "; " srs);
@@ -375,8 +362,6 @@ let refresh_local_vdi_activations ~__context =
 			(fun () -> Hashtbl.replace Builtin_impl.VDI.vdi_read_write key (ro_rw = RW)) in
 
 	let task = Ref.string_of (Context.get_task_id __context) in
-	(* XXX: Assumes the existence of a main storage multiplexor *)
-	let rpc = rpc_inprocess in
 	let srs = Client.SR.list rpc task in
 	List.iter 
 		(fun (vdi_ref, vdi_rec) ->
@@ -399,7 +384,7 @@ let refresh_local_vdi_activations ~__context =
 						remember (sr, vdi) RW
 					| Success (State Detached) ->
 						unlock_vdi (vdi_ref, vdi_rec)
-					| Success (Vdi _ | NewVdi _ | Unit)
+					| Success (Vdi _ | NewVdi _ | Unit | String _)
 					| Failure _ as r -> error "Unable to query state of VDI: %s, %s" vdi (string_of_result r)
 			else unlock_vdi (vdi_ref, vdi_rec)
 		) all_vdi_recs
@@ -422,7 +407,6 @@ let destroy_sr ~__context ~sr =
 	let pbds = Db.SR.get_PBDs ~__context ~self:sr in
 	let localhost = Helpers.get_localhost ~__context in
 
-	let rpc = rpc_of_sr ~__context ~sr in
 	let task = Ref.string_of (Context.get_task_id __context) in
 
 	expect_unit (fun () -> ())

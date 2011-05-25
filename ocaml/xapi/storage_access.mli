@@ -18,15 +18,17 @@
 (** [initialise ()] should be called by the startup code before any storage operations
 	are attempted. *)
 val initialise: unit -> unit
- 
-(** [rpc_of_sr __context sr] returns an Rpc.call -> Rpc.response function
-    for talking to the implementation of [sr], which could be in xapi, in domain 0
-    or in a driver domain. *)
-val rpc_of_sr: __context:Context.t -> sr:API.ref_SR -> Rpc.call -> Rpc.response
 
-(** [rpc_of_vbd __context vbd] returns an Rpc.call -> Rpc.response function
-    for talking to the SR underlying the VDI corresponding to [vbd]. See rpc_of_sr *)
-val rpc_of_vbd: __context:Context.t -> vbd:API.ref_VBD -> Rpc.call -> Rpc.response
+(** [bind __context sr] causes the storage_access module to choose the most
+	appropriate driver implementation for the given [sr] *)
+val bind: __context:Context.t -> sr:API.ref_SR -> unit
+ 
+(** [unbind __context sr] causes the storage access module to forget the association
+    between [sr] and driver implementation *)
+val unbind: __context:Context.t -> sr:API.ref_SR -> unit
+
+(** [rpc] is an Rpc.call -> Rpc.response function which talks to the storage multiplexor *)
+val rpc: Rpc.call -> Rpc.response
 
 (** [datapath_of_vbd domid device] returns the name of the datapath which corresponds
     to device [device] on domain [domid] *)
@@ -48,10 +50,10 @@ val attach_and_activate: __context:Context.t -> vbd:API.ref_VBD -> domid:int -> 
     that any attached or activated VDI gets properly deactivated and detached. *)
 val deactivate_and_detach: __context:Context.t -> vbd:API.ref_VBD -> domid:int -> unit
 
-(** [on_vdi __context vbd domid f] calls [f rpc dp sr vdi] which is
+(** [on_vdi __context vbd domid f] calls [f task dp sr vdi] which is
     useful for executing Storage_interface.Client.VDI functions, applying the
     standard convention mapping VBDs onto DPs *)
-val on_vdi: __context:Context.t -> vbd:API.ref_VBD -> domid:int -> ((Rpc.call -> Rpc.response) -> Storage_interface.task -> Storage_interface.dp -> Storage_interface.sr -> Storage_interface.vdi -> 'a) -> 'a
+val on_vdi: __context:Context.t -> vbd:API.ref_VBD -> domid:int -> (Storage_interface.task -> Storage_interface.dp -> Storage_interface.sr -> Storage_interface.vdi -> 'a) -> 'a
 
 (** [resynchronise_pbds __context pbds] sets the currently_attached state of
     each of [pbd] to match the state of the storage layer. *)

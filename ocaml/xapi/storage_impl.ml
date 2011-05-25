@@ -293,7 +293,8 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 							| Failure _ ->
 								result, vdi_t
 							| Success (State _) 
-							| Success (NewVdi _) ->
+							| Success (NewVdi _)
+							| Success (String _) ->
 								Failure (Internal_error (Printf.sprintf "VDI.attach type error, received: %s" (string_of_result result))), vdi_t in
 								result, vdi_t
 							| Vdi_automaton.Activate ->
@@ -527,7 +528,7 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 				let errors = List.map Errors.to_string (Errors.list ()) in
 				let errors = (if errors <> [] then "The following errors have been logged:" else "No errors have been logged.") :: errors in
 				let lines = [ "The following SRs are attached:" ] @ (List.map indent srs) @ [ "" ] @ errors in
-				String.concat "" (List.map (fun x -> x ^ "\n") lines)
+			Success (String (String.concat "" (List.map (fun x -> x ^ "\n") lines)))
 	end
 
 	module SR = struct

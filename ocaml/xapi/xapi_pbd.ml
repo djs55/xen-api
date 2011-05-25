@@ -109,10 +109,11 @@ let plug ~__context ~self =
 			begin
 				let sr = Db.PBD.get_SR ~__context ~self in
 				check_sharing_constraint ~__context ~self:sr;
-				let rpc = Storage_access.rpc_of_sr ~__context ~sr in
+				Storage_access.bind ~__context ~sr;
+
 				let task = Ref.string_of (Context.get_task_id __context) in
 				Storage_access.expect_unit (fun () -> ())
-					(Storage_interface.Client.SR.attach rpc task (Ref.string_of sr));
+					(Storage_interface.Client.SR.attach Storage_access.rpc task (Ref.string_of sr));
 				Db.PBD.set_currently_attached ~__context ~self ~value:true;
 
 				if Helpers.i_am_srmaster ~__context ~sr then begin
@@ -178,10 +179,10 @@ let unplug ~__context ~self =
 						Xapi_vdi_helpers.disable_database_replication ~__context ~vdi)
 					metadata_vdis_of_this_pool
 			end;
-			let rpc = Storage_access.rpc_of_sr ~__context ~sr in
 			let task = Ref.string_of (Context.get_task_id __context) in
 			Storage_access.expect_unit (fun () -> ())
-				(Storage_interface.Client.SR.detach rpc task (Ref.string_of sr));
+				(Storage_interface.Client.SR.detach Storage_access.rpc task (Ref.string_of sr));
+			Storage_access.unbind ~__context ~sr;
 			Db.PBD.set_currently_attached ~__context ~self ~value:false
 		end
 

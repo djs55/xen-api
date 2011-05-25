@@ -205,7 +205,6 @@ let create ~__context ~name_label ~name_description
 	| `user -> "user" in
 
 	let open Storage_access in
-	let rpc = rpc_of_sr ~__context ~sr:sR in
 	let task = Context.get_task_id __context in	
 	let open Storage_interface in
 	expect_newvdi
@@ -372,7 +371,6 @@ let destroy ~__context ~self =
 		  let open Storage_access in
 		  let open Storage_interface in
 		  let task = Context.get_task_id __context in
-		  let rpc = Storage_access.rpc_of_sr ~__context ~sr in
 		  expect_unit (fun () -> ())
 			  (Client.VDI.destroy rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sr) ~vdi:(Ref.string_of self));
 
