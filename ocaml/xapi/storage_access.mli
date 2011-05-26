@@ -15,10 +15,6 @@
  * @group Storage
  *)
 
-(** [initialise ()] should be called by the startup code before any storage operations
-	are attempted. *)
-val initialise: unit -> unit
-
 (** [bind __context sr] causes the storage_access module to choose the most
 	appropriate driver implementation for the given [sr] *)
 val bind: __context:Context.t -> sr:API.ref_SR -> unit
@@ -26,6 +22,8 @@ val bind: __context:Context.t -> sr:API.ref_SR -> unit
 (** [unbind __context sr] causes the storage access module to forget the association
     between [sr] and driver implementation *)
 val unbind: __context:Context.t -> sr:API.ref_SR -> unit
+
+val domid_of_sr: __context:Context.t -> sr:API.ref_SR -> int
 
 (** [rpc] is an Rpc.call -> Rpc.response function which talks to the storage multiplexor *)
 val rpc: Rpc.call -> Rpc.response

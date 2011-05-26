@@ -26,11 +26,18 @@ let kind_of_vdi ~__context ~self =
 
 (** Given a VBD, return a xenops device. Always called on the host where the VM is present *)
 let device_of_vbd ~__context ~self = 
+	let backend_domid = 
+		if Db.VBD.get_empty ~__context ~self
+		then 0
+		else
+			let vdi = Db.VBD.get_VDI ~__context ~self in
+			let sr = Db.VDI.get_SR ~__context ~self:vdi in
+			Storage_access.domid_of_sr ~__context ~sr in
   let vm = Db.VBD.get_VM ~__context ~self in
   let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:vm) in
   let hvm = Xc.with_intf (fun xc -> (Xc.domain_getinfo xc domid).Xc.hvm_guest) in
   let devid = Device_number.to_xenstore_key (Device_number.of_string hvm (Db.VBD.get_device ~__context ~self)) in
-  let backend = { Device_common.domid = 0; 
+  let backend = { Device_common.domid = backend_domid; 
 		  kind = Device_common.Vbd;
 		  devid = devid } in
   Device_common.device_of_backend backend domid 

@@ -16,16 +16,21 @@ type processor = Rpc.call -> Rpc.response
 
 open Storage_interface
 
-let plugins : (API.ref_SR, processor) Hashtbl.t = Hashtbl.create 10
+type plugin = {
+	processor: processor;
+	backend_domid: int;
+}
+let plugins : (API.ref_SR, plugin) Hashtbl.t = Hashtbl.create 10
 
-let register sr m = Hashtbl.replace plugins sr m
+let register sr m d = Hashtbl.replace plugins sr { processor = m; backend_domid = d }
 let unregister sr = Hashtbl.remove plugins sr
 (* This is the policy: *)
-let of_sr sr = Hashtbl.find plugins (Ref.of_string sr)
+let of_sr sr = (Hashtbl.find plugins (Ref.of_string sr)).processor
+let domid_of_sr sr = (Hashtbl.find plugins (Ref.of_string sr)).backend_domid
 
 open Fun
 
-let multicast f = Hashtbl.fold (fun sr rpc acc -> (sr, f rpc) :: acc) plugins []
+let multicast f = Hashtbl.fold (fun sr plugin acc -> (sr, f plugin.processor) :: acc) plugins []
 
 let partition = List.partition (success ++ snd) 
 
@@ -62,7 +67,13 @@ module Mux = struct
 			Client.VDI.create (of_sr sr) ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params
 		let stat context ~task ?dp ~sr ~vdi () = Client.VDI.stat (of_sr sr) ~task ?dp ~sr ~vdi ()
 		let destroy context ~task ~sr ~vdi = Client.VDI.destroy (of_sr sr) ~task ~sr ~vdi
-		let attach context ~task ~dp ~sr ~vdi ~read_write = Client.VDI.attach (of_sr sr) ~task ~dp ~sr ~vdi ~read_write
+		let attach context ~task ~dp ~sr ~vdi ~read_write = 
+			let result = Client.VDI.attach (of_sr sr) ~task ~dp ~sr ~vdi ~read_write in
+			let domid = domid_of_sr sr in
+			match result with
+				| Success (Vdi v) -> Success (Vdi { v with backend_domain = Some domid })
+				| x -> x
+
 		let activate context ~task ~dp ~sr ~vdi = Client.VDI.activate (of_sr sr) ~task ~dp ~sr ~vdi
 		let deactivate context ~task ~dp ~sr ~vdi = Client.VDI.deactivate (of_sr sr) ~task ~dp ~sr ~vdi
 		let detach context ~task ~dp ~sr ~vdi = Client.VDI.detach (of_sr sr) ~task ~dp ~sr ~vdi

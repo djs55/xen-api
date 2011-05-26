@@ -12,6 +12,7 @@
  * GNU Lesser General Public License for more details.
  *)
 open Threadext
+module XenAPI = Client.Client
 open Storage_interface
 
 module D=Debug.Debugger(struct let name="storage_access" end)
@@ -207,7 +208,7 @@ end
 
 module Local=Server(Storage_impl.Wrapper(Builtin_impl))
 
-module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"localhost" ~port:8080 ~path:"/" call end)))
+module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"169.254.0.2" ~port:8080 ~path:"/" call end)))
 
 let printer rpc call = 
 	debug "Rpc.call = %s" (Xmlrpc.string_of_call call);
@@ -217,19 +218,33 @@ let printer rpc call =
 
 let driver_of_sr ~__context ~sr = 
 	let other_config = Db.SR.get_other_config ~__context ~self:sr in
+(*
+	let module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"169.254.0.2" ~port:8080 ~path:"/" call end))) in
+*)
 	printer (if List.mem_assoc "driver" other_config then Remote.process () else Local.process ())
 
+let domid_of_sr ~__context ~sr = 
+	let other_config = Db.SR.get_other_config ~__context ~self:sr in
+	if List.mem_assoc "driver" other_config then begin
+		match Db.VM.get_by_name_label ~__context ~label:"sdk" with
+			| vm :: _ ->
+(*
+				if Db.VM.get_power_state ~__context ~self:vm = `Halted
+				then Helpers.call_api_functions ~__context (fun rpc session_id -> XenAPI.VM.start rpc session_id vm false false);
+*)
+				let domid = Db.VM.get_domid ~__context ~self:vm in
+				let domid = if domid < 1L then (* failwith "driver domain offline" *)0L else domid in
+				let domid = Int64.to_int domid in
+				info "Using driver domain: %d" domid;
+				domid
+			| [] -> failwith "failed to find driver domain"
+	end else 0
+
 let bind ~__context ~sr = 
-	Storage_mux.register sr (driver_of_sr ~__context ~sr)	
+	Storage_mux.register sr (driver_of_sr ~__context ~sr) (domid_of_sr ~__context ~sr)
 
 let unbind ~__context ~sr =
 	Storage_mux.unregister sr
-
-let initialise () = 
-	Server_helpers.exec_with_new_task "storage_access.initialise"
-		(fun __context ->
-			List.iter (fun sr -> bind ~__context ~sr) (Db.SR.get_all ~__context)
-		)
 
 let rpc call = Storage_mux.Server.process () call
 
@@ -271,6 +286,7 @@ let expect_string f x = match x with
 let on_vdi ~__context ~vbd ~domid f =
 	let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
 	let sr = Db.VDI.get_SR ~__context ~self:vdi in
+	bind ~__context ~sr;
 	let device = Db.VBD.get_device ~__context ~self:vbd in
 	let task = Context.get_task_id __context in
 	let dp = Client.DP.create rpc (Ref.string_of task) (datapath_of_vbd ~domid ~device) in
@@ -371,6 +387,7 @@ let refresh_local_vdi_activations ~__context =
 	let srs = Client.SR.list rpc task in
 	List.iter 
 		(fun (vdi_ref, vdi_rec) ->
+			try
 			let sr = Ref.string_of vdi_rec.API.vDI_SR in
 			let vdi = Ref.string_of vdi_ref in
 			if List.mem sr srs
@@ -393,6 +410,7 @@ let refresh_local_vdi_activations ~__context =
 					| Success (Vdi _ | NewVdi _ | Unit | String _)
 					| Failure _ as r -> error "Unable to query state of VDI: %s, %s" vdi (string_of_result r)
 			else unlock_vdi (vdi_ref, vdi_rec)
+			with e -> error "Skipping VDI %s: %s" (Ref.string_of vdi_ref) (Printexc.to_string e)
 		) all_vdi_recs
 
 (* This is a symptom of the ordering-sensitivity of the SM backend: it is not possible

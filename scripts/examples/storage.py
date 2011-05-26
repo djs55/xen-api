@@ -2,6 +2,8 @@
 
 import os, sys, commands
 
+root = "/sr/"
+
 def sr_attach(args):
 	print "SR.attach task:%s sr:%s" % (args["task"], args["sr"])
 	sys.stdout.flush()
@@ -13,13 +15,14 @@ def sr_detach(args):
 	return { "Status": "Success", "Value": [ "Success", "Unit" ] }
 
 def vdi_create(args):
+	global root
 	print "VDI.create task:%s sr:%s name_label:%s virtual_size:%s" % (args["task"], args["sr"], args["name_label"], args["virtual_size"])
 	print "test"
 	sys.stdout.flush()
 	location = args["name_label"]
 	print "location = %s" % location
 	try:
-		cmd = "/bin/dd if=/dev/zero of=/tmp/%s bs=1 count=0 seek=%s" % (args["name_label"], args["virtual_size"])
+		cmd = "/bin/dd if=/dev/zero of=%s%s bs=1 count=0 seek=%s" % (root, args["name_label"], args["virtual_size"])
 		print "%s" % cmd
 		sys.stdout.flush()
 		code, output = commands.getstatusoutput(cmd)
@@ -38,10 +41,11 @@ def vdi_create(args):
 		sys.stdout.flush()
 
 def vdi_destroy(args):
+	global root
 	print "VDI.destroy task:%s sr:%s vdi:%s" % (args["task"], args["sr"], args["vdi"])
 	sys.stdout.flush()
 	try:
-		cmd = "/bin/rm -f /tmp/%s" % (args["vdi"])
+		cmd = "/bin/rm -f %s%s" % (root, args["vdi"])
 		code, output = commands.getstatusoutput(cmd)
 		if code == 0:
 			print "VDI.destroy OK"
@@ -56,7 +60,8 @@ def vdi_destroy(args):
 		sys.stdout.flush()
 
 def find_loop_device(path):
-	path = "/tmp/" + path
+	global root
+	path = root + path
 	cmd = "/sbin/losetup -a"
 	code, output = commands.getstatusoutput(cmd)
 	if code == 0:
@@ -70,7 +75,8 @@ def find_loop_device(path):
 	raise output
 
 def add_loop_device(path):
-	cmd = "/sbin/losetup -f /tmp/%s" % (path)
+	global root
+	cmd = "/sbin/losetup -f %s%s" % (root, path)
 	code, output = commands.getstatusoutput(cmd)
 	if code == 0:
 		return find_loop_device(path)
@@ -118,7 +124,7 @@ if __name__ == "__main__":
 
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 
-server = SimpleXMLRPCServer(('127.0.0.1', 8080))
+server = SimpleXMLRPCServer(('169.254.0.2', 8080))
 server.register_introspection_functions()
 
 server.register_function(sr_attach, "SR.attach")
