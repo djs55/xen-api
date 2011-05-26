@@ -1,0 +1,8 @@
+* qemu domain 0 backend check
+* prevent shutdown of VMs which are serving SRs
+* example needs logging and -daemon option
+* do we really need to wait for backend hotplug events?
+* if we start a domain on demand, need to ping it until its ready
+* Resync.vbd should consider an orphaned frontend to be detached
+* if we start a domain on demand, what if the host is offline because the PBD is unplugged
+* remove hardcoded IP address
