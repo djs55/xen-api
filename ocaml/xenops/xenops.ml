@@ -148,6 +148,11 @@ let domain_get_uuid ~xc ~domid =
 	with _ ->
 		()
 
+let print_table (rows: string list list) =
+	let widths = Table.compute_col_widths rows in
+	let sll = List.map (List.map2 Table.right widths) rows in
+	List.iter (fun line -> print_endline (String.concat " | " line)) sll
+
 let list_domains ~xc ~verbose =
 	let header () =
 		if verbose then
@@ -186,38 +191,43 @@ let list_domains ~xc ~verbose =
 			[ domid; state; cpu_time; handle ]
 		in
 
-	let print (rows: string list list) =
-		let widths = Table.compute_col_widths rows in
-		let sll = List.map (List.map2 Table.right widths) rows in
-		List.iter (fun line -> print_endline (String.concat " | " line)) sll
-		in
-
 	let l = Xc.domain_getinfolist xc 0 in
 	let header = header () in
 	let infos = List.map sl_of_domaininfo l in
-	print (header :: infos)
+	print_table (header :: infos)
 
-let list_devices ~xs ~domid = 
-	(* Assume all drivers are in domain 0 *)
-	let all = list_devices_between ~xs 0 domid in
-	let string_of_state path = 
-	  try
-	    Xenbus.to_string_desc (Xenbus.of_string (xs.Xs.read (sprintf "%s/state" path)))
-	  with _ -> "gone" in
-	List.iter (fun device ->
-		     let fe = frontend_path_of_device ~xs device
-		     and be = backend_path_of_device ~xs device in
-		     let bdev = try xs.Xs.read (sprintf "%s/dev" be) with _ -> "" in
-		     printf "%s[%d] is %s to dom(%d) ty(%s) devid(%d %s) state(%s)\n"
-		       (string_of_kind device.frontend.kind) 
-		       device.frontend.devid 
-		       (string_of_state fe)
-		       device.backend.domid
-		       (string_of_kind device.backend.kind)
-		       device.backend.devid
-		       bdev 
-		       (string_of_state be)
-		  ) all
+(*
+   backend                  frontend
+   ---------------------------------------------------------------
+   domain domstate ty devid state -> domain domstate ty devid state
+
+   where domstate = R | S | D | ?
+   state = 1 | 2 | 3 | 4 | 5 | 6 | ?          
+*)
+
+let list_devices ~xc ~xs =
+	let header = [ "backend"; ""; ""; "state"; ""; "frontend"; ""; ""; "state" ] in
+	let of_device (d: device) : string list =
+		let int = string_of_int and k = string_of_kind in
+		let frontend = xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) in
+		let backend = xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) in
+		[ int d.backend.domid; k d.backend.kind; int d.backend.devid; backend; "->"; int d.frontend.domid; k d.frontend.kind; int d.frontend.devid; frontend ] in
+	let l = Xc.domain_getinfolist xc 0 in	
+	let domids = List.map (fun x -> x.Xc.domid) l in
+	let devices = 
+		List.concat (
+			List.map
+				(fun driver_domid ->
+					List.concat (
+						List.map
+							(fun guest_domid ->
+								list_devices_between ~xs driver_domid guest_domid
+							) domids
+					)
+				) domids
+		) in
+	let infos = List.map of_device devices in
+	print_table (header :: infos)
 
 let add_vbd ~xs ~hvm ~domid ~device_number ~phystype ~backend_domid ~physical_device ?params ~dev_type ~mode=
 	let phystype = Device.Vbd.physty_of_string phystype in
@@ -580,7 +590,7 @@ let do_cmd_parsing cmd =
 		("affinity_set"   , common @ affinity_args @ affinity_set_args);
 		("affinity_get"   , common @ affinity_args);
 		("list_domains"   , list_args);
-		("list_devices"   , common);
+		("list_devices"   , []);
 		("add_vbd"        , common @ vbd_args @ backend_args);
 		("del_vbd"        , common @ vbd_args @ backend_args);
 		("add_vif"        , common @ vif_args @ backend_args);
@@ -720,8 +730,7 @@ let _ =
 	| "list_domains" ->
 		with_xc (fun xc -> list_domains ~xc ~verbose)
 	| "list_devices" ->
-		assert_domid ();
-		with_xs (fun xs -> list_devices ~xs ~domid)
+		with_xc_and_xs (fun xc xs -> list_devices ~xc ~xs)
 	| "sched_domain" ->
 		assert_domid ();
 		with_xc (fun xc -> sched_domain ~xc ~domid ~weight ~cap)
