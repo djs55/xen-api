@@ -6,3 +6,4 @@
 * Resync.vbd should consider an orphaned frontend to be detached
 * if we start a domain on demand, what if the host is offline because the PBD is unplugged
 * remove hardcoded IP address
+* spurious frontends in dom0? for PV maybe?
