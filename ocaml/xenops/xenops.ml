@@ -209,8 +209,8 @@ let list_devices ~xc ~xs =
 	let header = [ "be"; "proto"; "dev"; "state"; "->"; "fe"; "kind"; "dev"; "state" ] in
 	let of_device (d: device) : string list =
 		let int = string_of_int in
-		let frontend = xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) in
-		let backend = xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) in
+		let frontend = try xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) with Xb.Noent -> "?" in
+		let backend = try xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) with Xb.Noent -> "?" in
 		let bkind endpoint = match endpoint.kind with
 			| Vbd | Tap -> "blk"
 			| Vif -> "net"
@@ -240,12 +240,7 @@ let list_devices ~xc ~xs =
 		List.concat (
 			List.map
 				(fun driver_domid ->
-					List.concat (
-						List.map
-							(fun guest_domid ->
-								list_devices_between ~xs driver_domid guest_domid
-							) domids
-					)
+					list_backends ~xs driver_domid
 				) domids
 		) in
 	let infos = List.map of_device devices in
