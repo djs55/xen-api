@@ -140,21 +140,51 @@ let parse_frontend_link x =
 			end
 		| _ -> None
 
+let parse_backend_link x = 
+	match String.split '/' x with
+		| [ ""; "local"; "domain"; domid; "backend"; kind; _; devid ] ->
+			begin
+				match parse_int domid, parse_kind kind, parse_int devid with
+					| Some domid, Some kind, Some devid ->
+						Some { domid = domid; kind = kind; devid = devid }
+					| _, _, _ -> None
+			end
+		| _ -> None
+
+let readdir ~xs d = try xs.Xs.directory d with Xb.Noent -> []
+let to_list ys = List.concat (List.map Opt.to_list ys)
+let list_kinds ~xs dir = to_list (List.map parse_kind (readdir ~xs dir))
+
+let list_frontends ~xs domid = 
+	let frontend_dir = xs.Xs.getdomainpath domid ^ "/device" in
+	let kinds = list_kinds ~xs frontend_dir in
+	List.concat (List.map
+		(fun k ->
+			let dir = sprintf "%s/%s" frontend_dir (string_of_kind k) in
+			let devids = to_list (List.map parse_int (readdir ~xs dir)) in
+			to_list (List.map
+				(fun devid ->
+					(* domain [domid] believes it has a frontend for
+					   device [devid] *)
+					let frontend = { domid = domid; kind = k; devid = devid } in
+					let be = xs.Xs.read (sprintf "%s/%d/backend" dir devid) in
+					Opt.map (fun b -> { backend = b; frontend = frontend })
+						(parse_backend_link be)
+				) devids)
+		) kinds)
+
 let list_backends ~xs domid =
-	let readdir d = try xs.Xs.directory d with Xb.Noent -> [] in
 	let backend_dir = xs.Xs.getdomainpath domid ^ "/backend" in
-	let to_list xs = List.concat (List.map Opt.to_list xs) in
-	let kinds =
-		to_list (List.map parse_kind
-			(try xs.Xs.directory backend_dir with Xb.Noent -> [])) in
+	let kinds = list_kinds ~xs backend_dir in
+
 	List.concat (List.map
 		(fun k ->
 			let dir = sprintf "%s/%s" backend_dir (string_of_kind k) in
-			let domids = to_list (List.map parse_int (readdir dir)) in
+			let domids = to_list (List.map parse_int (readdir ~xs dir)) in
 			List.concat (List.map
 				(fun frontend_domid ->
 					let dir = sprintf "%s/%s/%d" backend_dir (string_of_kind k) frontend_domid in
-					let devids = to_list (List.map parse_int (readdir dir)) in
+					let devids = to_list (List.map parse_int (readdir ~xs dir)) in
 					to_list (List.map
 						(fun devid ->
 							(* domain [domid] believes it has a backend for
