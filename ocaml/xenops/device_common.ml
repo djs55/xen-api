@@ -155,6 +155,8 @@ let readdir ~xs d = try xs.Xs.directory d with Xb.Noent -> []
 let to_list ys = List.concat (List.map Opt.to_list ys)
 let list_kinds ~xs dir = to_list (List.map parse_kind (readdir ~xs dir))
 
+(* NB: we only read data from the frontend directory. Therefore this gives
+   the "frontend's point of view". *)
 let list_frontends ~xs domid = 
 	let frontend_dir = xs.Xs.getdomainpath domid ^ "/device" in
 	let kinds = list_kinds ~xs frontend_dir in
@@ -173,6 +175,8 @@ let list_frontends ~xs domid =
 				) devids)
 		) kinds)
 
+(* NB: we only read data from the backend directory. Therefore this gives
+   the "backend's point of view". *)
 let list_backends ~xs domid =
 	let backend_dir = xs.Xs.getdomainpath domid ^ "/backend" in
 	let kinds = list_kinds ~xs backend_dir in
