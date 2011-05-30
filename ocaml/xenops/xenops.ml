@@ -205,43 +205,59 @@ let list_domains ~xc ~verbose =
    state = 1 | 2 | 3 | 4 | 5 | 6 | ?          
 *)
 
+type device_stat = {
+	device: device;
+	backend_proto: string;   (* blk or net *)
+	backend_device: string;  (* physical device eg. fd:2 *)
+	backend_state: string;   (* 1...6 *)
+	frontend_type: string;   (* cdrom or hd *)
+	frontend_device: string; (* linux device name *)
+	frontend_state: string;  (* 1..6 *)
+}
+let device_state_to_sl ds =
+	let int = string_of_int in
+	[ int ds.device.backend.domid; ds.backend_proto; ds.backend_device; ds.backend_state; "->"; int ds.device.frontend.domid; ds.frontend_type; ds.frontend_device; ds.frontend_state ]
+
+let stat ~xs d =
+	let frontend_state = try xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) with Xb.Noent -> "??" in
+	let backend_state = try xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) with Xb.Noent -> "??" in
+	let backend_proto = match d.backend.kind with
+		| Vbd | Tap -> "blk"
+		| Vif -> "net"
+		| x -> string_of_kind x in
+	let frontend_type = match d.frontend.kind with
+		| Vbd | Tap -> 
+			let be = frontend_path_of_device ~xs d in
+			(try if xs.Xs.read (sprintf "%s/device-type" be) = "cdrom" then "cd" else "hdd" with _ -> "??")
+		| x -> string_of_kind x in
+	let backend_device = match d.backend.kind with
+		| Vbd | Tap -> 
+			let be = backend_path_of_device ~xs d in
+			(try xs.Xs.read (sprintf "%s/physical-device" be)
+			with Xb.Noent ->
+				(try xs.Xs.read (sprintf "%s/params" be)
+				with Xb.Noent -> "??"))
+		| Vif -> "-"
+		| _ -> string_of_int d.backend.devid in
+	let frontend_device = match d.frontend.kind with
+		| Vbd | Tap -> Device_number.to_linux_device (Device_number.of_xenstore_key d.frontend.devid)
+		| _ -> string_of_int d.frontend.devid in
+	{ device = d; frontend_state = frontend_state; backend_state = backend_state; frontend_device = frontend_device; frontend_type = frontend_type; backend_proto = backend_proto; backend_device = backend_device }
+
 let list_devices ~xc ~xs =
 	let header = [ "be"; "proto"; "dev"; "state"; "->"; "fe"; "kind"; "dev"; "state" ] in
 	let of_device (d: device) : string list =
-		let int = string_of_int in
-		let frontend = try xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) with Xb.Noent -> "?" in
-		let backend = try xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) with Xb.Noent -> "?" in
-		let bkind endpoint = match endpoint.kind with
-			| Vbd | Tap -> "blk"
-			| Vif -> "net"
-			| _ -> string_of_kind endpoint.kind in
-		let fkind endpoint = match endpoint.kind with
-			| Vbd | Tap -> 
-				let be = frontend_path_of_device ~xs d in
-				let cd = try xs.Xs.read (sprintf "%s/device-type" be) = "cdrom" with _ -> false in
-				if cd then "cd" else "hdd"
-			| _ -> string_of_kind endpoint.kind in
-		let bdev endpoint = match endpoint.kind with
-			| Vbd | Tap -> 
-				let be = backend_path_of_device ~xs d in
-				(try xs.Xs.read (sprintf "%s/physical-device" be)
-				with Xb.Noent ->
-					(try xs.Xs.read (sprintf "%s/params" be)
-					with Xb.Noent -> "??"))
-			| Vif -> "-"
-			| _ -> string_of_int endpoint.devid in
-		let fdev endpoint = match endpoint.kind with
-			| Vbd | Tap -> Device_number.to_linux_device (Device_number.of_xenstore_key endpoint.devid)
-			| _ -> string_of_int endpoint.devid in				
-		[ int d.backend.domid; bkind d.backend; bdev d.backend; backend; "->"; int d.frontend.domid; fkind d.frontend; fdev d.frontend; frontend ] in
+		device_state_to_sl (stat ~xs d) in
 	let l = Xc.domain_getinfolist xc 0 in
 	let domids = List.map (fun x -> x.Xc.domid) l in
 	let devices = 
-		List.concat (
-			List.map
-				(fun driver_domid ->
-					list_backends ~xs driver_domid
+		Listext.List.setify (
+			List.concat (
+				List.map
+					(fun domid ->
+						list_backends ~xs domid @ (list_frontends ~xs domid)
 				) domids
+			)
 		) in
 	let infos = List.map of_device devices in
 	print_table (header :: infos)
