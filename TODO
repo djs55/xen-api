@@ -1,4 +1,7 @@
 * qemu domain 0 backend check
+  probable clash over 'params' key with FreeBSD (and other backends)
+    suggests we need to use a sane mechanism to configure disks via qemu.
+    We might get this for free with upstream qemu
 * prevent shutdown of VMs which are serving SRs
 * example needs logging and -daemon option
 * do we really need to wait for backend hotplug events?
@@ -7,4 +10,4 @@
 * if we start a domain on demand, what if the host is offline because the PBD is unplugged
 * remove hardcoded IP address
 * spurious frontends in dom0? for PV maybe?
-* N*N complexity in xenops, what about missing frontends or backends?
+
