@@ -353,8 +353,12 @@ let assert_can_boot_here_common
 	validate_basic_parameters ~__context ~self ~snapshot;
 	(* Check host is live *)
 	assert_host_is_live ~__context ~host;
-	(* Check host is enabled *)
-	assert_host_is_enabled ~__context ~host;
+	(* If a regular, non-system domain then the host must be enabled first.
+	   Consider the case of a storage driver domain: Host.enabled is true
+	   only if all PBDs are plugged; a PBD will only be plugged if a VM is
+	   running; a VM can only be started if the host is already enabled... *)
+	if not(System_domains.is_system_domain snapshot)
+	then assert_host_is_enabled ~__context ~host;
 	(* Check SRs *)
 	assert_can_see_SRs ~__context ~self ~host;
 	(* Check Networks *)
@@ -547,13 +551,14 @@ let vm_can_run_on_host __context vm snapshot host =
 		then Helpers.host_has_highest_version_in_pool ~__context ~host:host
 		else true in
 	let host_enabled () = Db.Host.get_enabled ~__context ~self:host in
+	let is_system_domain = System_domains.is_system_domain snapshot in
 	let host_live () =
 		let host_metrics = Db.Host.get_metrics ~__context ~self:host in
 		Db.Host_metrics.get_live ~__context ~self:host_metrics in
 	let host_can_run_vm () =
 		assert_can_boot_here_no_memcheck ~__context ~self:vm ~host ~snapshot;
 		true in
-	try host_has_proper_version () && host_enabled () && host_live () && host_can_run_vm ()
+	try host_has_proper_version () && (host_enabled () || is_system_domain) && host_live () && host_can_run_vm ()
 	with _ -> false
 
 (** Selects a single host from the set of all hosts on which the given [vm]
