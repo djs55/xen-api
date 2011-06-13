@@ -504,6 +504,15 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 	(* XXX: we need some locking here & some better place to put the bridge name *)
 	let nics = List.map (fun vif -> vif.Vm_config.mac, vif.Vm_config.bridge, vif.Vm_config.devid) vifs in
 
+	let disks = List.unbox_list (List.map (fun vbd ->
+		Opt.map (fun filename ->
+			let userdevice = Db.VBD.get_userdevice ~__context ~self:vbd in
+			let device_number = Device_number.to_disk_number (Vbdops.translate_vbd_device self userdevice true) in
+			let media = if Db.VBD.get_type ~__context ~self:vbd = `CD then Device.Dm.Cdrom else Device.Dm.Disk in
+			device_number, filename, media
+		) (qemu_blkfront_for_vbd ~__context ~self:vbd)
+	) snapshot.API.vM_VBDs) in
+
 	let hvm = Helpers.is_hvm snapshot in
 
 	let platform = snapshot.API.vM_platform in
@@ -576,6 +585,7 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 			Device.Dm.serial = serial;
 			Device.Dm.vcpus = vcpus;
 			Device.Dm.nics = nics;
+			Device.Dm.disks = disks;
 			Device.Dm.pci_emulations = pci_emulations;
 			Device.Dm.usb = usb;
 			Device.Dm.acpi = acpi;
