@@ -127,6 +127,55 @@ let assert_exists_t ~xs t (x: device) =
     ignore_string(t.Xst.read backend_stub)
   with Xb.Noent -> raise Device_not_found
 
+(** When hot-unplugging a device we ask nicely *)
+let request_closure ~xs (x: device) =
+	let backend_path = backend_path_of_device ~xs x in
+	let state_path = backend_path ^ "/state" in
+	Xs.transaction xs (fun t ->
+		let online_path = backend_path ^ "/online" in
+		debug "xenstore-write %s = 0" online_path;
+		t.Xst.write online_path "0";
+		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
+		if state <> Xenbus.Closed then (
+			debug "Device.del_device setting backend to Closing";
+			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
+		)
+	)
+
+let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.connected_node ~xs x))
+let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x)
+let frontend_closed ~xs (x: device) = Watch.map (fun () -> "") (Watch.value_to_become (frontend_path_of_device ~xs x ^ "/state") (Xenbus.string_of Xenbus.Closed))
+
+let clean_shutdown ~xs (x: device) =
+	debug "Device.Generic.clean_shutdown %s" (string_of_device x);
+
+	let on_error error =
+	    debug "Device.Generic.shutdown_common: read an error: %s" error;
+	    (* CA-14804: Delete the error node contents *)
+	    safe_rm ~xs (error_path_of_device ~xs x);
+	    raise (Device_error (x, error)) in
+
+	request_closure ~xs x;
+	match Watch.wait_for ~xs (Watch.any_of [
+		`Disconnected, frontend_closed ~xs x;
+		`Unplugged, unplug_watch ~xs x; 
+		`Failed, error_watch ~xs x;
+	]) with
+		| `Disconnected, _ ->
+			debug "Device.Generic.clean_shutdown: frontend changed to state 6";
+			safe_rm ~xs (frontend_path_of_device ~xs x);
+			begin match Watch.wait_for ~xs (Watch.any_of [
+				`Unplugged, unplug_watch ~xs x;
+				`Failed, error_watch ~xs x;
+			]) with
+				| `Unplugged, _ -> rm_device_state ~xs x
+				| `Failed, error -> on_error error
+			end
+		| `Unplugged, _ -> rm_device_state ~xs x
+		| `Failed, error -> on_error error
+
+
+
 (*
 (* Assume we've told the backend to close. Watch both the error node and one other path.
    When the watch fires, call a predicate function and look for an error node.
@@ -326,24 +375,7 @@ let shutdown_done ~xs (x: device): string Watch.t =
 let hard_shutdown_request ~xs (x: device) = request_shutdown ~xs x true
 let hard_shutdown_complete = shutdown_done
 
-let clean_shutdown ~xs (x: device) =
-	debug "Device.Vbd.clean_shutdown %s" (string_of_device x);
-
-	request_shutdown ~xs x false; (* normal *)
-	(* Allow the domain to reject the request by writing to the error node *)
-	let shutdown_done = shutdown_done ~xs x in
-	let error = Watch.value_to_appear (error_path_of_device ~xs x) in
-	match Watch.wait_for ~xs (Watch.any_of [ `OK, shutdown_done; `Failed, error ]) with
-	| `OK, _ ->
-	    debug "Device.Vbd.shutdown_common: shutdown-done appeared";
-	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
-	       work.) This also clears any stale error nodes. *)
-	    Generic.rm_device_state ~xs x
-	| `Failed, error ->
-	    (* CA-14804: Delete the error node contents *)
-	    Generic.safe_rm ~xs (error_path_of_device ~xs x);
-	    debug "Device.Vbd.shutdown_common: read an error: %s" error;
-	    raise (Device_error (x, error))
+let clean_shutdown = Generic.clean_shutdown
 
 let hard_shutdown ~xs (x: device) = 
 	debug "Device.Vbd.hard_shutdown %s" (string_of_device x);
@@ -755,36 +787,7 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 	Hotplug.wait_for_plug ~xs device;
 	device
 
-(** When hot-unplugging a device we ask nicely *)
-let request_closure ~xs (x: device) =
-	let backend_path = backend_path_of_device ~xs x in
-	let state_path = backend_path ^ "/state" in
-	Xs.transaction xs (fun t ->
-		let online_path = backend_path ^ "/online" in
-		debug "xenstore-write %s = 0" online_path;
-		t.Xst.write online_path "0";
-		let state = try Xenbus.of_string (t.Xst.read state_path) with _ -> Xenbus.Closed in
-		if state <> Xenbus.Closed then (
-			debug "Device.del_device setting backend to Closing";
-			t.Xst.write state_path (Xenbus.string_of Xenbus.Closing);
-		)
-	)
-
-let unplug_watch ~xs (x: device) = Watch.map (fun () -> "") (Watch.key_to_disappear (Hotplug.connected_node ~xs x))
-let error_watch ~xs (x: device) = Watch.value_to_appear (error_path_of_device ~xs x) 
-
-let clean_shutdown ~xs (x: device) =
-	debug "Device.Vif.clean_shutdown %s" (string_of_device x);
-
-	request_closure ~xs x;
-	match Watch.wait_for ~xs (Watch.any_of [ `OK, unplug_watch ~xs x; `Failed, error_watch ~xs x ]) with
-	| `OK, _ ->
-	    (* Delete the trees (otherwise attempting to plug the device in again doesn't
-	       work. This also clears any stale error nodes. *)
-	    Generic.rm_device_state ~xs x
-	| `Failed, error ->
-	    debug "Device.Vif.shutdown_common: read an error: %s" error;
-	    raise (Device_error (x, error))	
+let clean_shutdown = Generic.clean_shutdown
 
 let hard_shutdown ~xs (x: device) =
 	debug "Device.Vif.hard_shutdown %s" (string_of_device x);
@@ -798,7 +801,7 @@ let hard_shutdown ~xs (x: device) =
 	let frontend_path = frontend_path_of_device ~xs x in
 	Generic.safe_rm xs frontend_path;
 	
-	ignore_string (Watch.wait_for ~xs (unplug_watch ~xs x));
+	ignore_string (Watch.wait_for ~xs (Generic.unplug_watch ~xs x));
 
 	(* blow away the backend and error paths *)
 	debug "Device.Vif.hard_shutdown about to blow away backend and error paths";
