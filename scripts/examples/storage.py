@@ -1,140 +1,128 @@
 #!/usr/bin/env python
+#
+# Copyright (C) Citrix Inc
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+# Example storage backend using SMAPIv2 using raw files and Linux losetup
+
+# WARNING: this API is considered to be unstable and may be changed at-will
 
 import os, sys, commands
 
+from smapiv2 import log, start, BackendError
+
 root = "/sr/"
 
-def sr_attach(args):
-	print "SR.attach task:%s sr:%s" % (args["task"], args["sr"])
-	sys.stdout.flush()
-	return { "Status": "Success", "Value": [ "Success", "Unit" ] }
+# [run task cmd] executes [cmd], throwing a BackendError if exits with
+# a non-zero exit code.
+def run(task, cmd):
+    code, output = commands.getstatusoutput(cmd)
+    if code <> 0:
+        log("%s: %s exitted with code %d: %s" % (task, cmd, code, output))
+        raise (BackendError("command failed", [ str(code), output ]))
+    log("%s: %s" % (task, cmd))
+    return output
 
-def sr_detach(args):
-	print "SR.detach task:%s sr:%s" % (args["task"], args["sr"])
-	sys.stdout.flush()
-	return { "Status": "Success", "Value": [ "Success", "Unit" ] }
+# Use Linux "losetup" to create block devices from files
+class Loop:
+    # [_find task path] returns the loop device associated with [path]
+    def _find(self, task, path):
+        global root
+        for line in run(task, "losetup -a").split("\n"):
+            bits = line.split()
+            loop = bits[0][0:-1]
+            this_path = bits[2][1:-1]
+            if this_path == path:
+                return loop
+        return None
+    # [add task path] creates a new loop device for [path] and returns it
+    def add(self, task, path):
+        run(task, "losetup -f %s" % path)
+        return self._find(task, path)
+    # [remove task path] removes the loop device associated with [path]
+    def remove(self, task, path):
+        loop = self._find(task, path)
+        run(task, "losetup -d %s" % loop)
 
-def vdi_create(args):
-	global root
-	print "VDI.create task:%s sr:%s name_label:%s virtual_size:%s" % (args["task"], args["sr"], args["name_label"], args["virtual_size"])
-	print "test"
-	sys.stdout.flush()
-	location = args["name_label"]
-	print "location = %s" % location
-	try:
-		cmd = "/bin/dd if=/dev/zero of=%s%s bs=1 count=0 seek=%s" % (root, args["name_label"], args["virtual_size"])
-		print "%s" % cmd
-		sys.stdout.flush()
-		code, output = commands.getstatusoutput(cmd)
-		print "%d, %s" % (code, output)
-		sys.stdout.flush()
-		if code == 0:
-			print "VDI.create OK"
-			sys.stdout.flush()
-			return {'Status': 'Success', 'Value': ['Success', ['NewVdi', {'vdi': location, 'virtual_size': args["virtual_size"]}]]}
-		else:
-			print "VDI.destroy failed: %d %s" % (code, output)
-			sys.stdout.flush()
-			return {'Status': 'Success', 'Value': ['Failure', ['Backend_error', 'dd failed', []]]}
-	except Exception, e:
-		print "VDI.create %s" % (str(e))
-		sys.stdout.flush()
+# Use FreeBSD "mdconfig" to create block devices from files
+class Mdconfig:
+    # [_find task path] returns the unit (mdX) associated with [path]
+    def _find(self, task, path):
+        # md0	vnode	 1024M	/root/big.img
+        for line in run(task, "mdconfig -l -v").split("\n"):
+            bits = line.split()
+            this_path = bits[3]
+            if this_path == path:
+                return bits[0] # md0
+        return None
+    # [add task path] returns a block device associated with [path]
+    def add(self, task, path):
+        return "/dev/" + run(task, "mdconfig -a -t vnode -f %s" % path)
+    # [remove task path] removes the block device associated with [path]
+    def remove(self, task, path):
+        md = self._find(task, path)
+        run(task, "mdconfig -d -u %s" % md) 
 
-def vdi_destroy(args):
-	global root
-	print "VDI.destroy task:%s sr:%s vdi:%s" % (args["task"], args["sr"], args["vdi"])
-	sys.stdout.flush()
-	try:
-		cmd = "/bin/rm -f %s%s" % (root, args["vdi"])
-		code, output = commands.getstatusoutput(cmd)
-		if code == 0:
-			print "VDI.destroy OK"
-			sys.stdout.flush()
-			return { "Status": "Success", "Value": [ "Success", "Unit" ] }
-		else:
-			print "VDI.destroy failed: %d, %s" % (code, output)
-			sys.stdout.flush()
-			return {'Status': 'Success', 'Value': ['Failure', ['Backend_error', 'dd failed', []]]}
-	except Exception, e:
-		print "VDI.destroy %s" % (str(e))
-		sys.stdout.flush()
+# [path_of_vdi vdi] returns the path in the local filesystem corresponding
+# to vdi location [vdi]
+def path_of_vdi(vdi):
+    global root
+    return root + vdi
 
-def find_loop_device(path):
-	global root
-	path = root + path
-	cmd = "/sbin/losetup -a"
-	code, output = commands.getstatusoutput(cmd)
-	if code == 0:
-		for line in output.split("\n"):
-			bits = line.split()
-			loop = bits[0][0:-1]
-			this_path = bits[2][1:-1]
-			if this_path == path:
-				return loop
-		return None
-	raise output
+class RawFiles:
+    def __init__(self, device):
+        self.device = device
 
-def add_loop_device(path):
-	global root
-	cmd = "/sbin/losetup -f %s%s" % (root, path)
-	code, output = commands.getstatusoutput(cmd)
-	if code == 0:
-		return find_loop_device(path)
-	raise output
+    def sr_attach(self, task, sr):
+        if not(os.path.exists(root)):
+            raise BackendError("SR directory doesn't exist", [ root ])
+    def sr_detach(self, task, sr):
+        pass
+    def sr_destroy(self, task, sr):
+        pass
 
-def del_loop_device(path):
-	loop = find_loop_device(path)
-	cmd = "/sbin/losetup -d %s" % loop
-	code, output = commands.getstatusoutput(cmd)
-	return
+    def vdi_create(self, task, sr, name_label, name_description, virtual_size, ty, params):
+        filename = run(task, "uuidgen") + ".raw"
+        run(task, "dd if=/dev/zero of=%s bs=1 count=0 seek=%Ld" % (path_of_vdi(filename), virtual_size))
+        return (filename, virtual_size)
+    def vdi_destroy(self, task, sr, vdi):
+        run(task, "rm -f %s" % (path_of_vdi(vdi)))
 
-def vdi_attach(args):
-	print "VDI.attach task:%s sr:%s vdi:%s" % (args["task"], args["sr"], args["vdi"])
-	loop = add_loop_device(args["vdi"])
-	print "loop = %s" % loop
-	sys.stdout.flush()
-	dev = os.stat(loop).st_rdev
-	major = dev / 256
-	minor = dev % 256
-	physical_device = "%x:%x" % (major, minor)
-	print "physical_device = %s" % physical_device
-	sys.stdout.flush()
-	return {'Status': 'Success', 'Value': ['Success', ['Vdi', {'backend_domain': '0', 'physical_device': physical_device }]]}
+    def vdi_attach(self, task, dp, sr, vdi, read_write):
+        path = path_of_vdi(vdi)
+        loop = self.device.add(task, path)
+        dev = os.stat(loop).st_rdev
+        major = dev / 256
+        minor = dev % 256
+        return "%x:%x" % (major, minor)
 
-def vdi_activate(args):
-	print "VDI.activate task:%s sr:%s vdi:%s" % (args["task"], args["sr"], args["vdi"])
-	return { "Status": "Success", "Value": [ "Success", "Unit" ] }
-
-def vdi_deactivate(args):	
-	print "VDI.deactivate task:%s sr:%s vdi:%s" % (args["task"], args["sr"], args["vdi"])
-	return { "Status": "Success", "Value": [ "Success", "Unit" ] }
-
-def vdi_detach(args):
-	print "VDI.detach task:%s sr:%s vdi:%s" % (args["task"], args["sr"], args["vdi"])
-	del_loop_device(args["vdi"])
-	return { "Status": "Success", "Value": [ "Success", "Unit" ] }
+    def vdi_activate(self, task, dp, sr, vdi):
+        pass
+    def vdi_deactivate(self, task, dp, sr, vdi):
+        pass
+    def vdi_detach(self, task, dp, sr, vdi):
+        path = path_of_vdi(vdi)
+        self.device.remove(task, path)
+        
 
 if __name__ == "__main__":
-	res = vdi_create({"name_label":"foo", "virtual_size": "123", "sr": "sr", "task": "task"})
-	print repr(res)
-	loop = add_loop_device("foo")
-	print "loop = %s" % loop
-	del_loop_device("foo")
-	print "OK"
-
-from SimpleXMLRPCServer import SimpleXMLRPCServer
-
-server = SimpleXMLRPCServer(('169.254.0.2', 8080))
-server.register_introspection_functions()
-
-server.register_function(sr_attach, "SR.attach")
-server.register_function(sr_detach, "SR.detach")
-server.register_function(vdi_create, "VDI.create")
-server.register_function(vdi_destroy, "VDI.destroy")
-server.register_function(vdi_attach, "VDI.attach")
-server.register_function(vdi_detach, "VDI.detach")
-server.register_function(vdi_activate, "VDI.activate")
-server.register_function(vdi_deactivate, "VDI.deactivate")
-
-if __name__ == "__main__":
-	server.serve_forever()
+    arch = run("startup", "uname")
+    if arch == "Linux":
+        log("startup: Using loop devices")
+        start(RawFiles(Loop()))
+    elif arch == "FreeBSD":
+        log("startup: Using mdconfig devices")
+        start(RawFiles(Mdconfig()))
+    else:
+        log("startup: Unknown architecture: %s" % arch)
