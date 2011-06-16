@@ -223,52 +223,6 @@ end
 
 module Vbd = struct
 
-let major_number_table = [| 3; 22; 33; 34; 56; 57; 88; 89; 90; 91 |]
-
-(** Given a string device name, return the major and minor number *)
-let device_major_minor name =
-	(* This is the same algorithm xend uses: *)
-	let a = int_of_char 'a' in
-	(* Interpret as 'sda1', 'hda' etc *)
-	try
-		let number chars =
-			if chars = [] then
-				0
-			else
-			int_of_string (String.implode chars) in
-		match String.explode name with
-		| 's' :: 'd' :: ('a'..'p' as letter) :: rest ->
-			8, 16 * (int_of_char letter - a) + (number rest)
-		| 'x' :: 'v' :: 'd' :: ('a'..'p' as letter) :: rest ->
-			202, 16 * (int_of_char letter - a) + (number rest)
-		| 'h' :: 'd' :: ('a'..'t' as letter) :: rest ->
-			let n = int_of_char letter - a in
-			major_number_table.(n / 2), 64 * (n mod 2) + (number rest)
-		| _ ->
-			raise (Device_unrecognized name)
-	with _ ->
-		let file = if Filename.is_relative name then "/dev/" ^ name else name in
-		Statdev.get_major_minor file
-
-(** Given a major and minor number, return a device name *)
-let major_minor_to_device (major, minor) =
-	let a = int_of_char 'a' in
-	let number x = if x = 0 then "" else string_of_int x in
-	match major with
-	| 8 -> Printf.sprintf "sd%c%s" (char_of_int (minor / 16 + a)) (number (minor mod 16))
-	| 202 -> Printf.sprintf "xvd%c%s" (char_of_int (minor / 16 + a)) (number (minor mod 16))
-	| x ->
-	    (* Find the index of x in the table *)
-	    let n = snd(Array.fold_left (fun (idx, result) n -> idx + 1, if x = n then idx else result) (0, -1) major_number_table) in
-	    if n = -1 then failwith (Printf.sprintf "Couldn't determine device name for (%d, %d)" major minor)
-	    else
-	      let plus_one, minor = if minor >= 64 then 1, minor - 64 else 0, minor in
-	      Printf.sprintf "hd%c%s" (char_of_int (n * 2 + plus_one + a)) (number minor)
-
-let device_name number =
-	let major, minor = number / 256, number mod 256 in
-	major_minor_to_device (major, minor)
-
 type mode = ReadOnly | ReadWrite
 
 let string_of_mode = function
@@ -318,10 +272,6 @@ let devty_of_string = function
 	| "cdrom" -> CDROM
 	| "disk"  -> Disk
 	| _       -> invalid_arg "devty_of_string"
-
-let string_of_major_minor file =
-	let major, minor = device_major_minor file in
-	sprintf "%x:%x" major minor
 
 let kind_of_physty physty =
 	match physty with
@@ -498,7 +448,7 @@ let is_paused ~xs (x: device) =
 (* Add the VBD to the domain, When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then
    performs a 'waitForDevices') *)
-let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device ?params ~dev_type ~unpluggable
+let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~xenstore_keys ~dev_type ~unpluggable
         ?(protocol=Protocol_Native) ?extra_backend_keys ?(extra_private_keys=[]) domid  =
 	let back_tbl = Hashtbl.create 16 and front_tbl = Hashtbl.create 16 in
 	let devid = Device_number.to_xenstore_key device_number in
@@ -507,9 +457,10 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device 
 	  in  device_of_backend backend domid
 	in
 
-	debug "Device.Vbd.add vbd:%s backend_domid:%d physical_device:%s params:%s type:%s"
-		(Device_number.to_debug_string device_number) backend_domid physical_device 
-		(Opt.default "None" (Opt.map (fun x -> "Some " ^ x) params)) (string_of_physty phystype);
+	debug "Device.Vbd.add vbd:%s backend_domid:%d xenstore_keys:%s type:%s"
+		(Device_number.to_debug_string device_number) backend_domid 
+		(String.concat "; " (List.map (fun (k, v) -> k ^ " = " ^ v) xenstore_keys))
+		(string_of_physty phystype);
 	(* Notes:
 	   1. qemu accesses devices images itself and so needs the path of the original
               file (in params)
@@ -524,14 +475,18 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device 
 	     List.iter (fun (k, v) -> Hashtbl.add back_tbl k v) keys
 	 | None -> ());
 
-	(* XXX: egregious hack: if the physical_device is actually a path
-	   in domain0, then convert to the correct format now. *)
-	let physical_device = 
-		if physical_device <> "" && physical_device.[0] = '/'
-		then
-			let major, minor = Statdev.get_major_minor physical_device in
-			sprintf "%x:%x" major minor 
-		else physical_device in
+	(* XXX: move this to dom0's hotplug script *)
+	let xenstore_keys =
+		if backend_domid = 0 && (List.mem_assoc "params" xenstore_keys)
+		then begin
+			let params = List.assoc "params" xenstore_keys in
+			if params <> ""
+			then
+				let major, minor = Statdev.get_major_minor params in
+				let physical_device = sprintf "%x:%x" major minor in
+				("physical-device", physical_device) :: xenstore_keys
+			else xenstore_keys
+		end else xenstore_keys in
 
 	Hashtbl.add_list front_tbl [
 		"backend-id", string_of_int backend_domid;
@@ -540,7 +495,6 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device 
 		"device-type", if dev_type = CDROM then "cdrom" else "disk";
 	];
 	Hashtbl.add_list back_tbl [
-		"physical-device", physical_device;
 		"frontend-id", sprintf "%u" domid;
 		(* Prevents the backend hotplug scripts from running if the frontend disconnects.
 		   This allows the xenbus connection to re-establish itself *)
@@ -551,7 +505,7 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device 
 		"type", backendty_of_physty phystype;
 		"mode", string_of_mode mode;
 	];
-	Opt.iter (fun params -> Hashtbl.add back_tbl "params" params) params;
+	Hashtbl.add_list back_tbl xenstore_keys;
 
 	if protocol <> Protocol_Native then
 		Hashtbl.add front_tbl "protocol" (string_of_protocol protocol);
@@ -590,14 +544,14 @@ let add ~xs ~hvm ~mode ~device_number ~phystype ~backend_domid ~physical_device 
 		if phystype = Phys then begin
 		  try
 			(* Speculatively query the physical device as if a CDROM *)
-			  Opt.iter
-				  (fun physpath ->
-					  match Cdrom.query_cdrom_drive_status physpath with
-						  | Cdrom.DISC_OK -> () (* nothing unusual here *)
-						  | x -> 
-							  error "CDROM device %s: %s" physpath (Cdrom.string_of_cdrom_drive_status x);
-							  raise Cdrom
-				  ) params
+			  if List.mem_assoc "params" xenstore_keys && backend_domid = 0
+			  then 
+				  let physpath = List.assoc "params" xenstore_keys in
+				  match Cdrom.query_cdrom_drive_status physpath with
+					  | Cdrom.DISC_OK -> () (* nothing unusual here *)
+					  | x -> 
+						  error "CDROM device %s: %s" physpath (Cdrom.string_of_cdrom_drive_status x);
+						  raise Cdrom
 		  with 
 		  | Cdrom as e' -> raise e'
 		  | _ -> () (* assume it wasn't a CDROM *)

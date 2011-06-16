@@ -112,15 +112,15 @@ module Builtin_impl = struct
 
 		let attach context ~task ~dp ~sr ~vdi ~read_write =
 			try
-				let physical_device =
+				let params =
 					for_vdi ~task ~sr ~vdi "VDI.attach"
 						(fun device_config _type sr self ->
 							Sm.vdi_attach device_config _type sr self read_write
 						) in
-
+				let xenstore_keys = [ "params", params ] in
 				Mutex.execute vdi_read_write_m
 					(fun () -> Hashtbl.replace vdi_read_write (sr, vdi) read_write);
-				Success (Vdi { backend_domain = Some 0; physical_device = physical_device })
+				Success (Vdi { backend_domain = Some 0; xenstore_keys = xenstore_keys })
 			with Api_errors.Server_error(code, params) ->
 				Failure (Backend_error(code, params))
 
@@ -226,7 +226,7 @@ let driver_of_sr ~__context ~sr =
 let domid_of_sr ~__context ~sr = 
 	let other_config = Db.SR.get_other_config ~__context ~self:sr in
 	if List.mem_assoc "driver" other_config then begin
-		match Db.VM.get_by_name_label ~__context ~label:"sdk" with
+		match Db.VM.get_by_name_label ~__context ~label:"freebsd.amd64" with
 			| vm :: _ ->
 (*
 				if Db.VM.get_power_state ~__context ~self:vm = `Halted
@@ -292,8 +292,8 @@ let on_vdi ~__context ~vbd ~domid f =
 	let dp = Client.DP.create rpc (Ref.string_of task) (datapath_of_vbd ~domid ~device) in
 	f (Ref.string_of task) dp (Ref.string_of sr) (Ref.string_of vdi)
 
-(** [attach_and_activate __context vbd domid f] calls [f physical_device] where
-    [physical_device] is the result of attaching a VDI which is also activated.
+(** [attach_and_activate __context vbd domid f] calls [f xenstore_keys] where
+    [xenstore_keys] is the result of attaching a VDI which is also activated.
     This should be used everywhere except the migrate code, where we want fine-grained
     control of the ordering of attach/activate/deactivate/detach *)
 let attach_and_activate ~__context ~vbd ~domid f =

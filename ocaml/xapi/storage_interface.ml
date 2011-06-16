@@ -30,7 +30,7 @@ type task = string
 	connect a VBD backend to a VBD frontend *)
 type blkback = {
 	backend_domain: int option; (** the domain hosting the blkback instance, if not us *)
-	physical_device: string;    (** the xenstore physical-device key needed by blkback *)
+	xenstore_keys: (string * string) list; (** the xenstore keys needed by associated blkback *)
 }
 
 (** The result of an operation which creates or examines a VDI *)
@@ -63,7 +63,9 @@ type result =
 	| Success of success_t
 	| Failure of failure_t
 
-let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; physical_device = %s }" (match x.backend_domain with None -> "None" | Some x -> Printf.sprintf "Some %d" x) x.physical_device
+let string_of_blkback x = Printf.sprintf "{ backend_domain = %s; xenstore_keys = [ %s ] }" 
+	(match x.backend_domain with None -> "None" | Some x -> Printf.sprintf "Some %d" x) 
+	(String.concat "; " (List.map (fun (k, v) -> k ^ " = " ^ v) x.xenstore_keys))
 
 let string_of_success = function
 	| Vdi x -> Printf.sprintf "VDI %s" (string_of_blkback x)

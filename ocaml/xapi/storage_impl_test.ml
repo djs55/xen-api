@@ -92,7 +92,7 @@ module Debug_print_impl = struct
 						error "VDI.attach dp:%s sr:%s vdi:%s : double attach" dp sr vdi;
 						failwith "double attach"
 						end else Hashtbl.replace attached key ());
-				Success (Storage_interface.Vdi { Storage_interface.backend_domain = None; physical_device = "XXX" })
+				Success (Storage_interface.Vdi { Storage_interface.backend_domain = None; xenstore_keys = [ "params", "some_params" ]})
 			end
 		let activate context ~task ~dp ~sr ~vdi =
 			Mutex.execute m

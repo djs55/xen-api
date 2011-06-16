@@ -211,7 +211,12 @@ let insert  ~__context ~vbd ~vdi =
 		   Storage_access.attach_and_activate ~__context ~vbd ~domid
 			   (fun blkback ->
 				   with_xs (fun xs ->
-					   Device.Vbd.media_insert ~xs ~device_number ~phystype ~physpath:blkback.Storage_interface.physical_device domid
+					   let xenstore_keys = blkback.Storage_interface.xenstore_keys in
+					   if List.mem_assoc "params" xenstore_keys
+					   then
+						   let params = List.assoc "params" xenstore_keys in
+						   Device.Vbd.media_insert ~xs ~device_number ~phystype ~physpath:params domid
+					   else error "no \"params\" in xenstore_keys: cannot insert media"
 				   )
 			   )
 	    end else begin
@@ -270,7 +275,12 @@ let refresh ~__context ~vbd ~vdi =
 			(fun blkback ->
 				with_xs 
 					(fun xs -> 
-						Device.Vbd.media_refresh ~xs ~device_number ~physpath:blkback.Storage_interface.physical_device domid
+						let xenstore_keys = blkback.Storage_interface.xenstore_keys in
+						if List.mem_assoc "params" xenstore_keys
+						then
+							let params = List.assoc "params" xenstore_keys in
+							Device.Vbd.media_refresh ~xs ~device_number ~physpath:params domid
+						else error "no \"params\" in xenstore_keys: cannot refresh media"
 					)
 			)
       )

@@ -102,10 +102,7 @@ class RawFiles:
     def vdi_attach(self, task, dp, sr, vdi, read_write):
         path = path_of_vdi(vdi)
         loop = self.device.add(task, path)
-        dev = os.stat(loop).st_rdev
-        major = dev / 256
-        minor = dev % 256
-        return "%x:%x" % (major, minor)
+        return loop
 
     def vdi_activate(self, task, dp, sr, vdi):
         pass

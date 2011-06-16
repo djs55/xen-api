@@ -361,7 +361,7 @@ let update_vbds doms =
       else
 	Scanf.sscanf vbd "vbd-%d-%d" (fun id devid -> (id, devid))
     in
-    let device_name = Device.Vbd.device_name devid in
+    let device_name = Device_number.to_linux_device (Device_number.of_xenstore_key devid) in
     let vbd_name = Printf.sprintf "vbd_%s" device_name in
     (* If blktap fails to cleanup then we might find a backend domid which doesn't
        correspond to an active domain uuid. Skip these for now. *)

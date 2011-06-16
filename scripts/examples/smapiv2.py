@@ -16,9 +16,9 @@ unit = [ "Success", "Unit" ]
 def newvdi(location, virtual_size):
     return ['Success', ['NewVdi', {'vdi': location, 'virtual_size': str(virtual_size) }]]
 
-def attachedvdi(physical_device):
+def attachedvdi(xenstore_keys):
     # NB domain is ignored
-    return ['Success', ['Vdi', {'backend_domain': '0', 'physical_device': physical_device }]]
+    return ['Success', ['Vdi', {'backend_domain': '0', 'xenstore_keys': xenstore_keys }]]
 
 def value(result):
     return { "Status": "Success", "Value": result }
@@ -84,7 +84,8 @@ class Marshall:
     def vdi_attach(self, args):
         result = self.x.vdi_attach(args["task"], args["dp"], args["sr"], args["vdi"], args["read_write"])
         expect_string(result)
-        return value(attachedvdi(result))
+        xenstore_keys = { "params": result }
+        return value(attachedvdi(xenstore_keys))
     def vdi_activate(self, args):
         result = self.x.vdi_activate(args["task"], args["dp"], args["sr"], args["vdi"])
         expect_none(result)
