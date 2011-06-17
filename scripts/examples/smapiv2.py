@@ -139,6 +139,20 @@ class Server(SimpleXMLRPCServer):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         SimpleXMLRPCServer.server_bind(self)
 
+# This is a hack to patch slow socket.getfqdn calls that
+# BaseHTTPServer (and its subclasses) make.
+# See: http://bugs.python.org/issue6085
+# See: http://www.answermysearches.com/xmlrpc-server-slow-in-python-how-to-fix/2140/
+import BaseHTTPServer
+
+def _bare_address_string(self):
+    host, port = self.client_address[:2]
+    return '%s' % host
+
+BaseHTTPServer.BaseHTTPRequestHandler.address_string = \
+        _bare_address_string
+
+
 # Given an implementation, serve requests forever ###########################
 
 def start(impl):
