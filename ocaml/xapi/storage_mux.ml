@@ -12,6 +12,9 @@
  * GNU Lesser General Public License for more details.
  *)
 
+module D=Debug.Debugger(struct let name="mux" end)
+open D
+
 type processor = Rpc.call -> Rpc.response
 
 open Storage_interface
@@ -22,7 +25,13 @@ type plugin = {
 }
 let plugins : (API.ref_SR, plugin) Hashtbl.t = Hashtbl.create 10
 
-let register sr m d = Hashtbl.replace plugins sr { processor = m; backend_domid = d }
+let debug_printer rpc call = 
+	debug "Rpc.call = %s" (Xmlrpc.string_of_call call);
+	let result = rpc call in
+	debug "Rpc.response = %s" (Xmlrpc.string_of_response result);
+	result
+
+let register sr m d = Hashtbl.replace plugins sr { processor = debug_printer m; backend_domid = d }
 let unregister sr = Hashtbl.remove plugins sr
 (* This is the policy: *)
 let of_sr sr = (Hashtbl.find plugins (Ref.of_string sr)).processor

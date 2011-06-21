@@ -206,44 +206,66 @@ module Builtin_impl = struct
 	end
 end
 
-module Local=Server(Storage_impl.Wrapper(Builtin_impl))
+let driver_domain_key = "driver_domain"
 
-module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"169.254.0.2" ~port:8080 ~path:"/" call end)))
+let driver_domain_of_pbd ~__context ~pbd =
+	let other_config = Db.PBD.get_other_config ~__context ~self:pbd in
+	let dom0 = Helpers.get_domain_zero ~__context in
+	if List.mem_assoc driver_domain_key other_config then begin
+		let v = List.assoc driver_domain_key other_config in
+		if Db.is_valid_ref __context (Ref.of_string v)
+		then Ref.of_string v
+		else
+			try
+				Db.VM.get_by_uuid ~__context ~uuid:v
+			with _ ->
+				failwith (Printf.sprintf "PBD %s has invalid %s key" (Ref.string_of pbd) driver_domain_key)
+	end else dom0
 
-let printer rpc call = 
-	debug "Rpc.call = %s" (Xmlrpc.string_of_call call);
-	let result = rpc call in
-	debug "Rpc.response = %s" (Xmlrpc.string_of_response result);
-	result
+module type SERVER = sig
+	val process : unit -> Rpc.call -> Rpc.response 
+end
 
-let driver_of_sr ~__context ~sr = 
-	let other_config = Db.SR.get_other_config ~__context ~self:sr in
-(*
-	let module Remote=Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host:"169.254.0.2" ~port:8080 ~path:"/" call end))) in
-*)
-	printer (if List.mem_assoc "driver" other_config then Remote.process () else Local.process ())
+let make_local () =
+	(module Server(Storage_impl.Wrapper(Builtin_impl)) : SERVER)
 
-let domid_of_sr ~__context ~sr = 
-	let other_config = Db.SR.get_other_config ~__context ~self:sr in
-	if List.mem_assoc "driver" other_config then begin
-		match Db.VM.get_by_name_label ~__context ~label:"freebsd.amd64" with
-			| vm :: _ ->
-(*
-				if Db.VM.get_power_state ~__context ~self:vm = `Halted
-				then Helpers.call_api_functions ~__context (fun rpc session_id -> XenAPI.VM.start rpc session_id vm false false);
-*)
-				let domid = Db.VM.get_domid ~__context ~self:vm in
-				let domid = if domid < 1L then (* failwith "driver domain offline" *)0L else domid in
-				let domid = Int64.to_int domid in
-				info "Using driver domain: %d" domid;
-				domid
-			| [] -> failwith "failed to find driver domain"
-	end else 0
+let make_remote host =
+	(module Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host ~port:8080 ~path:"/" call end))) : SERVER)
 
-let bind ~__context ~sr = 
-	Storage_mux.register sr (driver_of_sr ~__context ~sr) (domid_of_sr ~__context ~sr)
+let bind ~__context ~pbd = 
+	(* Start the VM if necessary, discover its domid *)
+	let driver = driver_domain_of_pbd ~__context ~pbd in
+	if Db.VM.get_power_state ~__context ~self:driver = `Halted then begin
+		info "PBD %s driver domain %s is offline: starting" (Ref.string_of pbd) (Ref.string_of driver);
+		Helpers.call_api_functions ~__context 
+			(fun rpc session_id -> XenAPI.VM.start rpc session_id driver false false);
+	end;
+	let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:driver) in
+	let ip_of driver =
+		(* Find the VIF on the Host internal management network *)
+		let vifs = Db.VM.get_VIFs ~__context ~self:driver in
+		let hin = Helpers.get_host_internal_management_network ~__context in
+		let ip = 
+			let vif =
+				try
+					List.find (fun vif -> Db.VIF.get_network ~__context ~self:vif = hin) vifs
+				with Not_found -> failwith (Printf.sprintf "PBD %s driver domain %s has no VIF on host internal management network" (Ref.string_of pbd) (Ref.string_of driver)) in
+			match Xapi_udhcpd.get_ip ~__context vif with
+				| Some (a, b, c, d) -> Printf.sprintf "%d.%d.%d.%d" a b c d
+				| None -> failwith (Printf.sprintf "PBD %s driver domain %s has no IP on the host internal management network" (Ref.string_of pbd) (Ref.string_of driver)) in
 
-let unbind ~__context ~sr =
+		info "PBD %s driver domain domid:%d ip:%s" (Ref.string_of pbd) domid ip;
+		if not(System_domains.wait_for_ip ip)
+		then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to IP ping" (Ref.string_of pbd) (Ref.string_of driver));
+		ip in
+
+	let dom0 = Helpers.get_domain_zero ~__context in
+	let module Impl = (val (if driver = dom0 then make_local () else make_remote (ip_of driver)): SERVER) in 
+	let sr = Db.PBD.get_SR ~__context ~self:pbd in
+	Storage_mux.register sr (Impl.process ()) domid
+
+let unbind ~__context ~pbd =
+	let sr = Db.PBD.get_SR ~__context ~self:pbd in
 	Storage_mux.unregister sr
 
 let rpc call = Storage_mux.Server.process () call
@@ -281,12 +303,20 @@ let expect_string f x = match x with
 	| Success (String x) -> f x
 	| _ -> unexpected_result "String _" x
 
+let pbd_of_sr ~__context ~sr =
+	let pbd, _ = 
+		try 
+			List.find (fun (_, pbd_r) -> pbd_r.API.pBD_SR = sr) (Helpers.get_my_pbds __context) 
+		with Not_found -> failwith (Printf.sprintf "pbd_of_sr failed to find PBD for SR %s" (Ref.string_of sr)) in
+	pbd
+
 (** [on_vdi __context vbd domid f] calls [f rpc dp sr vdi] which is
     useful for executing Storage_interface.Client.VDI functions  *)
 let on_vdi ~__context ~vbd ~domid f =
 	let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
 	let sr = Db.VDI.get_SR ~__context ~self:vdi in
-	bind ~__context ~sr;
+	let pbd = pbd_of_sr ~__context ~sr in
+	bind ~__context ~pbd;
 	let device = Db.VBD.get_device ~__context ~self:vbd in
 	let task = Context.get_task_id __context in
 	let dp = Client.DP.create rpc (Ref.string_of task) (datapath_of_vbd ~domid ~device) in

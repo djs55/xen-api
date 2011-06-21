@@ -32,7 +32,9 @@ let device_of_vbd ~__context ~self =
 		else
 			let vdi = Db.VBD.get_VDI ~__context ~self in
 			let sr = Db.VDI.get_SR ~__context ~self:vdi in
-			Storage_access.domid_of_sr ~__context ~sr in
+			let pbd = Storage_access.pbd_of_sr ~__context ~sr in
+			let driver_domain = Storage_access.driver_domain_of_pbd ~__context ~pbd in
+			Int64.to_int (Db.VM.get_domid ~__context ~self:driver_domain) in
   let vm = Db.VBD.get_VM ~__context ~self in
   let domid = Int64.to_int (Db.VM.get_domid ~__context ~self:vm) in
   let hvm = Xc.with_intf (fun xc -> (Xc.domain_getinfo xc domid).Xc.hvm_guest) in

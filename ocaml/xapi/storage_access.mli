@@ -15,15 +15,17 @@
  * @group Storage
  *)
 
-(** [bind __context sr] causes the storage_access module to choose the most
-	appropriate driver implementation for the given [sr] *)
-val bind: __context:Context.t -> sr:API.ref_SR -> unit
+(** [bind __context pbd] causes the storage_access module to choose the most
+	appropriate driver implementation for the given [pbd] *)
+val bind: __context:Context.t -> pbd:API.ref_PBD -> unit
  
-(** [unbind __context sr] causes the storage access module to forget the association
-    between [sr] and driver implementation *)
-val unbind: __context:Context.t -> sr:API.ref_SR -> unit
+(** [unbind __context pbd] causes the storage access module to forget the association
+    between [pbd] and driver implementation *)
+val unbind: __context:Context.t -> pbd:API.ref_PBD -> unit
 
-val domid_of_sr: __context:Context.t -> sr:API.ref_SR -> int
+val driver_domain_of_pbd: __context:Context.t -> pbd:API.ref_PBD -> API.ref_VM
+
+val pbd_of_sr: __context:Context.t -> sr:API.ref_SR -> API.ref_PBD
 
 (** [rpc] is an Rpc.call -> Rpc.response function which talks to the storage multiplexor *)
 val rpc: Rpc.call -> Rpc.response

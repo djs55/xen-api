@@ -109,7 +109,7 @@ let plug ~__context ~self =
 			begin
 				let sr = Db.PBD.get_SR ~__context ~self in
 				check_sharing_constraint ~__context ~self:sr;
-				Storage_access.bind ~__context ~sr;
+				Storage_access.bind ~__context ~pbd:self;
 
 				let task = Ref.string_of (Context.get_task_id __context) in
 				Storage_access.expect_unit (fun () -> ())
@@ -182,7 +182,7 @@ let unplug ~__context ~self =
 			let task = Ref.string_of (Context.get_task_id __context) in
 			Storage_access.expect_unit (fun () -> ())
 				(Storage_interface.Client.SR.detach Storage_access.rpc task (Ref.string_of sr));
-			Storage_access.unbind ~__context ~sr;
+			Storage_access.unbind ~__context ~pbd:self;
 			Db.PBD.set_currently_attached ~__context ~self ~value:false
 		end
 
