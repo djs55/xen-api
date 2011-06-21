@@ -30,9 +30,9 @@ let set_is_system_domain ~__context ~self ~value =
 	Db.VM.remove_from_other_config ~__context ~self ~key:system_domain_key;
 	Db.VM.add_to_other_config ~__context ~self ~key:system_domain_key ~value
 
-(* [wait_for_ip ?timeout ip] returns true if [ip] becomes pingable within [timeout], 
-   false otherwise *)
-let wait_for_ip ?(timeout=120.) ip =
+(* [wait_for ?timeout f] returns true if [f()] (called at 1Hz) returns true within
+   the [timeout] period and false otherwise *)
+let wait_for ?(timeout=120.) f =
 	let start = Unix.gettimeofday () in
 	let finished = ref false in
 	let success = ref false in
@@ -42,10 +42,17 @@ let wait_for_ip ?(timeout=120.) ip =
 		then finished := true
 		else 
 			try
-				let (_: string * string) = Forkhelpers.execute_command_get_output "ping" [ "-c"; "1"; "-w"; string_of_int (int_of_float (remaining +. 1.)) ] in
-				success := true;
-				finished := true
+				if f () then begin
+					success := true;
+					finished := true
+				end else Thread.delay 1.
 			with _ ->
 				Thread.delay 1.
 	done;
 	!success
+
+let pingable ip () =
+	try
+		let (_: string * string) = Forkhelpers.execute_command_get_output "ping" [ "-c"; "1"; "-w"; "1"; ip ] in
+		true
+	with _ -> false
