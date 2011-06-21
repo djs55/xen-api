@@ -15,6 +15,9 @@
  * @group Helper functions for handling system domains
  *)
 
+module D=Debug.Debugger(struct let name="system_domains" end)
+open D
+
 let system_domain_key = "is_system_domain"
 
 let bool_of_string x = try bool_of_string x with _ -> false
@@ -54,5 +57,13 @@ let wait_for ?(timeout=120.) f =
 let pingable ip () =
 	try
 		let (_: string * string) = Forkhelpers.execute_command_get_output "ping" [ "-c"; "1"; "-w"; "1"; ip ] in
+		true
+	with _ -> false
+
+let queryable ip port () =
+	let rpc = Rpc_client.do_rpc ~version:"1.0" ~host:ip ~port ~path:"/" in
+	try
+		let q = Storage_interface.Client.query rpc () in
+		info "%s:%s:%s at %s:%d" q.Storage_interface.name q.Storage_interface.vendor q.Storage_interface.version ip port;
 		true
 	with _ -> false

@@ -264,6 +264,8 @@ let bind ~__context ~pbd =
 		info "PBD %s driver domain domid:%d ip:%s" (Ref.string_of pbd) domid ip;
 		if not(System_domains.wait_for (System_domains.pingable ip))
 		then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to IP ping" (Ref.string_of pbd) (Ref.string_of driver));
+		if not(System_domains.wait_for (System_domains.queryable ip 8080))
+		then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to XMLRPC query" (Ref.string_of pbd) (Ref.string_of driver));
 		ip in
 
 	let dom0 = Helpers.get_domain_zero ~__context in
