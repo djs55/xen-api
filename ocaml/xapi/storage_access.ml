@@ -32,6 +32,13 @@ module Builtin_impl = struct
 
 	type context = unit
 
+	let query context () = {
+		name = "SMAPIv1 adapter";
+		vendor = "XCP";
+		version = "0.1";
+		features = [];
+	}
+
 	module DP = struct
 		let create context ~task ~id = assert false
 		let destroy context ~task ~dp = assert false
@@ -255,7 +262,7 @@ let bind ~__context ~pbd =
 				| None -> failwith (Printf.sprintf "PBD %s driver domain %s has no IP on the host internal management network" (Ref.string_of pbd) (Ref.string_of driver)) in
 
 		info "PBD %s driver domain domid:%d ip:%s" (Ref.string_of pbd) domid ip;
-		if not(System_domains.wait_for_ip ip)
+		if not(System_domains.wait_for (System_domains.pingable ip))
 		then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to IP ping" (Ref.string_of pbd) (Ref.string_of driver));
 		ip in
 

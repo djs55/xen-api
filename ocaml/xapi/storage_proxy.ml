@@ -23,6 +23,8 @@ end
 
 module Proxy = functor(RPC: RPC) -> struct
 	type context = unit
+
+	let query _ = Client.query RPC.rpc
 	module DP = struct
 		let create _ = Client.DP.create RPC.rpc
 		let destroy _ = Client.DP.destroy RPC.rpc

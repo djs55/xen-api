@@ -51,6 +51,13 @@ let fail_or f results =
 
 module Mux = struct
 	type context = unit
+
+	let query context () = {
+		name = "storage multiplexor";
+		vendor = "XCP";
+		version = "0.1";
+		features = [];
+	}
 	module DP = struct
 		let create context ~task ~id = id (* XXX: is this pointless? *)
 		let destroy context ~task ~dp ~allow_leak =

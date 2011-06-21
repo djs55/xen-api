@@ -88,6 +88,16 @@ let success = function
 	| Success _ -> true
 	| Failure _ -> false
 
+type query_result = {
+	name: string;
+	vendor: string;
+	version: string;
+	features: string list;
+}
+
+(** [query ()] returns information about this storage driver *)
+external query: unit -> query_result = ""
+
 module DP = struct
 	(** Functions which create/destroy (or register/unregister) dps *)
 

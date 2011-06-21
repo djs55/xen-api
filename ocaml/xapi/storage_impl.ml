@@ -249,6 +249,8 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 		| Success Unit -> ()
 		| x -> Errors.add dp sr vdi (string_of_result x)
 
+	let query = Impl.query
+
 	module VDI = struct
 		type vdi_locks = (string, unit) Storage_locks.t
 
