@@ -42,12 +42,12 @@ let set_is_system_domain ~__context ~self ~value =
 let storage_driver_domain_key = "storage_driver_domain"
 
 let pbd_set_storage_driver_domain ~__context ~self ~value =
-	Db.PBD.remove_from_other_config ~__context ~self ~key:system_domain_key;
-	Db.PBD.add_to_other_config ~__context ~self ~key:system_domain_key ~value
+	Db.PBD.remove_from_other_config ~__context ~self ~key:storage_driver_domain_key;
+	Db.PBD.add_to_other_config ~__context ~self ~key:storage_driver_domain_key ~value
 
 let vm_set_storage_driver_domain ~__context ~self ~value =
-	Db.VM.remove_from_other_config ~__context ~self ~key:system_domain_key;
-	Db.VM.add_to_other_config ~__context ~self ~key:system_domain_key ~value
+	Db.VM.remove_from_other_config ~__context ~self ~key:storage_driver_domain_key;
+	Db.VM.add_to_other_config ~__context ~self ~key:storage_driver_domain_key ~value
 
 let storage_driver_domain_of_pbd ~__context ~pbd =
 	let other_config = Db.PBD.get_other_config ~__context ~self:pbd in
