@@ -355,11 +355,20 @@ let dp_destroy ~__context dp allow_leak =
 let resynchronise_pbds ~__context ~pbds =
 	let task = Context.get_task_id __context in
 	let srs = Client.SR.list rpc (Ref.string_of task) in
-	debug "Currently-attached SRs: [ %s ]" (String.concat "; " srs);
+	debug "Currently-attached SRs according to the storage layer: [ %s ]" (String.concat "; " srs);
 	List.iter
 		(fun self ->
 			let sr = Db.PBD.get_SR ~__context ~self in
 			let value = List.mem (Ref.string_of sr) srs in
+			let value = if value then begin
+				(* Look for a failed driver domain *)
+				let domain = System_domains.storage_driver_domain_of_pbd ~__context ~pbd:self in
+				if Db.VM.get_power_state ~__context ~self:domain <> `Running then begin
+					error "SR %s has PBD %s which is supposed to be attached but the driver domain %s is offline" (Ref.string_of sr) (Ref.string_of self) (Ref.string_of domain);
+					false
+				end else true
+			end else value in
+
 			debug "Setting PBD %s currently_attached <- %b" (Ref.string_of self) value;
 			Db.PBD.set_currently_attached ~__context ~self ~value
 		) pbds
