@@ -88,7 +88,12 @@ class RawFiles:
         return { "name": "RawFiles",
                  "vendor": "XCP",
                  "version": "0.1",
-                 "features": [ "one", "two" ] }
+                 "features": [ feature_vdi_create,
+                               feature_vdi_destroy,
+                               feature_vdi_attach,
+                               feature_vdi_detach,
+                               feature_vdi_activate,
+                               feature_vdi_deactivate ] }
 
     def sr_attach(self, task, sr):
         if not(os.path.exists(root)):
