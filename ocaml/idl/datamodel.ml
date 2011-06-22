@@ -322,6 +322,9 @@ let _ =
   error Api_errors.message_deprecated []
     ~doc:"This message has been deprecated." ();
 
+  error Api_errors.is_system_vm ["VM"]
+	  ~doc:"The operation is not permitted on system VMs." ();
+
   error Api_errors.permission_denied ["message"]
     ~doc:"Caller not allowed to perform this operation." ();
 

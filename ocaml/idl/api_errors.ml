@@ -20,6 +20,8 @@ let to_string = function
 
 let message_deprecated = "MESSAGE_DEPRECATED"
 
+let is_system_vm = "IS_SYSTEM_VM"
+
 let permission_denied = "PERMISSION_DENIED"
 let internal_error = "INTERNAL_ERROR"
 let map_duplicate_key = "MAP_DUPLICATE_KEY"

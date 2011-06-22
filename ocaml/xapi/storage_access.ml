@@ -213,22 +213,6 @@ module Builtin_impl = struct
 	end
 end
 
-let driver_domain_key = "driver_domain"
-
-let driver_domain_of_pbd ~__context ~pbd =
-	let other_config = Db.PBD.get_other_config ~__context ~self:pbd in
-	let dom0 = Helpers.get_domain_zero ~__context in
-	if List.mem_assoc driver_domain_key other_config then begin
-		let v = List.assoc driver_domain_key other_config in
-		if Db.is_valid_ref __context (Ref.of_string v)
-		then Ref.of_string v
-		else
-			try
-				Db.VM.get_by_uuid ~__context ~uuid:v
-			with _ ->
-				failwith (Printf.sprintf "PBD %s has invalid %s key" (Ref.string_of pbd) driver_domain_key)
-	end else dom0
-
 module type SERVER = sig
 	val process : unit -> Rpc.call -> Rpc.response 
 end
@@ -241,7 +225,7 @@ let make_remote host =
 
 let bind ~__context ~pbd = 
 	(* Start the VM if necessary, discover its domid *)
-	let driver = driver_domain_of_pbd ~__context ~pbd in
+	let driver = System_domains.storage_driver_domain_of_pbd ~__context ~pbd in
 	if Db.VM.get_power_state ~__context ~self:driver = `Halted then begin
 		info "PBD %s driver domain %s is offline: starting" (Ref.string_of pbd) (Ref.string_of driver);
 		Helpers.call_api_functions ~__context 

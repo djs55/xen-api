@@ -326,6 +326,18 @@ let check_operation_error ~__context ~vmr ~vmgmr ~ref ~clone_suspended_vm_enable
 		then check_pci ~op ~ref_str
 		else None) in
 
+	(* If a system domain is in use, prevent it being shutdown *)
+	let current_error = check current_error (fun () ->
+		if System_domains.is_in_use ~__context ~self:ref
+			&& (match op with
+				| `clean_shutdown | `hard_shutdown | `clean_reboot | `hard_reboot
+				| `pool_migrate | `suspend
+					-> true
+				| _ -> false)
+		then Some (Api_errors.is_system_vm, [ ref_str ])
+		else None
+	) in
+
 	current_error
 
 let maybe_get_guest_metrics ~__context ~ref =

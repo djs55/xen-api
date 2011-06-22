@@ -23,8 +23,6 @@ val bind: __context:Context.t -> pbd:API.ref_PBD -> unit
     between [pbd] and driver implementation *)
 val unbind: __context:Context.t -> pbd:API.ref_PBD -> unit
 
-val driver_domain_of_pbd: __context:Context.t -> pbd:API.ref_PBD -> API.ref_VM
-
 val pbd_of_sr: __context:Context.t -> sr:API.ref_SR -> API.ref_PBD
 
 (** [rpc] is an Rpc.call -> Rpc.response function which talks to the storage multiplexor *)

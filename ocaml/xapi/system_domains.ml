@@ -18,6 +18,8 @@
 module D=Debug.Debugger(struct let name="system_domains" end)
 open D
 
+(** If a VM is a system domain then xapi will perform lifecycle operations on demand,
+    and will allow this VM to start even if a host is disabled. *)
 let system_domain_key = "is_system_domain"
 
 let bool_of_string x = try bool_of_string x with _ -> false
@@ -32,6 +34,48 @@ let get_is_system_domain ~__context ~self =
 let set_is_system_domain ~__context ~self ~value =
 	Db.VM.remove_from_other_config ~__context ~self ~key:system_domain_key;
 	Db.VM.add_to_other_config ~__context ~self ~key:system_domain_key ~value
+
+(** If a VM is a driver domain then it hosts backends for either disk or network
+    devices. We link PBD.other_config:storage_driver_domain_key to 
+    VM.other_config:storage_driver_domain_key and we ensure the VM is marked as
+    a system domain. *)
+let storage_driver_domain_key = "storage_driver_domain"
+
+let pbd_set_storage_driver_domain ~__context ~self ~value =
+	Db.PBD.remove_from_other_config ~__context ~self ~key:system_domain_key;
+	Db.PBD.add_to_other_config ~__context ~self ~key:system_domain_key ~value
+
+let vm_set_storage_driver_domain ~__context ~self ~value =
+	Db.VM.remove_from_other_config ~__context ~self ~key:system_domain_key;
+	Db.VM.add_to_other_config ~__context ~self ~key:system_domain_key ~value
+
+let storage_driver_domain_of_pbd ~__context ~pbd =
+	let other_config = Db.PBD.get_other_config ~__context ~self:pbd in
+	let dom0 = Helpers.get_domain_zero ~__context in
+	if List.mem_assoc storage_driver_domain_key other_config then begin
+		let v = List.assoc storage_driver_domain_key other_config in
+		if Db.is_valid_ref __context (Ref.of_string v)
+		then Ref.of_string v
+		else
+			try
+				Db.VM.get_by_uuid ~__context ~uuid:v
+			with _ ->
+				failwith (Printf.sprintf "PBD %s has invalid %s key" (Ref.string_of pbd) storage_driver_domain_key)
+	end else dom0
+
+let storage_driver_domain_of_pbd ~__context ~pbd =
+	let domain = storage_driver_domain_of_pbd ~__context ~pbd in
+	set_is_system_domain ~__context ~self:domain ~value:"true";
+	pbd_set_storage_driver_domain ~__context ~self:pbd ~value:(Ref.string_of domain);
+	vm_set_storage_driver_domain ~__context ~self:domain ~value:(Ref.string_of pbd);
+	domain
+
+let is_in_use ~__context ~self =
+	let other_config = Db.VM.get_other_config ~__context ~self in
+	let pbd = Ref.of_string (List.assoc storage_driver_domain_key other_config) in
+	if Db.is_valid_ref __context pbd
+	then Db.PBD.get_currently_attached ~__context ~self:pbd
+	else false
 
 (* [wait_for ?timeout f] returns true if [f()] (called at 1Hz) returns true within
    the [timeout] period and false otherwise *)
