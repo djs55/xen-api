@@ -103,7 +103,7 @@ let wait_for ?(timeout=120.) f =
 
 let pingable ip () =
 	try
-		let (_: string * string) = Forkhelpers.execute_command_get_output "ping" [ "-c"; "1"; "-w"; "1"; ip ] in
+		let (_: string * string) = Forkhelpers.execute_command_get_output "/bin/ping" [ "-c"; "1"; "-w"; "1"; ip ] in
 		true
 	with _ -> false
 
