@@ -58,6 +58,10 @@ class Marshall:
     def __init__(self, x):
         self.x = x
 
+    def query(self, args):
+        result = self.x.query()
+        return value(result)
+
     def sr_attach(self, args):
         result = self.x.sr_attach(args["task"], args["sr"])
         expect_none(result)
@@ -104,7 +108,9 @@ class Marshall:
         try:
             log("method = %s params = %s" % (method, repr(params)))
             args = params[0]
-            if method == "SR.attach":
+            if method == "query":
+                return self.query(args)
+            elif method == "SR.attach":
                 return self.sr_attach(args)
             elif method == "SR.detach":
                 return self.sr_detach(args)

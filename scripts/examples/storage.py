@@ -84,6 +84,12 @@ class RawFiles:
     def __init__(self, device):
         self.device = device
 
+    def query(self):
+        return { "name": "RawFiles",
+                 "vendor": "XCP",
+                 "version": "0.1",
+                 "features": [ "one", "two" ] }
+
     def sr_attach(self, task, sr):
         if not(os.path.exists(root)):
             raise BackendError("SR directory doesn't exist", [ root ])
