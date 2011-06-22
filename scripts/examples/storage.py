@@ -20,6 +20,7 @@
 
 import os, sys, commands
 
+import smapiv2
 from smapiv2 import log, start, BackendError
 
 root = "/sr/"
@@ -88,12 +89,12 @@ class RawFiles:
         return { "name": "RawFiles",
                  "vendor": "XCP",
                  "version": "0.1",
-                 "features": [ feature_vdi_create,
-                               feature_vdi_destroy,
-                               feature_vdi_attach,
-                               feature_vdi_detach,
-                               feature_vdi_activate,
-                               feature_vdi_deactivate ] }
+                 "features": [ smapiv2.feature_vdi_create,
+                               smapiv2.feature_vdi_destroy,
+                               smapiv2.feature_vdi_attach,
+                               smapiv2.feature_vdi_detach,
+                               smapiv2.feature_vdi_activate,
+                               smapiv2.feature_vdi_deactivate ] }
 
     def sr_attach(self, task, sr):
         if not(os.path.exists(root)):
