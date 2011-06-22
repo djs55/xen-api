@@ -72,10 +72,13 @@ let storage_driver_domain_of_pbd ~__context ~pbd =
 
 let is_in_use ~__context ~self =
 	let other_config = Db.VM.get_other_config ~__context ~self in
-	let pbd = Ref.of_string (List.assoc storage_driver_domain_key other_config) in
-	if Db.is_valid_ref __context pbd
-	then Db.PBD.get_currently_attached ~__context ~self:pbd
-	else false
+	List.mem_assoc storage_driver_domain_key other_config
+		&& (
+			let pbd = Ref.of_string (List.assoc storage_driver_domain_key other_config) in
+			if Db.is_valid_ref __context pbd
+			then Db.PBD.get_currently_attached ~__context ~self:pbd
+			else false
+		)
 
 (* [wait_for ?timeout f] returns true if [f()] (called at 1Hz) returns true within
    the [timeout] period and false otherwise *)
