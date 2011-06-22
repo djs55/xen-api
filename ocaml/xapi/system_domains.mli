@@ -18,6 +18,9 @@
 (** [is_system_domain vm] returns true if [vm] is a special system domain *)
 val is_system_domain: API.vM_t -> bool
 
+(** [get_is_system_domain __context self] returns true if [vm] is a special system domain *)
+val get_is_system_domain: __context:Context.t -> self:API.ref_VM -> bool
+
 (** [storage_driver_domain_of_pbd __context pbd] returns the VM which is hosting
     the storage backends for [pbd] *)
 val storage_driver_domain_of_pbd: __context:Context.t -> pbd:API.ref_PBD -> API.ref_VM

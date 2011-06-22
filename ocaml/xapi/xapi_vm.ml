@@ -196,68 +196,85 @@ let unpause  ~__context ~vm =
    same VM twice during memory calculations to determine whether a given VM can start on a particular host..
 *)
 
-let start ~__context ~vm ~start_paused:paused ~force =
+let start_nolock ~__context ~vm ~start_paused:paused ~force =
+	debug "start: making sure the VM really is halted";
+	assert_power_state_is ~__context ~vm ~expected:`Halted;
+
+	debug "start: checking that VM can run on this host";
+	(* Message forwarding layer has guaranteed to set the *)
+	(* last_boot record with the configuration it used to *)
+	(* perform the memory check.                          *)
+	let snapshot = Helpers.get_boot_record ~__context ~self:vm in
+	(* Xapi_vm_helpers.assert_can_boot_here not required *)
+	(* since the message_forwarding layer has already    *)
+	(* done it and it's very expensive on a slave.       *)
+	if Db.VM.get_ha_restart_priority ~__context ~self:vm = Constants.ha_restart
+	then Db.VM.set_ha_always_run ~__context ~self:vm ~value:true;
+	
+	(* check BIOS strings: set to generic values if empty *)
+	let bios_strings = Db.VM.get_bios_strings ~__context ~self:vm in
+	if bios_strings = [] then begin
+		info "The VM's BIOS strings were not yet filled in. The VM is now made BIOS-generic.";
+		Db.VM.set_bios_strings ~__context ~self:vm ~value:Xapi_globs.generic_bios_strings
+	end;
+
+	(* Invoke pre-start hook *)
+	Xapi_hooks.vm_pre_start ~__context ~reason:Xapi_hooks.reason__none ~vm;
+
+	debug "start: bringing up domain in the paused state";
+	Vmops.start_paused
+		~progress_cb:(TaskHelper.set_progress ~__context) ~pcidevs:None ~__context ~vm ~snapshot;
+	delete_guest_metrics ~__context ~self:vm;
+
+	let localhost = Helpers.get_localhost ~__context in
+	Helpers.call_api_functions ~__context
+		(fun rpc session_id -> Client.VM.atomic_set_resident_on rpc session_id vm localhost);
+
+	(* Populate last_boot_CPU_flags with the vendor and feature set of the host CPU. *)
+	let host = Db.VM.get_resident_on ~__context ~self:vm in
+	Xapi_vm_helpers.populate_cpu_flags ~__context ~vm ~host;
+
+	if paused then
+		Db.VM.set_power_state ~__context ~self:vm ~value:`Paused
+	else (
+		let domid = Helpers.domid_of_vm ~__context ~self:vm in
+		debug "start: unpausing domain (domid %d)" domid;
+		with_xc_and_xs
+			(fun xc xs -> Domain.unpause ~xc domid);
+		(*
+		(* hack to get xmtest to work *)
+		  if Pool_role.is_master () then
+		  Monitor_master.update_all ~__context (Monitor.read_all_dom0_stats ());
+		*)
+		Db.VM.set_power_state ~__context ~self:vm ~value:`Running
+	);
+
+	let start_delay = Db.VM.get_start_delay ~__context ~self:vm in
+	Thread.delay (Int64.to_float start_delay)
+
+let start_lock ~__context ~vm ~start_paused ~force =
+	Locking_helpers.with_lock vm
+		(fun token () ->
+			start_nolock ~__context ~vm ~start_paused ~force
+		)
+
+let start ~__context ~vm ~start_paused ~force =
 	License_check.with_vm_license_check ~__context vm (fun () ->
-		Local_work_queue.wait_in_line Local_work_queue.normal_vm_queue
+		(* If the VM is a system domain, allow it to start unconditionally to
+		   to avoid deadlock. *)
+		if System_domains.get_is_system_domain ~__context ~self:vm
+		then begin
+			info "VM.start %s is a system domain so avoiding queue" (Ref.string_of vm);
+			start_lock ~__context ~vm ~start_paused ~force
+		end else begin
+			info "VM.start %s is a user domain so joining the normal_vm_queue" (Ref.string_of vm);
+			Local_work_queue.wait_in_line Local_work_queue.normal_vm_queue
 			(Printf.sprintf "VM.start %s" (Context.string_of_task __context))
 			(fun () ->
-				Locking_helpers.with_lock vm
-					(fun token () ->
-						debug "start: making sure the VM really is halted";
-						assert_power_state_is ~__context ~vm ~expected:`Halted;
-
-						debug "start: checking that VM can run on this host";
-						(* Message forwarding layer has guaranteed to set the *)
-						(* last_boot record with the configuration it used to *)
-						(* perform the memory check.                          *)
-						let snapshot = Helpers.get_boot_record ~__context ~self:vm in
-						(* Xapi_vm_helpers.assert_can_boot_here not required *)
-						(* since the message_forwarding layer has already    *)
-						(* done it and it's very expensive on a slave.       *)
-						if Db.VM.get_ha_restart_priority ~__context ~self:vm = Constants.ha_restart
-						then Db.VM.set_ha_always_run ~__context ~self:vm ~value:true;
-
-						(* check BIOS strings: set to generic values if empty *)
-						let bios_strings = Db.VM.get_bios_strings ~__context ~self:vm in
-						if bios_strings = [] then begin
-							info "The VM's BIOS strings were not yet filled in. The VM is now made BIOS-generic.";
-							Db.VM.set_bios_strings ~__context ~self:vm ~value:Xapi_globs.generic_bios_strings
-						end;
-
-						(* Invoke pre-start hook *)
-						Xapi_hooks.vm_pre_start ~__context ~reason:Xapi_hooks.reason__none ~vm;
-
-						debug "start: bringing up domain in the paused state";
-						Vmops.start_paused
-							~progress_cb:(TaskHelper.set_progress ~__context) ~pcidevs:None ~__context ~vm ~snapshot;
-						delete_guest_metrics ~__context ~self:vm;
-
-						let localhost = Helpers.get_localhost ~__context in
-						Helpers.call_api_functions ~__context
-							(fun rpc session_id -> Client.VM.atomic_set_resident_on rpc session_id vm localhost);
-
-						(* Populate last_boot_CPU_flags with the vendor and feature set of the host CPU. *)
-						let host = Db.VM.get_resident_on ~__context ~self:vm in
-						Xapi_vm_helpers.populate_cpu_flags ~__context ~vm ~host;
-
-						if paused then
-							Db.VM.set_power_state ~__context ~self:vm ~value:`Paused
-						else (
-							let domid = Helpers.domid_of_vm ~__context ~self:vm in
-							debug "start: unpausing domain (domid %d)" domid;
-							with_xc_and_xs
-								(fun xc xs -> Domain.unpause ~xc domid);
-							(*
-							(* hack to get xmtest to work *)
-							  if Pool_role.is_master () then
-							  Monitor_master.update_all ~__context (Monitor.read_all_dom0_stats ());
-							*)
-							Db.VM.set_power_state ~__context ~self:vm ~value:`Running
-						);
-						
-						let start_delay = Db.VM.get_start_delay ~__context ~self:vm in
-						Thread.delay (Int64.to_float start_delay)
-					) ()))
+				start_lock ~__context ~vm ~start_paused ~force
+			)
+		end
+	) ()
 
 (** For VM.start_on and VM.resume_on the message forwarding layer should only forward here
     if 'host' = localhost *)
