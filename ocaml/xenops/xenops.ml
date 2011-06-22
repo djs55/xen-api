@@ -216,11 +216,22 @@ type device_stat = {
 }
 let device_state_to_sl ds =
 	let int = string_of_int in
-	[ int ds.device.backend.domid; ds.backend_proto; ds.backend_device; ds.backend_state; "->"; int ds.device.frontend.domid; ds.frontend_type; ds.frontend_device; ds.frontend_state ]
+	[ int ds.device.backend.domid; ds.backend_proto; ds.backend_device; ds.backend_state; "->"; ds.frontend_state; ds.frontend_type; ds.frontend_device; int ds.device.frontend.domid; ]
 
 let stat ~xs d =
 	let frontend_state = try xs.Xs.read (sprintf "%s/state" (frontend_path_of_device ~xs d)) with Xb.Noent -> "??" in
 	let backend_state = try xs.Xs.read (sprintf "%s/state" (backend_path_of_device ~xs d)) with Xb.Noent -> "??" in
+	(* The params string can be very long, truncate to a more reasonable width *)
+	let truncate params =
+		let limit = 10 in
+		let dots = "..." in
+		let len = String.length params in
+		if len <= limit 
+		then params
+		else
+			let take = limit - (String.length dots) in
+			dots ^ (String.sub params (len - take) take) in
+			
 	let backend_proto = match d.backend.kind with
 		| Vbd | Tap -> "blk"
 		| Vif -> "net"
@@ -228,14 +239,14 @@ let stat ~xs d =
 	let frontend_type = match d.frontend.kind with
 		| Vbd | Tap -> 
 			let be = frontend_path_of_device ~xs d in
-			(try if xs.Xs.read (sprintf "%s/device-type" be) = "cdrom" then "cd" else "hdd" with _ -> "??")
+			(try if xs.Xs.read (sprintf "%s/device-type" be) = "cdrom" then "cdrom" else "disk" with _ -> "??")
 		| x -> string_of_kind x in
 	let backend_device = match d.backend.kind with
 		| Vbd | Tap -> 
 			let be = backend_path_of_device ~xs d in
 			(try xs.Xs.read (sprintf "%s/physical-device" be)
 			with Xb.Noent ->
-				(try xs.Xs.read (sprintf "%s/params" be)
+				(try truncate (xs.Xs.read (sprintf "%s/params" be))
 				with Xb.Noent -> "??"))
 		| Vif -> "-"
 		| _ -> string_of_int d.backend.devid in
@@ -245,7 +256,7 @@ let stat ~xs d =
 	{ device = d; frontend_state = frontend_state; backend_state = backend_state; frontend_device = frontend_device; frontend_type = frontend_type; backend_proto = backend_proto; backend_device = backend_device }
 
 let list_devices ~xc ~xs =
-	let header = [ "be"; "proto"; "dev"; "state"; "->"; "fe"; "kind"; "dev"; "state" ] in
+	let header = [ "be"; "proto"; "dev"; "state"; "->"; "state"; "kind"; "dev"; "fe" ] in
 	let of_device (d: device) : string list =
 		device_state_to_sl (stat ~xs d) in
 	let l = Xc.domain_getinfolist xc 0 in
