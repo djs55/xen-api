@@ -1,13 +1,26 @@
 #!/usr/bin/env python
 
-import os, sys, socket, traceback
+import os, sys, time, socket, traceback
 
-ip = '169.254.0.2' # XXX
-port = 8080 # XXX
+log_f = os.fdopen(os.dup(sys.stdout.fileno()), "aw")
+pid = None
+
+def reopenlog(log_file):
+    global log_f
+    if log_f:
+        log_f.close()
+    if log_file:
+        log_f = open(log_file, "aw")
+    else:
+        log_f = os.fdopen(os.dup(sys.stdout.fileno()), "aw")
 
 def log(txt):
-    print txt
-    sys.stdout.flush()
+    global log_f, pid
+    if not pid:
+        pid = os.getpid()
+    t = time.strftime("%Y%m%dT%H:%M:%SZ", time.gmtime())
+    print >>log_f, "%s [%d] %s" % (t, pid, txt)
+    log_f.flush()
 
 # Functions to construct SMAPI return types #################################
 
@@ -181,7 +194,8 @@ BaseHTTPServer.BaseHTTPRequestHandler.address_string = \
 
 # Given an implementation, serve requests forever ###########################
 
-def start(impl):
+def start(impl, ip, port):
+    log("will listen on %s:%d" % (ip, port))
     server = Server((ip, port))
     log("server registered on %s:%d" % (ip, port))
     server.register_introspection_functions() # for debugging
