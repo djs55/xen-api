@@ -131,6 +131,7 @@ if __name__ == "__main__":
     parser.add_option("-l", "--log", dest="logfile", help="log to LOG", metavar="LOG")
     parser.add_option("-p", "--port", dest="port", help="listen on PORT", metavar="PORT")
     parser.add_option("-i", "--ip-addr", dest="ip", help="listen on IP", metavar="IP")
+    parser.add_option("-d", "--daemon", action="store_true", dest="daemon", help="run as a background daemon", metavar="DAEMON")
     (options, args) = parser.parse_args()
     if options.logfile:
         from smapiv2 import reopenlog
@@ -145,9 +146,9 @@ if __name__ == "__main__":
     arch = run("startup", "uname")
     if arch == "Linux":
         log("startup: Using loop devices")
-        start(RawFiles(Loop()), ip, port)
+        start(RawFiles(Loop()), ip, port, options.daemon)
     elif arch == "FreeBSD":
         log("startup: Using mdconfig devices")
-        start(RawFiles(Mdconfig()), ip, port)
+        start(RawFiles(Mdconfig()), ip, port, options.daemon)
     else:
         log("startup: Unknown architecture: %s" % arch)

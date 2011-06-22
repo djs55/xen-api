@@ -10,7 +10,7 @@ storageserver_start()
 {
     ip=$(ifconfig xn0 | grep inet | cut -f 2 -d " ")
     cd /root
-    /usr/local/bin/python storage.py --ip-addr ${ip} --port 8080 --log /var/log/SMlog&
+    /usr/local/bin/python storage.py --ip-addr ${ip} --port 8080 --log /var/log/SMlog --daemon
     echo "storageserver started on ${ip}."
 }
 

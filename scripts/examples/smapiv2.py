@@ -168,6 +168,28 @@ class Marshall:
             traceback.print_exc()
             return value(internal_error(str(e)))
 
+# Helper function to daemonise ##############################################
+def daemonize():
+    def fork():
+        try:
+            if os.fork() > 0:
+                # parent
+                sys.exit(0)
+        except Exception, e:
+            print >>sys.stderr, "fork() failed: %s" % e
+            traceback.print_exc()
+            raise
+    fork()
+    os.umask(0)
+    os.chdir("/")
+    os.setsid()
+    fork()
+    devnull = open("/dev/null", "r")
+    os.dup2(devnull.fileno(), sys.stdin.fileno())
+    devnull = open("/dev/null", "aw")
+    os.dup2(devnull.fileno(), sys.stdout.fileno())
+    os.dup2(devnull.fileno(), sys.stderr.fileno())
+
 # SimpleXMLRPCServer with SO_REUSEADDR ######################################
 
 from SimpleXMLRPCServer import SimpleXMLRPCServer
@@ -194,7 +216,10 @@ BaseHTTPServer.BaseHTTPRequestHandler.address_string = \
 
 # Given an implementation, serve requests forever ###########################
 
-def start(impl, ip, port):
+def start(impl, ip, port, daemon):
+    if daemon:
+        log("daemonising")
+        daemonize()
     log("will listen on %s:%d" % (ip, port))
     server = Server((ip, port))
     log("server registered on %s:%d" % (ip, port))
