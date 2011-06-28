@@ -95,6 +95,23 @@ type query_result = {
 	features: string list;
 }
 
+module Driver_info = struct
+	type t = {
+		filename: string;
+		name: string;
+		description: string;
+		vendor: string;
+		copyright: string;
+		version: string;
+		required_api_version: string;
+		capabilities: string list;
+		text_capabilities: string list;
+		configuration: (string * string) list;
+	}
+
+	type ts = t list
+end
+
 (** [query ()] returns information about this storage driver *)
 external query: unit -> query_result = ""
 

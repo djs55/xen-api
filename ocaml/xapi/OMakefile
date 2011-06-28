@@ -88,6 +88,7 @@ XAPI_MODULES = $(COMMON) \
 	sparse_encoding \
 	create_storage \
 	create_networks \
+	xapi_services \
 	xapi_db_upgrade \
 	xapi_fist \
 	xapi_udhcpd \
