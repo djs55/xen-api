@@ -162,6 +162,9 @@ module VDI = struct
 	(** [destroy task sr vdi] removes [vdi] from [sr] *)
 	external destroy : task:task -> sr:sr -> vdi:vdi -> result = ""
 
+	(** [snapshot task sr vdi params] creates a new VDI which is a snapshot of [vdi] in [sr] *)
+	external snapshot : task:task -> sr:sr -> vdi:vdi -> params:(string*string) list -> result = ""
+
 	(** These functions are all idempotent from the point of view of a given [dp]. *)
 
 	(** [attach task dp sr vdi read_write] returns the [blkback] for a given

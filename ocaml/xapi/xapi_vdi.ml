@@ -189,6 +189,34 @@ let require_uuid vdi_info =
   | Some uuid -> uuid
   | None -> failwith "SM backend failed to return <uuid> field" 
 
+let newvdi ~__context ?(is_a_snapshot=false) ?(snapshot_of=Ref.null) ?(snapshot_time=Date.never) ?(_type=`user) sR newvdi =
+	let open Storage_interface in
+	let self = Ref.of_string newvdi.vdi in
+	let old_backend = Db.is_valid_ref __context self in
+	let uuid = if old_backend then Db.VDI.get_uuid ~__context ~self else Uuid.string_of_uuid (Uuid.make_uuid ()) in
+	let location = if old_backend then Db.VDI.get_location ~__context ~self else newvdi.vdi in
+	let sR = if old_backend then Db.VDI.get_SR ~__context ~self else sR in
+	let name_label = if old_backend then Db.VDI.get_name_label ~__context ~self else "" in
+	let name_description = if old_backend then Db.VDI.get_name_label ~__context ~self else "" in
+	let sharable = if old_backend then Db.VDI.get_sharable ~__context ~self else false in
+	let read_only = if old_backend then Db.VDI.get_read_only ~__context ~self else false in
+	let xenstore_data = if old_backend then Db.VDI.get_xenstore_data ~__context ~self else [] in
+	let sm_config = if old_backend then Db.VDI.get_sm_config ~__context ~self else [] in
+	let is_a_snapshot = if old_backend then Db.VDI.get_is_a_snapshot ~__context ~self else is_a_snapshot in
+	let snapshot_of = if old_backend then Db.VDI.get_snapshot_of ~__context ~self else snapshot_of in
+	let snapshot_time = if old_backend then Db.VDI.get_snapshot_time ~__context ~self else snapshot_time in
+	let allow_caching = if old_backend then Db.VDI.get_allow_caching ~__context ~self else false in
+	let on_boot = if old_backend then Db.VDI.get_on_boot ~__context ~self else `persist in
+	let metadata_of_pool = if old_backend then Db.VDI.get_metadata_of_pool ~__context ~self else Ref.null in
+	let metadata_latest = if old_backend then Db.VDI.get_metadata_latest ~__context ~self else false in
+	let _type = if old_backend then Db.VDI.get_type ~__context ~self else _type in
+	let other_config = if old_backend then Db.VDI.get_other_config ~__context ~self else [] in
+	if old_backend then Db.VDI.destroy ~__context ~self;
+	Db.VDI.create ~__context ~ref:self ~uuid ~name_label ~name_description ~allowed_operations:[] ~current_operations:[] ~sR ~virtual_size:newvdi.virtual_size ~physical_utilisation:0L ~_type ~sharable ~read_only ~other_config ~storage_lock:false ~location ~managed:true ~missing:false ~parent:Ref.null ~xenstore_data ~sm_config ~is_a_snapshot ~snapshot_of ~snapshot_time ~tags:[] ~allow_caching ~on_boot ~metadata_of_pool ~metadata_latest;
+
+	update_allowed_operations ~__context ~self;
+	self
+
 let create ~__context ~name_label ~name_description
                   ~sR ~virtual_size ~_type
                   ~sharable ~read_only ~other_config ~xenstore_data ~sm_config ~tags =
@@ -208,18 +236,10 @@ let create ~__context ~name_label ~name_description
 	let task = Context.get_task_id __context in	
 	let open Storage_interface in
 	expect_newvdi
-		(fun newvdi ->
-			if virtual_size < newvdi.virtual_size 
-			then info "sr:%s vdi:%s requested virtual size %Ld < actual virtual size %Ld" (Ref.string_of sR) newvdi.vdi virtual_size newvdi.virtual_size;
-			let self = Ref.of_string newvdi.vdi in
-			let old_backend = Db.is_valid_ref __context self in
-			let uuid = if old_backend then Db.VDI.get_uuid ~__context ~self else Uuid.string_of_uuid (Uuid.make_uuid ()) in
-			let location = if old_backend then Db.VDI.get_location ~__context ~self else newvdi.vdi in
-			if old_backend then Db.VDI.destroy ~__context ~self;
-			Db.VDI.create ~__context ~ref:self ~uuid ~name_label ~name_description ~allowed_operations:[] ~current_operations:[] ~sR ~virtual_size:newvdi.virtual_size ~physical_utilisation:0L ~_type ~sharable ~read_only ~other_config ~storage_lock:false ~location ~managed:true ~missing:false ~parent:Ref.null ~xenstore_data ~sm_config ~is_a_snapshot:false ~snapshot_of:Ref.null ~snapshot_time:Date.never ~tags ~allow_caching:false ~on_boot:`persist ~metadata_of_pool:Ref.null ~metadata_latest:false;
-
-			update_allowed_operations ~__context ~self;
-			self
+		(fun vi ->
+			if virtual_size < vi.virtual_size 
+			then info "sr:%s vdi:%s requested virtual size %Ld < actual virtual size %Ld" (Ref.string_of sR) vi.vdi virtual_size vi.virtual_size;
+			newvdi ~__context sR vi
 		) (Client.VDI.create rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sR)
 			~name_label ~name_description ~virtual_size ~ty:vdi_type ~params:sm_config)
 
@@ -309,26 +329,22 @@ open Client
    snapshot operation (e.g. vmhint for NetAPP)
 *)
 let snapshot ~__context ~vdi ~driver_params =
-  Sm.assert_pbd_is_plugged ~__context ~sr:(Db.VDI.get_SR ~__context ~self:vdi);
+	let sR = Db.VDI.get_SR ~__context ~self:vdi in
+  Sm.assert_pbd_is_plugged ~__context ~sr:sR;
   Xapi_vdi_helpers.assert_managed ~__context ~vdi;
   let a = Db.VDI.get_record_internal ~__context ~self:vdi in
 
   let call_snapshot () = 
-    Sm.call_sm_vdi_functions ~__context ~vdi
-      (fun srconf srtype sr ->
-	 try
-	   Sm.vdi_snapshot srconf srtype driver_params sr vdi
-	 with Smint.Not_implemented_in_backend ->
-	   (* CA-28598 *)
-	   debug "Backend reported not implemented despite it offering the capability; assuming this is an LVHD upgrade issue";
-	   raise (Api_errors.Server_error(Api_errors.sr_requires_upgrade, [ Ref.string_of sr ]))
-      ) in
+	  let open Storage_access in
+	  let task = Context.get_task_id __context in	
+	  let open Storage_interface in
+	  expect_newvdi (newvdi ~__context sR)
+		  (Client.VDI.snapshot rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sR)
+			  ~vdi:(Ref.string_of vdi) ~params:driver_params) in
 
   (* While we don't have blkback support for pause/unpause we only do this
      for .vhd-based backends. *)
-  let vdi_info = call_snapshot () in
-  let uuid = require_uuid vdi_info in
-  let newvdi = Db.VDI.get_by_uuid ~__context ~uuid in
+  let newvdi = call_snapshot () in
 
   (* Copy across the metadata which we control *)
   Db.VDI.set_name_label ~__context ~self:newvdi ~value:a.Db_actions.vDI_name_label;

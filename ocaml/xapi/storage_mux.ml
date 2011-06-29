@@ -81,6 +81,8 @@ module Mux = struct
 	module VDI = struct
 		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params = 
 			Client.VDI.create (of_sr sr) ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params
+		let snapshot context ~task ~sr ~vdi ~params =
+			Client.VDI.snapshot (of_sr sr) ~task ~sr ~vdi ~params
 		let stat context ~task ?dp ~sr ~vdi () = Client.VDI.stat (of_sr sr) ~task ?dp ~sr ~vdi ()
 		let destroy context ~task ~sr ~vdi = Client.VDI.destroy (of_sr sr) ~task ~sr ~vdi
 		let attach context ~task ~dp ~sr ~vdi ~read_write = 

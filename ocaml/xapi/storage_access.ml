@@ -200,6 +200,14 @@ module Builtin_impl = struct
 				| Some uuid -> uuid
 				| None -> failwith "SM backend failed to return <uuid> field" 
 
+		let newvdi ~__context vi =
+			(* The current backends stash data directly in the db *)
+			let uuid = require_uuid vi in
+			let ref = Db.VDI.get_by_uuid ~__context ~uuid in
+			
+			let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
+			NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size }
+
 		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
 			try
 				let _type = driver_of_context context in
@@ -213,12 +221,21 @@ module Builtin_impl = struct
 									Sm.vdi_create device_config _type sr params ty 
 										virtual_size name_label name_description
 								) in
-						(* The current backends stash data directly in the db *)
-						let uuid = require_uuid vi in
-						let ref = Db.VDI.get_by_uuid ~__context ~uuid in
-						
-						let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
-						Success (NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size })
+						Success (newvdi ~__context vi)
+					)
+			with Api_errors.Server_error(code, params) ->
+				Failure (Backend_error(code, params))
+
+		let snapshot context ~task ~sr ~vdi ~params =
+			try
+				Server_helpers.exec_with_new_task "VDI.create" ~subtask_of:(Ref.of_string task)
+					(fun __context ->
+						let sr = Ref.of_string sr in
+						let vi = for_vdi ~context ~task ~sr ~vdi "VDI.snapshot"
+							(fun device_config _type sr self ->
+								Sm.vdi_snapshot device_config _type params sr (Ref.of_string vdi)
+							) in
+						Success (newvdi ~__context vi)
 					)
 			with Api_errors.Server_error(code, params) ->
 				Failure (Backend_error(code, params))
