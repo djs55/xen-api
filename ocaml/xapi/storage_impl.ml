@@ -295,6 +295,7 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 							| Failure _ ->
 								result, vdi_t
 							| Success (State _) 
+							| Success (Stat _) 
 							| Success (NewVdi _)
 							| Success (String _) ->
 								Failure (Internal_error (Printf.sprintf "VDI.attach type error, received: %s" (string_of_result result))), vdi_t in
@@ -435,8 +436,8 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 						(fun () ->
 							fst(perform_nolock context ~task ~dp ~sr ~vdi Vdi_automaton.Activate)))
 
-		let stat context ~task ?dp ~sr ~vdi () =
-			info "VDI.stat task:%s dp:%s sr:%s vdi:%s" task (Opt.default "superstate" dp) sr vdi;
+		let state context ~task ?dp ~sr ~vdi () =
+			info "VDI.state task:%s dp:%s sr:%s vdi:%s" task (Opt.default "superstate" dp) sr vdi;
 			with_vdi sr vdi
 				(fun () ->
 					match Host.find sr !Host.host with
@@ -446,6 +447,12 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 						match dp with
 						| None -> Success (State (Vdi.superstate vdi_t))
 						| Some dp -> Success (State (Vdi.get_dp_state dp vdi_t))
+				)
+		let stat context ~task ~sr ~vdi =
+			info "VDI.stat task:%s sr:%s vdi:%s" task sr vdi;
+			with_vdi sr vdi
+				(fun () ->
+					Impl.VDI.stat context ~task ~sr ~vdi
 				)
 
 		let deactivate context ~task ~dp ~sr ~vdi =
@@ -642,7 +649,7 @@ module Local_domain_socket = struct
 		let s = Buf_io.fd_of bio in
 		let rpc = Xmlrpc.call_of_string body in
 		(* Printf.fprintf stderr "Request: %s %s\n%!" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params)); *)
-		let result = process () rpc in
+		let result = process { Smint.uri = req.Http.uri } rpc in
 		(* Printf.fprintf stderr "Response: %s\n%!" (Rpc.to_string result.Rpc.contents); *)
 		let str = Xmlrpc.string_of_response result in
 		Http_svr.response_str req s str

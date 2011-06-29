@@ -43,6 +43,7 @@ module Proxy = functor(RPC: RPC) -> struct
 		let detach _ = Client.VDI.detach RPC.rpc
 
 		let stat _ = Client.VDI.stat RPC.rpc
+		let state _ = Client.VDI.state RPC.rpc
 
 		let create _ = Client.VDI.create RPC.rpc
 		let snapshot _ = Client.VDI.snapshot RPC.rpc

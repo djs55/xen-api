@@ -50,7 +50,8 @@ type success_t =
 	| NewVdi of vdi_info                      (** success (from VDI.create) *)
 	| String of string                        (** success (from DP.diagnostics) *)
 	| Unit                                    (** success *)
-	| State of Vdi_automaton.state            (** success (from VDI.stat) *)
+	| State of Vdi_automaton.state            (** success (from VDI.state) *)
+	| Stat of vdi_info                        (** success (from VDI.stat) *)
 
 type failure_t =
 	| Sr_not_attached                         (** error: SR must be attached to access VDIs *)
@@ -72,7 +73,8 @@ let string_of_success = function
 	| NewVdi x -> Printf.sprintf "NewVdi %s" (string_of_vdi_info x)
 	| String x -> x
 	| Unit -> "()"
-	| State s -> Vdi_automaton.string_of_state s
+	| State x -> Vdi_automaton.string_of_state x
+	| Stat x -> Printf.sprintf "VDI %s" (string_of_vdi_info x)
 
 let string_of_failure = function
 	| Sr_not_attached -> "Sr_not_attached"
@@ -179,9 +181,13 @@ module VDI = struct
 		This client must have called [attach] on the [vdi] first. *)
     external activate : task:task -> dp:dp -> sr:sr -> vdi:vdi -> result = ""
 
-	(** [stat task dp sr vdi ()] returns the state of the given VDI from the point of view of
+	(** [stat task sr vdi ()] returns the state of the given VDI from the point of view of
 		the specified dp, or the superstate if dp is omitted *)
-	external stat: task:task -> ?dp:dp -> sr:sr -> vdi:vdi -> unit -> result = ""
+	external stat: task:task -> sr:sr -> vdi:vdi -> result = ""
+
+	(** [state task dp sr vdi ()] returns the state of the given VDI from the point of view of
+		the specified dp, or the superstate if dp is omitted *)
+	external state: task:task -> ?dp:dp -> sr:sr -> vdi:vdi -> unit -> result = ""
 
 	(** [deactivate task dp sr vdi] signals that this client has stopped reading (and writing)
 		[vdi]. *)

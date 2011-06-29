@@ -193,7 +193,9 @@ module Builtin_impl = struct
 			with Api_errors.Server_error(code, params) ->
 				Failure (Backend_error(code, params))
 
-		let stat context ~task ?dp ~sr ~vdi () = assert false
+		let state context ~task ?dp ~sr ~vdi () = assert false
+
+		let stat context ~task ~sr ~vdi = failwith "unimplemented"
 
 		let require_uuid vdi_info = 
 			match vdi_info.Smint.vdi_info_uuid with
@@ -472,7 +474,7 @@ let refresh_local_vdi_activations ~__context =
 			let vdi = Ref.string_of vdi_ref in
 			if List.mem sr srs
 			then
-				match Client.VDI.stat rpc ~task ~sr ~vdi () with
+				match Client.VDI.state rpc ~task ~sr ~vdi () with
 					| Success (State (Activated RO)) -> 
 						lock_vdi (vdi_ref, vdi_rec) RO;
 						remember (sr, vdi) RO
@@ -487,7 +489,7 @@ let refresh_local_vdi_activations ~__context =
 						remember (sr, vdi) RW
 					| Success (State Detached) ->
 						unlock_vdi (vdi_ref, vdi_rec)
-					| Success (Vdi _ | NewVdi _ | Unit | String _)
+					| Success (Vdi _ | NewVdi _ | Unit | String _ | Stat _)
 					| Failure _ as r -> error "Unable to query state of VDI: %s, %s" vdi (string_of_result r)
 			else unlock_vdi (vdi_ref, vdi_rec)
 			with e -> error "Skipping VDI %s: %s" (Ref.string_of vdi_ref) (Printexc.to_string e)

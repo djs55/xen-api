@@ -86,7 +86,8 @@ module Mux = struct
 			call_f (of_sr sr) ~task ~sr ~vdi ~params
 		let snapshot = snapshot_and_clone Client.VDI.snapshot
 		let clone = snapshot_and_clone Client.VDI.clone
-		let stat context ~task ?dp ~sr ~vdi () = Client.VDI.stat (of_sr sr) ~task ?dp ~sr ~vdi ()
+		let stat context ~task ~sr ~vdi = Client.VDI.stat (of_sr sr) ~task ~sr ~vdi
+		let state context ~task ?dp ~sr ~vdi () = Client.VDI.state (of_sr sr) ~task ?dp ~sr ~vdi ()
 		let destroy context ~task ~sr ~vdi = Client.VDI.destroy (of_sr sr) ~task ~sr ~vdi
 		let attach context ~task ~dp ~sr ~vdi ~read_write = 
 			let result = Client.VDI.attach (of_sr sr) ~task ~dp ~sr ~vdi ~read_write in
