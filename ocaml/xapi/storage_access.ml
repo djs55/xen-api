@@ -60,7 +60,7 @@ module Builtin_impl = struct
 				Server_helpers.exec_with_new_task "SR.attach" ~subtask_of:_task
 					(fun __context ->
 						try
-							Sm.sr_attach (Some _task, device_config) _type self;
+							Sm.sr_attach (Some (Context.get_task_id __context), device_config) _type self;
 							Success Unit
 						with e ->
 							let e' = ExnHelper.string_of_exn e in
