@@ -22,7 +22,7 @@ module type RPC = sig
 end
 
 module Proxy = functor(RPC: RPC) -> struct
-	type context = unit
+	type context = Smint.request
 
 	let query _ = Client.query RPC.rpc
 	module DP = struct

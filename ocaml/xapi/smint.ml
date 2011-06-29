@@ -105,3 +105,8 @@ exception Vdi_in_use
 exception Device_in_use
 
 
+type request = {
+	uri: string;
+}
+
+let string_of_request x = Printf.sprintf "{ uri = %s }" x.uri

@@ -12,6 +12,7 @@
  * GNU Lesser General Public License for more details.
  *)
 open Threadext
+open Stringext
 module XenAPI = Client.Client
 open Storage_interface
 
@@ -30,7 +31,11 @@ module Builtin_impl = struct
 	    the backend interface.
 	*)
 
-	type context = unit
+	type context = Smint.request
+
+	let driver_of_context x = match String.split '/' x.Smint.uri with
+		| [ ""; services; sm; driver ] when services = Xapi_services._services && sm = Xapi_services._SM -> driver
+		| _ -> raise (Api_errors.Server_error(Api_errors.sr_unknown_driver, [ x.Smint.uri ]))
 
 	let query context () = {
 		name = "SMAPIv1 adapter";
@@ -46,67 +51,79 @@ module Builtin_impl = struct
 	end
 
 	module SR = struct
-		let attach context ~task ~sr =
-			let self = Ref.of_string sr in
-			Server_helpers.exec_with_new_task "SR.attach" ~subtask_of:(Ref.of_string task)
-				(fun __context ->
-					Sm.call_sm_functions ~__context ~sR:self
-						(fun device_config _type ->
-							try
-								Sm.sr_attach device_config _type self;
-								Success Unit
-							with e ->
-								let e' = ExnHelper.string_of_exn e in
-								error "SR.attach failed SR:%s error:%s" sr e';
-								Failure (Internal_error e')
-						)
-				)
+		let attach context ~task ~sr ~device_config =
+			try
+				info "Builtin.SR.attach sr:%s device_config:[ %s ]" sr (String.concat "; " (List.map (fun (k, v) -> k ^ ": " ^ v) device_config));
+				let self = Ref.of_string sr in
+				let _task = Ref.of_string task in
+				let _type = driver_of_context context in
+				Server_helpers.exec_with_new_task "SR.attach" ~subtask_of:_task
+					(fun __context ->
+						try
+							Sm.sr_attach (Some _task, device_config) _type self;
+							Success Unit
+						with e ->
+							let e' = ExnHelper.string_of_exn e in
+							error "SR.attach failed SR:%s error:%s" sr e';
+							Failure (Internal_error e')
+					)
+			with Api_errors.Server_error(code, params) ->
+				Failure (Backend_error(code, params))
 		let detach context ~task ~sr =
-			let self = Ref.of_string sr in
-			Server_helpers.exec_with_new_task "SR.detach" ~subtask_of:(Ref.of_string task)
-				(fun __context ->
-					Sm.call_sm_functions ~__context ~sR:self
-						(fun device_config _type ->
-							try
-								Sm.sr_detach device_config _type self;
-								Success Unit
-							with e ->
-								let e' = ExnHelper.string_of_exn e in
-								error "SR.detach failed SR:%s error:%s" sr e';
-								Failure (Storage_interface.Internal_error e')
-						)
-				)
-
-		let destroy context ~task ~sr = 
-			let self = Ref.of_string sr in
-			Server_helpers.exec_with_new_task "SR.destroy" ~subtask_of:(Ref.of_string task)
-				(fun __context ->
-					Sm.call_sm_functions ~__context ~sR:self
-						(fun device_config _type ->
-							try
-								Sm.sr_detach device_config _type self;
-								Success Unit
-							with
-								| Smint.Not_implemented_in_backend ->
-									Failure (Storage_interface.Backend_error(Api_errors.sr_operation_not_supported, [ sr ]))
-								| e ->
+			try
+				let self = Ref.of_string sr in
+				let _type = driver_of_context context in
+				Server_helpers.exec_with_new_task "SR.detach" ~subtask_of:(Ref.of_string task)
+					(fun __context ->
+						Sm.call_sm_functions ~__context ~sR:self
+							(fun device_config _ ->
+								try
+									Sm.sr_detach device_config _type self;
+									Success Unit
+								with e ->
 									let e' = ExnHelper.string_of_exn e in
 									error "SR.detach failed SR:%s error:%s" sr e';
 									Failure (Storage_interface.Internal_error e')
-						)
-				)
+							)
+					)
+			with Api_errors.Server_error(code, params) ->
+				Failure (Backend_error(code, params))
+
+		let destroy context ~task ~sr = 
+			try
+				let self = Ref.of_string sr in
+				let _type = driver_of_context context in
+				Server_helpers.exec_with_new_task "SR.destroy" ~subtask_of:(Ref.of_string task)
+					(fun __context ->
+						Sm.call_sm_functions ~__context ~sR:self
+							(fun device_config _ ->
+								try
+									Sm.sr_detach device_config _type self;
+									Success Unit
+								with
+									| Smint.Not_implemented_in_backend ->
+										Failure (Storage_interface.Backend_error(Api_errors.sr_operation_not_supported, [ sr ]))
+									| e ->
+										let e' = ExnHelper.string_of_exn e in
+										error "SR.detach failed SR:%s error:%s" sr e';
+										Failure (Storage_interface.Internal_error e')
+							)
+					)
+			with Api_errors.Server_error(code, params) ->
+				Failure (Backend_error(code, params))
 
 		let list context ~task = assert false
 
 	end
 
 	module VDI = struct
-		let for_vdi ~task ~sr ~vdi op_name f =
+		let for_vdi ~context ~task ~sr ~vdi op_name f =
 			let self = Ref.of_string vdi in
+			let _type = driver_of_context context in
 			Server_helpers.exec_with_new_task op_name ~subtask_of:(Ref.of_string task)
 				(fun __context ->
 					Sm.call_sm_vdi_functions ~__context ~vdi:self
-						(fun device_config _type sr ->
+						(fun device_config _ sr ->
 							f device_config _type sr self
 						)
 				)
@@ -119,8 +136,10 @@ module Builtin_impl = struct
 
 		let attach context ~task ~dp ~sr ~vdi ~read_write =
 			try
+				let _type = driver_of_context context in
+				debug "VDI.attach context = %s" (Smint.string_of_request context);
 				let params =
-					for_vdi ~task ~sr ~vdi "VDI.attach"
+					for_vdi ~context ~task ~sr ~vdi "VDI.attach"
 						(fun device_config _type sr self ->
 							Sm.vdi_attach device_config _type sr self read_write
 						) in
@@ -133,11 +152,12 @@ module Builtin_impl = struct
 
 		let activate context ~task ~dp ~sr ~vdi =
 			try
+				let _type = driver_of_context context in
 				let read_write = Mutex.execute vdi_read_write_m
 					(fun () -> 
 						if not (Hashtbl.mem vdi_read_write (sr, vdi)) then error "VDI.activate: doesn't know if sr:%s vdi:%s is RO or RW" sr vdi;
 						Hashtbl.find vdi_read_write (sr, vdi)) in
-				for_vdi ~task ~sr ~vdi "VDI.activate"
+				for_vdi ~context ~task ~sr ~vdi "VDI.activate"
 					(fun device_config _type sr self ->
 						(* If the backend doesn't advertise the capability then do nothing *)
 						if List.mem Smint.Vdi_activate (Sm.capabilities_of_driver _type)
@@ -150,7 +170,7 @@ module Builtin_impl = struct
 
 		let deactivate context ~task ~dp ~sr ~vdi =
 			try
-				for_vdi ~task ~sr ~vdi "VDI.deactivate"
+				for_vdi ~context ~task ~sr ~vdi "VDI.deactivate"
 					(fun device_config _type sr self ->
 						(* If the backend doesn't advertise the capability then do nothing *)
 						if List.mem Smint.Vdi_activate (Sm.capabilities_of_driver _type)
@@ -163,7 +183,7 @@ module Builtin_impl = struct
 
 		let detach context ~task ~dp ~sr ~vdi =
 			try
-				for_vdi ~task ~sr ~vdi "VDI.detach"
+				for_vdi ~context ~task ~sr ~vdi "VDI.detach"
 					(fun device_config _type sr self ->
 						Sm.vdi_detach device_config _type sr self
 					);
@@ -181,27 +201,31 @@ module Builtin_impl = struct
 				| None -> failwith "SM backend failed to return <uuid> field" 
 
 		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
-			Server_helpers.exec_with_new_task "VDI.create" ~subtask_of:(Ref.of_string task)
-				(fun __context ->
-
-					let sr = Ref.of_string sr in
-					let vi = 
-						Sm.call_sm_functions ~__context ~sR:sr
-							(fun device_config _type ->
-								Sm.vdi_create device_config _type sr params ty 
-									virtual_size name_label name_description
-							) in
-					(* The current backends stash data directly in the db *)
-					let uuid = require_uuid vi in
-					let ref = Db.VDI.get_by_uuid ~__context ~uuid in
-
-					let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
-					Success (NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size })
-				)
+			try
+				let _type = driver_of_context context in
+				Server_helpers.exec_with_new_task "VDI.create" ~subtask_of:(Ref.of_string task)
+					(fun __context ->
+						
+						let sr = Ref.of_string sr in
+						let vi = 
+							Sm.call_sm_functions ~__context ~sR:sr
+								(fun device_config _ ->
+									Sm.vdi_create device_config _type sr params ty 
+										virtual_size name_label name_description
+								) in
+						(* The current backends stash data directly in the db *)
+						let uuid = require_uuid vi in
+						let ref = Db.VDI.get_by_uuid ~__context ~uuid in
+						
+						let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
+						Success (NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size })
+					)
+			with Api_errors.Server_error(code, params) ->
+				Failure (Backend_error(code, params))
 
 		let destroy context ~task ~sr ~vdi =
 			try
-				for_vdi ~task ~sr ~vdi "VDI.destroy"
+				for_vdi ~context ~task ~sr ~vdi "VDI.destroy"
 					(fun device_config _type sr self ->
 						Sm.vdi_delete device_config _type sr self
 					);
@@ -214,14 +238,14 @@ module Builtin_impl = struct
 end
 
 module type SERVER = sig
-	val process : unit -> Rpc.call -> Rpc.response 
+	val process : Smint.request -> Rpc.call -> Rpc.response 
 end
 
-let make_local () =
+let make_local _ =
 	(module Server(Storage_impl.Wrapper(Builtin_impl)) : SERVER)
 
-let make_remote host =
-	(module Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host ~port:8080 ~path:"/" call end))) : SERVER)
+let make_remote host path =
+	(module Server(Storage_impl.Wrapper(Storage_proxy.Proxy(struct let rpc call = Rpc_client.do_rpc ~version:"1.0" ~host ~port:8080 ~path call end))) : SERVER)
 
 let bind ~__context ~pbd = 
 	(* Start the VM if necessary, discover its domid *)
@@ -251,11 +275,14 @@ let bind ~__context ~pbd =
 		if not(System_domains.wait_for (System_domains.queryable ip 8080))
 		then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to XMLRPC query" (Ref.string_of pbd) (Ref.string_of driver));
 		ip in
+	let sr = Db.PBD.get_SR ~__context ~self:pbd in
+	let path = Xapi_services.path [ Xapi_services._services; Xapi_services._SM; Db.SR.get_type ~__context ~self:sr ] in
 
 	let dom0 = Helpers.get_domain_zero ~__context in
-	let module Impl = (val (if driver = dom0 then make_local () else make_remote (ip_of driver)): SERVER) in 
+	let module Impl = (val (if driver = dom0 then make_local path else make_remote (ip_of driver) path): SERVER) in 
 	let sr = Db.PBD.get_SR ~__context ~self:pbd in
-	Storage_mux.register sr (Impl.process ()) domid
+	info "SR %s will be implemented by %s in VM %s" (Ref.string_of sr) path (Ref.string_of driver);
+	Storage_mux.register sr (Impl.process { Smint.uri = path }) domid
 
 let unbind ~__context ~pbd =
 	let sr = Db.PBD.get_SR ~__context ~self:pbd in
@@ -370,6 +397,7 @@ let resynchronise_pbds ~__context ~pbds =
 			end else value in
 
 			debug "Setting PBD %s currently_attached <- %b" (Ref.string_of self) value;
+			if value then bind ~__context ~pbd:self;
 			Db.PBD.set_currently_attached ~__context ~self ~value
 		) pbds
 
@@ -464,9 +492,12 @@ let destroy_sr ~__context ~sr =
 	let localhost = Helpers.get_localhost ~__context in
 
 	let task = Ref.string_of (Context.get_task_id __context) in
-
+	let device_config =
+		match List.filter (fun pbd -> Db.PBD.get_host ~__context ~self:pbd = localhost) pbds with
+			| pbd :: _ -> Db.PBD.get_device_config ~__context ~self:pbd
+			| _ -> raise (Api_errors.Server_error(Api_errors.sr_no_pbds, [ Ref.string_of sr ])) in
 	expect_unit (fun () -> ())
-		(Client.SR.attach rpc task (Ref.string_of sr));	
+		(Client.SR.attach rpc task (Ref.string_of sr) device_config);	
 	(* The current backends expect the PBD to be temporarily set to currently_attached = true *)
 	List.iter
 		(fun self ->

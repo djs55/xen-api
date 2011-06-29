@@ -140,8 +140,8 @@ module Debug_print_impl = struct
 
 	module SR = struct
 		let list context ~task = assert false
-		let attach context ~task ~sr =
-			info "SR.attach sr:%s" sr;
+		let attach context ~task ~sr ~device_config =
+			info "SR.attach sr:%s device_config:[ %s ]" sr (String.concat "; " (List.map (fun (k, v) -> k ^ ": " ^ v) device_config));
 			Success Unit
 		let fail_if_anything_leaked () = 
 			Mutex.execute VDI.m
