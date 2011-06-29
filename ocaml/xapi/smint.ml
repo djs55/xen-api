@@ -41,6 +41,32 @@ type capability =
     | Vdi_generate_config
 	| Vdi_reset_on_boot
 
+let string_to_capability_table = [
+    "SR_PROBE",       Sr_probe;
+    "SR_UPDATE",      Sr_update;
+	"SR_SUPPORTS_LOCAL_CACHING", Sr_supports_local_caching;
+    "VDI_CREATE",     Vdi_create;
+    "VDI_DELETE",     Vdi_delete;
+    "VDI_ATTACH",     Vdi_attach;
+    "VDI_DETACH",     Vdi_detach; 
+    "VDI_RESIZE",     Vdi_resize;
+    "VDI_RESIZE_ONLINE",Vdi_resize_online;
+    "VDI_CLONE",      Vdi_clone;
+    "VDI_SNAPSHOT",   Vdi_snapshot;
+    "VDI_ACTIVATE",   Vdi_activate;
+    "VDI_DEACTIVATE", Vdi_deactivate;
+    "VDI_UPDATE",     Vdi_update;
+    "VDI_INTRODUCE",  Vdi_introduce;
+    "VDI_GENERATE_CONFIG", Vdi_generate_config;
+	"VDI_RESET_ON_BOOT", Vdi_reset_on_boot;
+]
+let capability_to_string_table = List.map (fun (x, y) -> y, x) string_to_capability_table
+
+let lookup tbl x = if List.mem_assoc x tbl then Some (List.assoc x tbl) else None
+
+let capability_of_string = lookup string_to_capability_table
+let string_of_capability = lookup capability_to_string_table
+
 let all_capabilities =
   [ Sr_create; Sr_delete; Sr_attach; Sr_detach; Sr_scan; Sr_probe; Sr_update;
     Sr_supports_local_caching; 

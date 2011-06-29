@@ -97,7 +97,7 @@ type query_result = {
 
 module Driver_info = struct
 	type t = {
-		filename: string;
+		uri: string;
 		name: string;
 		description: string;
 		vendor: string;
@@ -105,7 +105,6 @@ module Driver_info = struct
 		version: string;
 		required_api_version: string;
 		capabilities: string list;
-		text_capabilities: string list;
 		configuration: (string * string) list;
 	}
 

@@ -20,17 +20,22 @@ open D
 open Fun
 open Stringext
 
+(* URI prefix *)
+let _services = "services"
+let _SM = "SM"
+
+let path xs = "/" ^ (String.concat "/" xs)
+
 let convert_driver_info x = 
 	let open Smint in {
-		Storage_interface.Driver_info.filename = x.sr_driver_filename;
+		Storage_interface.Driver_info.uri = path [ _services; _SM; x.sr_driver_filename ];
 		name = x.sr_driver_name;
 		description = x.sr_driver_description;
 		vendor = x.sr_driver_vendor;
 		copyright = x.sr_driver_copyright;
 		version = x.sr_driver_version;
 		required_api_version = x.sr_driver_required_api_version;
-		capabilities = (* x.sr_driver_capabilities *) [];
-		text_capabilities = x.sr_driver_text_capabilities;
+		capabilities = x.sr_driver_text_capabilities;
 		configuration = x.sr_driver_configuration
 	}
 
@@ -49,7 +54,7 @@ let handler (req: Http.request) s =
 		(fun __context ->
 			debug "uri = %s" req.Http.uri;
 			match String.split '/' req.Http.uri with
-				| [ ""; "services"; "SM"; driver ] ->
+				| [ ""; services; "SM"; driver ] when services = _services ->
 					begin
 						try
 							respond req (Storage_interface.Driver_info.rpc_of_t (convert_driver_info (Sm.info_of_driver driver))) s
@@ -57,15 +62,15 @@ let handler (req: Http.request) s =
 							Http_svr.headers s Http.http_404_missing;
 							req.Http.close <- true
 					end					
-				| [ ""; "services"; "SM" ] ->
+				| [ ""; services; "SM" ] when services = _services ->
 					let rpc = list_sm_drivers ~__context in
 					respond req rpc s
-				| [ ""; "services" ] ->
+				| [ ""; services ] when services = _services ->
 					let q = { 
 						Storage_interface.name = "XCP";
 						vendor = "xen.org";
 						version = "0.1";
-						features = [ "SM" ];
+						features = List.map (fun x -> path [_services; x]) [ _SM ];
 					} in
 					respond req (Storage_interface.rpc_of_query_result q) s
 				| _ ->
