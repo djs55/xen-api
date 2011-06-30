@@ -207,8 +207,19 @@ module Builtin_impl = struct
 			let uuid = require_uuid vi in
 			let ref = Db.VDI.get_by_uuid ~__context ~uuid in
 			
-			let actual_size = Db.VDI.get_virtual_size ~__context ~self:ref in
-			NewVdi { vdi = Ref.string_of ref; virtual_size = actual_size }
+			let r = Db.VDI.get_record ~__context ~self:ref in
+			NewVdi {
+				vdi = Ref.string_of ref;
+				name_label = r.API.vDI_name_label;
+				name_description = r.API.vDI_name_description;
+				ty = Record_util.vdi_type_to_string r.API.vDI_type;
+				is_a_snapshot = r.API.vDI_is_a_snapshot;
+				snapshot_time = Date.to_float r.API.vDI_snapshot_time;
+				snapshot_of = Ref.string_of r.API.vDI_snapshot_of;
+				read_only = r.API.vDI_read_only;
+				virtual_size = r.API.vDI_virtual_size;
+				physical_utilisation = r.API.vDI_physical_utilisation;
+			}
 
 		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
 			try

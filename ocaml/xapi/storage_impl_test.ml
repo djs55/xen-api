@@ -55,10 +55,22 @@ module Debug_print_impl = struct
 
 		let create context ~task ~sr ~name_label ~name_description ~virtual_size ~ty ~params =
 			let vdi = "newvdi" in
+			let ok = {
+				vdi = vdi;
+				name_label = name_label;
+				name_description = name_description;
+				ty = ty;
+				is_a_snapshot = false;
+				snapshot_time = 0.;
+				snapshot_of = "";
+				read_only = false;
+				virtual_size = virtual_size;
+				physical_utilisation = virtual_size
+			} in
 			let info =
 				if List.mem_assoc "toosmall" params
-				then { vdi = vdi; virtual_size = Int64.sub virtual_size 1L }
-				else { vdi = vdi; virtual_size = virtual_size } in
+				then { ok with virtual_size = Int64.sub virtual_size 1L }
+				else ok in
 			Mutex.execute m
 				(fun () ->
 					let key = key_of sr vdi in

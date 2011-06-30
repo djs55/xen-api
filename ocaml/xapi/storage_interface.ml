@@ -36,7 +36,20 @@ type blkback = {
 (** The result of an operation which creates or examines a VDI *)
 type vdi_info = {
 	vdi: vdi;
+	name_label: string;
+	name_description: string;
+	ty: string;
+	(* sm_config *)
+	(* metadata_of_pool *)
+	is_a_snapshot: bool;
+	snapshot_time: float;
+	snapshot_of: vdi;
+	(* managed *)
+	read_only: bool;
+	(* missing *)
 	virtual_size: int64;
+	physical_utilisation: int64;
+	(* xenstore_data *)
 }
 
 let string_of_vdi_info x =
