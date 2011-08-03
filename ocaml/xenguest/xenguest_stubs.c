@@ -379,15 +379,16 @@ static int hvm_build_set_params(xc_interface *xch, int domid,
 	munmap(va_map, XC_PAGE_SIZE);
 
 	xc_get_hvm_param(xch, domid, HVM_PARAM_STORE_PFN, store_mfn);
+	xc_set_hvm_param(xch, domid, HVM_PARAM_STORE_EVTCHN, store_evtchn);
+	xc_get_hvm_param(xch, domid, HVM_PARAM_CONSOLE_PFN, console_mfn);
+	xc_set_hvm_param(xch, domid, HVM_PARAM_CONSOLE_EVTCHN, console_evtchn);
+
 	xc_set_hvm_param(xch, domid, HVM_PARAM_PAE_ENABLED, f.pae);
 #ifdef HVM_PARAM_VIRIDIAN
 	xc_set_hvm_param(xch, domid, HVM_PARAM_VIRIDIAN, f.viridian);
 #endif
-	xc_set_hvm_param(xch, domid, HVM_PARAM_STORE_EVTCHN, store_evtchn);
 #ifndef XEN_UNSTABLE
 	xc_set_hvm_param(xch, domid, HVM_PARAM_NX_ENABLED, f.nx);
-  xc_get_hvm_param(xch, domid, HVM_PARAM_CONSOLE_PFN, console_mfn);
-  xc_set_hvm_param(xch, domid, HVM_PARAM_CONSOLE_EVTCHN, console_evtchn);
 #endif
 	return 0;
 }
