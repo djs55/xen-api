@@ -20,6 +20,28 @@ open D
 
 open Pervasiveext 
 
+let socket = ref None
+let server = Http_svr.Server.empty ()
+
+let path = "/var/xapi/xenopsd"
+
+let xmlrpc_handler process req bio =
+    (*let body = Http_svr.read_body req bio in*)
+    let s = Buf_io.fd_of bio in
+    (*let rpc = Xmlrpc.call_of_string body in*)
+    (* Printf.fprintf stderr "Request: %s %s\n%!" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params)); *)
+	Http_svr.response_unauthorised ~req "Go away" s
+
+let start path process =
+    Unixext.mkdir_safe (Filename.dirname path) 0o700;
+    Unixext.unlink_safe path;
+    let domain_sock = Http_svr.bind (Unix.ADDR_UNIX(path)) "unix_rpc" in
+    Http_svr.Server.add_handler server Http.Post "/" (Http_svr.BufIO (xmlrpc_handler process));
+    Http_svr.start server domain_sock;
+	socket := Some domain_sock
+
+
+
 (* val reopen_logs: unit -> unit *)
 let reopen_logs _ = 
   debug "Reopening logfiles";
@@ -45,5 +67,9 @@ let _ =
   Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
   Unixext.pidfile_write !pidfile;
 
-  exit 0
+  start path xmlrpc_handler;
+  while true do
+	  Thread.delay 60.
+  done
+
 

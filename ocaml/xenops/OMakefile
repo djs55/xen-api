@@ -4,7 +4,7 @@ OCAML_CLIBS     += $(XEN_OCAML_CLIBS)
 OCAML_LINK_FLAGS+= $(XEN_OCAML_LINK_FLAGS)
 CFLAGS          += $(XEN_CFLAGS)
 
-OCAMLPACKS     = threads xenctrl xenstore stdext log cdrom netdev
+OCAMLPACKS     = threads xenctrl xenstore stdext log cdrom netdev http-svr
 OCAMLFLAGS    += -thread
 
 LIBFILES = table xenops_helpers xenbus_utils balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom
