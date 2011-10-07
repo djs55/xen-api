@@ -23,6 +23,8 @@ OCamlProgram(freemem, freemem)
 OCamlProgram(squeezed, squeezed)
 OCamlDocProgram(squeezed, squeezed)
 OCamlProgram(squeezed_client, squeezed_client)
+OCamlProgram(xenopsd, xenopsd)
+OCamlDocProgram(xenopsd, xenopsd)
 
 OCamlProgram(device_number_test, device_number_test device_number)
 
@@ -56,7 +58,7 @@ OCamlProgram(squeeze_test, squeeze_test squeeze_test_main)
 BIN_PROGS=list_domains squeezed_client
 DEBUG_PROGS=xs xal xenops watch_test memory_breakdown memory_summary
 SYMLINK_PROGS=destroy_domain shutdown_domain create_domain build_domain build_hvm add_vbd add_vif unpause_domain pause_domain suspend_domain restore_domain
-OTHER_PROGS=fence dbgring squeezed
+OTHER_PROGS=fence dbgring squeezed xenopsd
 
 .PHONY: allxenops
 allxenops: $(DEBUG_PROGS) $(BIN_PROGS) $(OTHER_PROGS)
@@ -71,6 +73,7 @@ install:
 	mkdir -p $(LIBEXEC)
 	$(IPROG) fence $(LIBEXEC)/fence.bin
 	$(IPROG) squeezed $(LIBEXEC)/squeezed
+	$(IPROG) xenopsd $(LIBEXEC)/xenopsd
 
 .PHONY: sdk-install
 sdk-install: install

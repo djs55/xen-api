@@ -208,7 +208,6 @@ let _ =
   let daemonize = ref false in
  
   Arg.parse (Arg.align [
-	       "-debug", Arg.Set print_debug, Printf.sprintf "Set debug to stdout rather than log file (default %s)" log_file_path;
 	       "-daemon", Arg.Set daemonize, "Create a daemon";
 	       "-pidfile", Arg.Set_string pidfile, Printf.sprintf "Set the pid file (default \"%s\")" !pidfile;
 	     ])
