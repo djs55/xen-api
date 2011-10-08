@@ -25,12 +25,19 @@ let server = Http_svr.Server.empty ()
 
 let path = "/var/xapi/xenopsd"
 
+module Server = Xenops_interface.Server(Xenops_server)
+
 let xmlrpc_handler process req bio =
-    (*let body = Http_svr.read_body req bio in*)
+    let body = Http_svr.read_body req bio in
     let s = Buf_io.fd_of bio in
-    (*let rpc = Xmlrpc.call_of_string body in*)
+    let rpc = Xmlrpc.call_of_string body in
     (* Printf.fprintf stderr "Request: %s %s\n%!" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params)); *)
-	Http_svr.response_unauthorised ~req "Go away" s
+	try
+		let result = process (Xenops_server.make_context ()) rpc in
+		let str = Xmlrpc.string_of_response result in
+		Http_svr.response_str req s str
+	with e ->
+		Http_svr.response_unauthorised ~req (Printf.sprintf "Go away: %s" (Printexc.to_string e)) s
 
 let start path process =
     Unixext.mkdir_safe (Filename.dirname path) 0o700;
@@ -67,7 +74,7 @@ let _ =
   Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
   Unixext.pidfile_write !pidfile;
 
-  start path xmlrpc_handler;
+  start path Server.process;
   while true do
 	  Thread.delay 60.
   done
