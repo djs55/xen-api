@@ -14,6 +14,7 @@
 
 open Listext
 open Stringext
+open Fun
 open Xenops_interface
 
 type context = unit
@@ -29,8 +30,21 @@ let query _ _ = Some {
 
 let root = "/var/run/xapi/vms"
 
+
+
 let all = List.fold_left (&&) true
 let any = List.fold_left (||) false
+
+exception Protocol_error
+
+let ( >>= ) (a, b) f = match b with
+	| Some error -> None, Some error
+	| None ->
+		begin match a with
+			| None -> raise Protocol_error
+			| Some x -> f x
+		end
+let return x = Some x, None
 
 let wrap f =
 	try
@@ -40,111 +54,106 @@ let wrap f =
 		Printf.fprintf stderr "%s\n%!" (Printexc.get_backtrace ());
 		raise e
 
-module type ITEM = sig
+module type READWRITE = sig
 	type t
-	type id
-	type create_error = Already_exists of id
-	type destroy_error = Does_not_exist of id
-	val id_of_t: t -> id
 	val t_of_rpc: Rpc.t -> t
 	val rpc_of_t: t -> Rpc.t
-
-	val filename_of_id: id -> string
 end
 
-module FilesystemDB = functor(Item: ITEM) -> struct
-	let read id =
+module TypedTable = functor(RW: READWRITE) -> struct
+	open RW
+	type key = string list
+	let filename_of_key k = Printf.sprintf "%s/%s" root (String.concat "/" k)
+	let read (k: key) =
+		let filename = filename_of_key k in
 		try
-			Some (Item.t_of_rpc (Jsonrpc.of_string (Unixext.string_of_file (Item.filename_of_id id))))
+			Some (t_of_rpc (Jsonrpc.of_string (Unixext.string_of_file filename)))
 		with _ -> None
-	let write x =
-		let filename = Item.filename_of_id (Item.id_of_t x) in
+	let write (k: key) (x: t) =
+		let filename = filename_of_key k in
 		Unixext.mkdir_rec (Filename.dirname filename) 0o755;
-		let json = Jsonrpc.to_string (Item.rpc_of_t x) in
+		let json = Jsonrpc.to_string (rpc_of_t x) in
 		Unixext.write_string_to_file filename json
-	let exists id = Sys.file_exists (Item.filename_of_id id)
-	let delete id =
-		let filename = Item.filename_of_id id in
-		Unixext.unlink_safe filename
+	let exists (k: key) = Sys.file_exists (filename_of_key k)
+	let delete (k: key) =
+		let filename = filename_of_key k in
+		let rec rm_rf f =
+			if not(Sys.is_directory f)
+			then Unixext.unlink_safe f
+			else begin
+				List.iter rm_rf (List.map (Filename.concat f) (Array.to_list (Sys.readdir f)));
+				Unix.rmdir f
+			end in
+		rm_rf filename
+	let list (k: key) = Array.to_list (Sys.readdir (filename_of_key k))
 
-	let create _ x =
-		wrap
-			(fun () ->
-				let id = Item.id_of_t x in
-				if exists id
-				then None, Some (Item.Already_exists id)
-				else begin
-					write x;
-					Some id, None
-				end
-			)
+	let create (k: key) (x: t) =
+		if exists k
+		then None, Some Already_exists
+		else begin
+			write k x;
+			Some (), None
+		end
 
-	let destroy _ id =
-		wrap
-			(fun () ->
-				if not(exists id)
-				then None, Some (Item.Does_not_exist id)
-				else begin
-					delete id;
-					Some (), None
-				end
-			)
+	let destroy (k: key) =
+		if not(exists k)
+		then None, Some Does_not_exist
+		else begin
+			delete k;
+			Some (), None
+		end
 end
+
+let dropnone x = List.filter_map (fun x -> x) x
 
 module VM = struct
 	open Vm
 
-	module DB = FilesystemDB(struct
-		include Vm
-		let filename_of_id id = Printf.sprintf "%s/%s/vm" root id
-		let id_of_t x = x.id
-	end)
-	include DB
+	module DB = TypedTable(Vm)
 
-	let destroy x id =
-		wrap
-			(fun () ->
-				if not(exists id)
-				then None, Some (Does_not_exist id)
-				else begin
-					(* Also delete all related objects *)
-					let all = Array.to_list (Sys.readdir (Printf.sprintf "%s/%s" root id)) in
-					List.iter (fun x -> Unixext.unlink_safe (Printf.sprintf "%s/%s/%s" root id x)) all;
-					Unix.rmdir (Printf.sprintf "%s/%s" root id);
-					Some (), None
-				end
-			)
-
+	let key_of id = [ id; "config" ]
+	let create _ x =
+		DB.create (key_of x.id) x
+		>>= fun () ->
+		return x.id
+	let destroy _ x = DB.destroy [ x ]
 	let list _ () =
-		wrap
-			(fun () ->
-				let ids = Array.to_list (Sys.readdir root) in
-				let all = List.filter_map read ids in
-				Some all, None
-			)
+		return (DB.list [ ] |> (List.map (DB.read ++ key_of)) |> dropnone)
 end
+
+let filter_prefix prefix xs =
+	List.filter_map
+		(fun x ->
+			if String.startswith prefix x
+			then Some (String.sub x (String.length prefix) (String.length x - (String.length prefix)))
+			else None) xs
 
 module VBD = struct
 	open Vbd
 
-	module DB = FilesystemDB(struct
-		include Vbd
-		let filename_of_id (vm_id, id) = Printf.sprintf "%s/%s/vbd.%s" root vm_id id
-		let id_of_t x = x.id
-	end)
-	include DB
+	module DB = TypedTable(Vbd)
 
-	let list _ vm_id =
-		wrap
-			(fun () ->
-				let possible_ids = Array.to_list (Sys.readdir (Printf.sprintf "%s/%s" root vm_id)) in
-				let parse_vbd_id x =
-					let prefix = "vbd." in
-					if not(String.startswith prefix x)
-					then None
-					else Some(String.sub x (String.length prefix) (String.length x - (String.length prefix))) in
-				let ids = List.filter_map parse_vbd_id possible_ids in
-				let all = List.filter_map read (List.map (fun id -> vm_id, id) ids) in
-				Some all, None
-			)
+	let create _ vbd =
+		DB.create [ fst (vbd.id); "vbd." ^ (snd vbd.id) ] vbd
+		>>= fun () ->
+		return vbd.id
+	let destroy _ (vm, vbd) = DB.destroy [ vm; "vbd." ^ vbd ]
+	let list _ vm =
+		let key_of id = [ vm; "vbd." ^ id ] in
+		return (DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of)) |> dropnone)
+end
+
+module VIF = struct
+	open Vif
+
+	module DB = TypedTable(Vif)
+
+	let create _ vif =
+		DB.create [ fst (vif.id); "vif." ^ (snd vif.id) ] vif
+		>>= fun () ->
+		return vif.id
+	let destroy _ (vm, vif) = DB.destroy [ vm; "vif." ^ vif ]
+	let list _ vm =
+		let key_of id = [ vm; "vif." ^ id ] in
+		return (DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of)) |> dropnone)
 end

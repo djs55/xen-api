@@ -19,8 +19,10 @@ type ('a, 'b) result =
 	| Success of 'a
 	| Failure of 'b
 
-type generic_error =
+type error =
 	| Internal_error of string
+	| Already_exists
+	| Does_not_exist
 
 module Query = struct
 	type t = {
@@ -30,7 +32,7 @@ module Query = struct
 		features: string list;
 	}
 end
-external query: unit -> (Query.t option * generic_error option) = ""
+external query: unit -> (Query.t option * error option) = ""
 
 module Vm = struct
 	type hvm_info = {
@@ -62,17 +64,12 @@ module Vm = struct
 		ty: builder_info;
 	}
 
-	type create_error =
-		| Already_exists of id
-
-	type destroy_error =
-		| Does_not_exist of id
 end
 
 module VM = struct
-	external create: Vm.t -> (Vm.id option) * (Vm.create_error option) = ""
-	external destroy: Vm.id -> (unit option) * (Vm.destroy_error option) = ""
-	external list: unit -> (Vm.t list option) * (generic_error option) = ""
+	external create: Vm.t -> (Vm.id option) * (error option) = ""
+	external destroy: Vm.id -> (unit option) * (error option) = ""
+	external list: unit -> (Vm.t list option) * (error option) = ""
 end
 
 module Vbd = struct
@@ -93,15 +90,37 @@ module Vbd = struct
 		extra_private_keys: (string * string) list;
 	}
 
-	type create_error =
-		| Already_exists of id
-
-	type destroy_error =
-		| Does_not_exist of id
 end
 
 module VBD = struct
-	external create: Vbd.t -> (Vbd.id option) * (Vbd.create_error option) = ""
-	external list: Vm.id -> (Vbd.t list option) * (generic_error option) = ""
-	external destroy: Vbd.id -> (unit option) * (Vbd.destroy_error option) = ""
+	external create: Vbd.t -> (Vbd.id option) * (error option) = ""
+	external list: Vm.id -> (Vbd.t list option) * (error option) = ""
+	external destroy: Vbd.id -> (unit option) * (error option) = ""
+end
+
+module Vif = struct
+
+	type ty =
+		| Bridge of string
+		| Vswitch of string
+
+	type id = string * string
+
+	type t = {
+		id: id;
+		ty: ty;
+		mac: string;
+		carrier: bool;
+		mtu: int;
+		rate: (int64 * int64) option;
+		backend: string;
+		other_config: (string * string) list;
+		extra_private_keys: (string * string) list;
+	}
+end
+
+module VIF = struct
+	external create: Vif.t -> (Vif.id option) * (error option) = ""
+	external list: Vm.id -> (Vif.t list option) * (error option) = ""
+	external destroy: Vif.id -> (unit option) * (error option) = ""
 end
