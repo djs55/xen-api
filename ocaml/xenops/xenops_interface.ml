@@ -52,7 +52,7 @@ module Vm = struct
 	type id = string
 
 	type t = {
-		vm: id;
+		id: id;
 		domid: int option;
 		name: string;
 		ssidref: int32;
@@ -75,3 +75,33 @@ module VM = struct
 	external list: unit -> (Vm.t list option) * (generic_error option) = ""
 end
 
+module Vbd = struct
+
+	type mode = ReadOnly | ReadWrite
+
+	type ty = CDROM | Disk
+
+	type id = string * string
+
+	type t = {
+		id: id;
+		mode: mode;
+		backend: string * string; (* vm.id * params *)
+		ty: ty;
+		unpluggable: bool;
+		extra_backend_keys: (string * string) list;
+		extra_private_keys: (string * string) list;
+	}
+
+	type create_error =
+		| Already_exists of id
+
+	type destroy_error =
+		| Does_not_exist of id
+end
+
+module VBD = struct
+	external create: Vbd.t -> (Vbd.id option) * (Vbd.create_error option) = ""
+	external list: Vm.id -> (Vbd.t list option) * (generic_error option) = ""
+	external destroy: Vbd.id -> (unit option) * (Vbd.destroy_error option) = ""
+end
