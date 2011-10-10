@@ -20,6 +20,7 @@ open Listext
 
 open Device_common
 open Xenstore
+open Fun
 
 exception Ioemu_failed of string
 exception Ioemu_failed_dying
@@ -581,6 +582,16 @@ let unpause ~xs (x: device) (token: string) =
 let is_paused ~xs (x: device) = 
 	let request_path = backend_pause_request_path_of_device ~xs x in
 	try ignore(xs.Xs.read request_path); true with Xenbus.Xb.Noent -> false
+
+let free_device ~xs bus_type domid =
+	let disks = List.map
+		(fun x -> x.frontend.devid
+		|> Device_number.of_xenstore_key
+		|> Device_number.spec
+		|> (fun (_, disk, _) -> disk))
+		(Device_common.list_frontends ~xs domid) in
+	let next = List.fold_left max 0 disks + 1 in
+	bus_type, next, 0
 
 (* Add the VBD to the domain, When this command returns, the device is ready. (This isn't as
    concurrent as xend-- xend allocates loopdevices via hotplug in parallel and then

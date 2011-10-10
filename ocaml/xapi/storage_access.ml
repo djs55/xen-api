@@ -290,7 +290,7 @@ module Qemu_blkfront = struct
             let userdevice = Db.VBD.get_userdevice ~__context ~self in
             let device_number = Device_number.of_string hvm userdevice in
             match Device_number.spec device_number with
-                | Device_number.Ide(n, _) when n < 4 -> true
+                | Device_number.Ide, n, _ when n < 4 -> true
                 | _ -> false
 		end
 
