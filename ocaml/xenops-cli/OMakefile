@@ -1,0 +1,18 @@
+OCAML_LIBS    =
+OCAMLINCLUDES = ../xenops
+OCAMLPACKS    = xml-light2 stdext stunnel log http-svr oUnit
+
+section
+	OCAMLINCLUDES += .
+	OCAMLFLAGS = -dtypes -thread -warn-error F
+	TEST_FILES = test ../xenops/xenops_interface
+	OCamlProgram(xenopstest, $(TEST_FILES))
+	OCamlDocProgram(xenopstest, $(TEST_FILES))
+
+.PHONY: clean
+clean:
+	rm -f $(CLEAN_OBJS)
+	rm -f ./xenopstest
+
+
+

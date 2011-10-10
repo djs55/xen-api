@@ -42,9 +42,26 @@ module Vm = struct
 		video_mib: int;
 	}
 
-	type pv_info = {
+	type pv_direct_boot = {
+		kernel: string;
 		cmdline: string;
 		ramdisk: string option;
+	}
+
+	type pv_indirect_boot = {
+		bootloader: string;
+		extra_args: string;
+		legacy_args: string;
+		bootloader_args: string;
+		devices: string list;
+	}
+
+	type pv_boot =
+		| Direct of pv_direct_boot
+		| Indirect of pv_indirect_boot
+
+	type pv_info = {
+		boot: pv_boot;
 	}
 
 	type builder_info =
