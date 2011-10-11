@@ -50,16 +50,20 @@ sig
 	val device_major_minor : string -> int * int
 	val major_minor_to_device : int * int -> string
 
-	val add : xs:Xenstore.Xs.xsh -> hvm:bool -> mode:mode
-	       -> device_number:Device_number.t
-	       -> phystype:physty -> params:string
-	       -> dev_type:devty
-	       -> unpluggable:bool
-	       -> ?protocol:protocol
-	       -> ?extra_backend_keys:(string*string) list
-	       -> ?extra_private_keys:(string*string) list 
-	       -> ?backend_domid:Xenctrl.domid
-	       -> Xenctrl.domid -> device
+	type t = {
+		mode:mode;
+		device_number: Device_number.t option;
+		phystype: physty;
+		params: string;
+		dev_type: devty;
+		unpluggable: bool;
+		protocol: protocol option;
+		extra_backend_keys: (string * string) list;
+		extra_private_keys: (string * string) list;
+		backend_domid: int;
+	}
+
+	val add : xs:Xenstore.Xs.xsh -> hvm:bool -> t -> Xenctrl.domid -> device
 
 	val release : xs:Xenstore.Xs.xsh -> device -> unit
 	val media_eject : xs:Xenstore.Xs.xsh -> device_number:Device_number.t -> int -> unit
