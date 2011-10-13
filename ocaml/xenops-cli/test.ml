@@ -70,6 +70,7 @@ let make_vm id =
 		platformdata = [ "platform", "data" ];
 		bios_strings = [ "bios", "strings" ];
 		ty = ty;
+		suppress_spurious_page_faults = true;
 	}
 
 let sl x = Printf.sprintf "[ %s ]" (String.concat "; " (List.map (fun (k, v) -> k ^ ":" ^ v) x))
@@ -83,6 +84,7 @@ let vm_assert_equal vm vm' =
     assert_equal ~msg:"xsdata" ~printer:sl vm.xsdata vm'.xsdata;
     assert_equal ~msg:"platformdata" ~printer:sl vm.platformdata vm'.platformdata;
     assert_equal ~msg:"bios_strings" ~printer:sl vm.bios_strings vm'.bios_strings;
+	assert_equal ~msg:"suppress_spurious_page_faults" ~printer:string_of_bool vm.suppress_spurious_page_faults vm'.suppress_spurious_page_faults;
 	let is_hvm vm = match vm.ty with
 		| HVM _ -> true | PV _ -> false in
 	assert_equal ~msg:"HVM-ness" ~printer:string_of_bool (is_hvm vm) (is_hvm vm');
@@ -109,7 +111,6 @@ let vm_assert_equal vm vm' =
 					assert_equal ~msg:"bootloader_args" ~printer:(fun x -> x) x.bootloader_args x'.bootloader_args;
 					assert_equal ~msg:"devices" ~printer:(String.concat ", ") x.devices x'.devices;
 			end
-
 
 let vm_test_create_destroy _ =
 	let vm = make_vm "one" in

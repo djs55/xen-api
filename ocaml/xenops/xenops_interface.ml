@@ -79,6 +79,7 @@ module Vm = struct
 		platformdata: (string * string) list;
 		bios_strings: (string * string) list;
 		ty: builder_info;
+		suppress_spurious_page_faults: bool;
 	}
 
 end
