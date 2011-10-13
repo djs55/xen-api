@@ -80,6 +80,7 @@ module Vm = struct
 		bios_strings: (string * string) list;
 		ty: builder_info;
 		suppress_spurious_page_faults: bool;
+		machine_address_size: int option;
 	}
 
 end

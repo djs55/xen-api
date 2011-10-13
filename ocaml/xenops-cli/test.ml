@@ -71,6 +71,7 @@ let make_vm id =
 		bios_strings = [ "bios", "strings" ];
 		ty = ty;
 		suppress_spurious_page_faults = true;
+		machine_address_size = None;
 	}
 
 let sl x = Printf.sprintf "[ %s ]" (String.concat "; " (List.map (fun (k, v) -> k ^ ":" ^ v) x))
@@ -85,6 +86,7 @@ let vm_assert_equal vm vm' =
     assert_equal ~msg:"platformdata" ~printer:sl vm.platformdata vm'.platformdata;
     assert_equal ~msg:"bios_strings" ~printer:sl vm.bios_strings vm'.bios_strings;
 	assert_equal ~msg:"suppress_spurious_page_faults" ~printer:string_of_bool vm.suppress_spurious_page_faults vm'.suppress_spurious_page_faults;
+	assert_equal ~msg:"machine_address_size" ~printer:(function None -> "None" | Some x -> string_of_int x) vm.machine_address_size vm'.machine_address_size;
 	let is_hvm vm = match vm.ty with
 		| HVM _ -> true | PV _ -> false in
 	assert_equal ~msg:"HVM-ness" ~printer:string_of_bool (is_hvm vm) (is_hvm vm');
