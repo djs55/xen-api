@@ -59,10 +59,12 @@ let reopen_logs _ =
 let _ = 
   let pidfile = ref default_pidfile in
   let daemonize = ref false in
- 
+  let simulate = ref false in
+
   Arg.parse (Arg.align [
 	       "-daemon", Arg.Set daemonize, "Create a daemon";
 	       "-pidfile", Arg.Set_string pidfile, Printf.sprintf "Set the pid file (default \"%s\")" !pidfile;
+		   "-simulate", Arg.Set simulate, "Use the simulator backend (default is the xen backend)";
 	     ])
     (fun _ -> failwith "Invalid argument")
     (Printf.sprintf "Usage: %s [-daemon] [-pidfile filename]" name);
@@ -73,6 +75,11 @@ let _ =
 
   Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
   Unixext.pidfile_write !pidfile;
+
+  Xenops_server.set_backend
+	  (Some (if !simulate
+	  then (module Xenops_server_simulator: Xenops_server_plugin.S)
+	  else (module Xenops_server_xen: Xenops_server_plugin.S)));
 
   start path Server.process;
   while true do

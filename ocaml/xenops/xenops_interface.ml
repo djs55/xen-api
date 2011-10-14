@@ -82,12 +82,15 @@ module Vm = struct
 		suppress_spurious_page_faults: bool;
 		machine_address_size: int option;
 	}
-
 end
 
 module VM = struct
 	external create: Vm.t -> (Vm.id option) * (error option) = ""
 	external destroy: Vm.id -> (unit option) * (error option) = ""
+	external make: Vm.id -> (unit option) * (error option) = ""
+	external build: Vm.id -> (unit option) * (error option) = ""
+	external pause: Vm.id -> (unit option) * (error option) = ""
+	external unpause: Vm.id -> (unit option) * (error option) = ""
 	external list: unit -> (Vm.t list option) * (error option) = ""
 end
 

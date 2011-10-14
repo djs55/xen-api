@@ -46,6 +46,12 @@ let ( >>= ) (a, b) f = match b with
 		end
 let return x = Some x, None
 
+let need_some = function
+	| Some x -> Some x, None
+	| None -> None, Some Does_not_exist
+
+let dropnone x = List.filter_map (fun x -> x) x
+
 let wrap f =
 	try
 		f ()
@@ -104,7 +110,17 @@ module TypedTable = functor(RW: READWRITE) -> struct
 		end
 end
 
-let dropnone x = List.filter_map (fun x -> x) x
+open Xenops_server_plugin
+
+let backend = ref None
+let set_backend m = backend := m
+let get_backend () = match !backend with
+  | Some x -> x 
+  | None -> failwith "No backend implementation set"
+
+let foo () =
+let module M = (val get_backend () : S) in
+()
 
 module VM = struct
 	open Vm
@@ -119,6 +135,30 @@ module VM = struct
 	let destroy _ x = DB.destroy [ x ]
 	let list _ () =
 		return (DB.list [ ] |> (List.map (DB.read ++ key_of)) |> dropnone)
+
+	let make _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		return (B.make x)
+
+	let build _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		return (B.build x)
+
+	let pause _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		return (B.pause x)
+
+	let unpause _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		return (B.unpause x)
 end
 
 let filter_prefix prefix xs =
