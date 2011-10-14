@@ -54,31 +54,31 @@ module VM = struct
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.make x
+		B.VM.make x
 
 	let build _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.build x
+		B.VM.build x
 
 	let shutdown _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.destroy x
+		B.VM.destroy x
 
 	let pause _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.pause x
+		B.VM.pause x
 
 	let unpause _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.unpause x
+		B.VM.unpause x
 end
 
 let filter_prefix prefix xs =

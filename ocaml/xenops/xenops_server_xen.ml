@@ -15,8 +15,10 @@
 open Xenops_interface
 open Xenops_utils
 
-let make vm = throw Unimplemented
-let build vm = throw Unimplemented
-let destroy vm = throw Unimplemented
-let pause vm = throw Unimplemented
-let unpause vm = throw Unimplemented
+module VM = struct
+	let make vm = throw Unimplemented
+	let build vm = throw Unimplemented
+	let destroy vm = throw Unimplemented
+	let pause vm = throw Unimplemented
+	let unpause vm = throw Unimplemented
+end

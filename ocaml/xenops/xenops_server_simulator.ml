@@ -86,8 +86,10 @@ let do_pause_unpause_nolock vm paused () =
 		end
 	end
 
-let make vm = Mutex.execute m (make_nolock vm)
-let destroy vm = Mutex.execute m (destroy_nolock vm)
-let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
-let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
-let build vm = Mutex.execute m (build_nolock vm)
+module VM = struct
+	let make vm = Mutex.execute m (make_nolock vm)
+	let destroy vm = Mutex.execute m (destroy_nolock vm)
+	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
+	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
+	let build vm = Mutex.execute m (build_nolock vm)
+end
