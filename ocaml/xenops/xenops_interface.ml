@@ -24,6 +24,7 @@ type error =
 	| Already_exists
 	| Does_not_exist
 	| Unimplemented
+	| Domain_not_built
 
 module Query = struct
 	type t = {

@@ -19,6 +19,7 @@ open OUnit
 
 open Listext
 open Stringext
+open Pervasiveext
 
 open Xmlrpc_client
 
@@ -37,7 +38,7 @@ let usage_and_exit () =
 	exit 1
 
 let success = function
-	| (_, Some x) -> failwith "foo"
+	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
 	| (Some x, _) -> x
 	| None, None -> failwith "protocol error"
 
@@ -123,29 +124,42 @@ let vm_test_create_destroy _ =
 let vm_test_make_shutdown _ =
 	let vm = make_vm "one" in
 	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	let () = success (Client.VM.make rpc id) in
-	let () = success (Client.VM.shutdown rpc id) in
-	let () = success (Client.VM.destroy rpc id) in
-	()
+	finally
+		(fun () ->
+			let () = success (Client.VM.make rpc id) in
+			let () = success (Client.VM.shutdown rpc id) in
+			())
+		(fun () ->
+			let () = success (Client.VM.destroy rpc id) in
+			())
 
 let vm_test_pause_unpause _ =
 	let vm = make_vm "one" in
 	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	let () = success (Client.VM.make rpc id) in
-	let () = success (Client.VM.unpause rpc id) in
-	let () = success (Client.VM.pause rpc id) in
-	let () = success (Client.VM.shutdown rpc id) in
-	let () = success (Client.VM.destroy rpc id) in
-	()
+	finally
+		(fun () ->
+			let () = success (Client.VM.make rpc id) in
+			let () = success (Client.VM.build rpc id) in
+			let () = success (Client.VM.unpause rpc id) in
+			let () = success (Client.VM.pause rpc id) in
+			let () = success (Client.VM.shutdown rpc id) in
+			())
+		(fun () ->
+			let () = success (Client.VM.destroy rpc id) in
+			())
 
 let vm_test_create_list_destroy _ =
 	let vm = make_vm "one" in
-	let (id: Vm.id) = success (Client.VM.create rpc vm) in	
-	let (vms: Vm.t list) = success (Client.VM.list rpc ()) in
-	let vm' = List.find (fun x -> x.Vm.id = id) vms in
-	vm_assert_equal vm vm';
-	let () = success (Client.VM.destroy rpc id) in
-	()
+	let (id: Vm.id) = success (Client.VM.create rpc vm) in
+	finally
+		(fun () ->
+			let (vms: Vm.t list) = success (Client.VM.list rpc ()) in
+			let vm' = List.find (fun x -> x.Vm.id = id) vms in
+			vm_assert_equal vm vm'
+		)
+		(fun () ->
+			let () = success (Client.VM.destroy rpc id) in
+			())
 
 module type DEVICE = sig
 	type t
@@ -163,31 +177,43 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let create_destroy _ =
 		let vm = make_vm "one" in
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		let dev = make () in
-		let (dev_id: id) = success (create dev) in
-		let () = success (destroy dev_id) in
-		let () = success (Client.VM.destroy rpc id) in
-		()
+		finally
+			(fun () ->
+				let dev = make () in
+				let (dev_id: id) = success (create dev) in
+				let () = success (destroy dev_id) in
+				())
+			(fun () ->
+				let () = success (Client.VM.destroy rpc id) in
+				())
 
 	let create_list_destroy _ =
 		let vm = make_vm "one" in
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		let dev = make () in
-		let (dev_id: id) = success (create dev) in
-		let (devs: t list) = success (list id) in
-		let dev' = find dev_id devs in
-		assert_equal dev dev';
-		let () = success (destroy dev_id) in
-		let () = success (Client.VM.destroy rpc id) in
-		()
+		finally
+			(fun () ->
+				let dev = make () in
+				let (dev_id: id) = success (create dev) in
+				let (devs: t list) = success (list id) in
+				let dev' = find dev_id devs in
+				assert_equal dev dev';
+				let () = success (destroy dev_id) in
+				())
+			(fun () ->
+				let () = success (Client.VM.destroy rpc id) in
+				())
 
 	let create_vm_destroy _ =
 		let vm = make_vm "one" in
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		let dev = make () in
-		let (_: id) = success (create dev) in
-		let () = success (Client.VM.destroy rpc id) in
-		()
+		finally
+			(fun () ->
+				let dev = make () in
+				let (_: id) = success (create dev) in
+				())
+			(fun () ->
+				let () = success (Client.VM.destroy rpc id) in
+				())
 end
 
 module VbdDeviceTests = DeviceTests(struct
