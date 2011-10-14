@@ -60,11 +60,13 @@ let _ =
   let pidfile = ref default_pidfile in
   let daemonize = ref false in
   let simulate = ref false in
+  let clean = ref false in
 
   Arg.parse (Arg.align [
 	       "-daemon", Arg.Set daemonize, "Create a daemon";
 	       "-pidfile", Arg.Set_string pidfile, Printf.sprintf "Set the pid file (default \"%s\")" !pidfile;
 		   "-simulate", Arg.Set simulate, "Use the simulator backend (default is the xen backend)";
+		   "-clean", Arg.Set clean, "Remove any existing persistent configuration (useful for testing)";
 	     ])
     (fun _ -> failwith "Invalid argument")
     (Printf.sprintf "Usage: %s [-daemon] [-pidfile filename]" name);
@@ -75,6 +77,8 @@ let _ =
 
   Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
   Unixext.pidfile_write !pidfile;
+
+  if !clean then Xenops_utils.empty_database ();
 
   Xenops_server.set_backend
 	  (Some (if !simulate

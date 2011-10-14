@@ -13,10 +13,10 @@
  *)
 
 open Xenops_interface
+open Xenops_utils
 
-exception Unimplemented
-
-let make vm = raise Unimplemented
-let build vm = raise Unimplemented
-let pause vm = raise Unimplemented
-let unpause vm = raise Unimplemented
+let make vm = throw Unimplemented
+let build vm = throw Unimplemented
+let destroy vm = throw Unimplemented
+let pause vm = throw Unimplemented
+let unpause vm = throw Unimplemented

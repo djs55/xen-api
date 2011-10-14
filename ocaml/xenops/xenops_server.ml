@@ -16,6 +16,8 @@ open Listext
 open Stringext
 open Fun
 open Xenops_interface
+open Xenops_server_plugin
+open Xenops_utils
 
 type context = unit
 
@@ -28,99 +30,11 @@ let query _ _ = Some {
     features = [];
 }, None
 
-let root = "/var/run/xapi/vms"
-
-
-
-let all = List.fold_left (&&) true
-let any = List.fold_left (||) false
-
-exception Protocol_error
-
-let ( >>= ) (a, b) f = match b with
-	| Some error -> None, Some error
-	| None ->
-		begin match a with
-			| None -> raise Protocol_error
-			| Some x -> f x
-		end
-let return x = Some x, None
-
-let need_some = function
-	| Some x -> Some x, None
-	| None -> None, Some Does_not_exist
-
-let dropnone x = List.filter_map (fun x -> x) x
-
-let wrap f =
-	try
-		f ()
-	with e ->
-		Printf.fprintf stderr "Caught: %s\n%!" (Printexc.to_string e);
-		Printf.fprintf stderr "%s\n%!" (Printexc.get_backtrace ());
-		raise e
-
-module type READWRITE = sig
-	type t
-	val t_of_rpc: Rpc.t -> t
-	val rpc_of_t: t -> Rpc.t
-end
-
-module TypedTable = functor(RW: READWRITE) -> struct
-	open RW
-	type key = string list
-	let filename_of_key k = Printf.sprintf "%s/%s" root (String.concat "/" k)
-	let read (k: key) =
-		let filename = filename_of_key k in
-		try
-			Some (t_of_rpc (Jsonrpc.of_string (Unixext.string_of_file filename)))
-		with _ -> None
-	let write (k: key) (x: t) =
-		let filename = filename_of_key k in
-		Unixext.mkdir_rec (Filename.dirname filename) 0o755;
-		let json = Jsonrpc.to_string (rpc_of_t x) in
-		Unixext.write_string_to_file filename json
-	let exists (k: key) = Sys.file_exists (filename_of_key k)
-	let delete (k: key) =
-		let filename = filename_of_key k in
-		let rec rm_rf f =
-			if not(Sys.is_directory f)
-			then Unixext.unlink_safe f
-			else begin
-				List.iter rm_rf (List.map (Filename.concat f) (Array.to_list (Sys.readdir f)));
-				Unix.rmdir f
-			end in
-		rm_rf filename
-	let list (k: key) = Array.to_list (Sys.readdir (filename_of_key k))
-
-	let create (k: key) (x: t) =
-		if exists k
-		then None, Some Already_exists
-		else begin
-			write k x;
-			Some (), None
-		end
-
-	let destroy (k: key) =
-		if not(exists k)
-		then None, Some Does_not_exist
-		else begin
-			delete k;
-			Some (), None
-		end
-end
-
-open Xenops_server_plugin
-
 let backend = ref None
 let set_backend m = backend := m
 let get_backend () = match !backend with
   | Some x -> x 
   | None -> failwith "No backend implementation set"
-
-let foo () =
-let module M = (val get_backend () : S) in
-()
 
 module VM = struct
 	open Vm
@@ -140,25 +54,31 @@ module VM = struct
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		return (B.make x)
+		B.make x
 
 	let build _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		return (B.build x)
+		B.build x
+
+	let shutdown _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.destroy x
 
 	let pause _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		return (B.pause x)
+		B.pause x
 
 	let unpause _ id =
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		return (B.unpause x)
+		B.unpause x
 end
 
 let filter_prefix prefix xs =

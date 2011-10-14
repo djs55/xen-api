@@ -23,6 +23,7 @@ type error =
 	| Internal_error of string
 	| Already_exists
 	| Does_not_exist
+	| Unimplemented
 
 module Query = struct
 	type t = {
@@ -89,6 +90,7 @@ module VM = struct
 	external destroy: Vm.id -> (unit option) * (error option) = ""
 	external make: Vm.id -> (unit option) * (error option) = ""
 	external build: Vm.id -> (unit option) * (error option) = ""
+	external shutdown: Vm.id -> (unit option) * (error option) = ""
 	external pause: Vm.id -> (unit option) * (error option) = ""
 	external unpause: Vm.id -> (unit option) * (error option) = ""
 	external list: unit -> (Vm.t list option) * (error option) = ""
