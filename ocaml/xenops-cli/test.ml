@@ -128,6 +128,16 @@ let vm_test_make_shutdown _ =
 	let () = success (Client.VM.destroy rpc id) in
 	()
 
+let vm_test_pause_unpause _ =
+	let vm = make_vm "one" in
+	let (id: Vm.id) = success (Client.VM.create rpc vm) in
+	let () = success (Client.VM.make rpc id) in
+	let () = success (Client.VM.unpause rpc id) in
+	let () = success (Client.VM.pause rpc id) in
+	let () = success (Client.VM.shutdown rpc id) in
+	let () = success (Client.VM.destroy rpc id) in
+	()
+
 let vm_test_create_list_destroy _ =
 	let vm = make_vm "one" in
 	let (id: Vm.id) = success (Client.VM.create rpc vm) in	
@@ -268,6 +278,7 @@ let _ =
 			"vm_test_destroy_missing" >:: vm_test_destroy_missing;
 			"vm_test_create_destroy" >:: vm_test_create_destroy;
 			"vm_test_make_shutdown" >:: vm_test_make_shutdown;
+			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
