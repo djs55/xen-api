@@ -126,6 +126,34 @@ let add_vbd vm vbd () =
 			return ()
 		end
 	end
+
+let remove_vif vm vif () =
+	if not(StringMap.mem vm !uuid_to_domain)
+	then throw Does_not_exist
+	else begin
+		let d = StringMap.find vm !uuid_to_domain in
+		let this_one x = x.Vif.id = vif.Vif.id in
+		if List.filter this_one d.vifs = []
+		then throw Does_not_exist
+		else begin
+			uuid_to_domain := StringMap.add vm { d with vifs = List.filter (fun x -> not (this_one x)) d.vifs } !uuid_to_domain;
+			return ()
+		end
+	end
+
+let remove_vbd vm vbd () =
+	if not(StringMap.mem vm !uuid_to_domain)
+	then throw Does_not_exist
+	else begin
+		let d = StringMap.find vm !uuid_to_domain in
+		let this_one x = x.Vbd.id = vbd.Vbd.id in
+		if List.filter this_one d.vbds = []
+		then throw Does_not_exist
+		else begin
+			uuid_to_domain := StringMap.add vm { d with vbds = List.filter (fun x -> not (this_one x)) d.vbds } !uuid_to_domain;
+			return ()
+		end
+	end
 	
 module VM = struct
 	let make vm = Mutex.execute m (make_nolock vm)
@@ -137,10 +165,10 @@ end
 
 module VBD = struct
 	let plug vm vbd = Mutex.execute m (add_vbd vm vbd)
-	let unplug vm vbd = throw Unimplemented
+	let unplug vm vbd = Mutex.execute m (remove_vbd vm vbd)
 end
 
 module VIF = struct
 	let plug vm vif = Mutex.execute m (add_vif vm vif)
-	let unplug vm vif = throw Unimplemented
+	let unplug vm vif = Mutex.execute m (remove_vif vm vif)
 end
