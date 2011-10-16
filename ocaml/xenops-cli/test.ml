@@ -164,10 +164,14 @@ let vm_test_create_list_destroy _ =
 module type DEVICE = sig
 	type t
 	val assert_equal: t -> t -> unit
+	type position
+	val positions: position list
 	type id
-	val make: unit -> t
+	val make: position -> t
 	val create: t -> id option * error option
 	val destroy: id -> unit option * error option
+	val plug: id -> unit option * error option
+	val unplug: id -> unit option * error option
 	val list: Vm.id -> t list option * error option
 	val find: id -> t list -> t
 end
@@ -179,10 +183,48 @@ module DeviceTests = functor(D: DEVICE) -> struct
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
 		finally
 			(fun () ->
-				let dev = make () in
+				let dev = make (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				let () = success (destroy dev_id) in
 				())
+			(fun () ->
+				let () = success (Client.VM.destroy rpc id) in
+				())
+
+	let create_plug_unplug_destroy _ =
+		let vm = make_vm "one" in
+		let (id: Vm.id) = success (Client.VM.create rpc vm) in
+		finally
+			(fun () ->
+				let dev = make (List.hd positions) in
+				let (dev_id: id) = success (create dev) in
+				let () = success (plug dev_id) in
+				let () = success (unplug dev_id) in
+				let () = success (destroy dev_id) in
+				())
+			(fun () ->
+				let () = success (Client.VM.destroy rpc id) in
+				())
+
+	let create_plug_unplug_many_destroy _ =
+		let vm = make_vm "one" in
+		let (id: Vm.id) = success (Client.VM.create rpc vm) in
+		finally
+			(fun () ->
+				let ids = 
+					List.map
+						(fun position ->
+							let dev = make position in
+							let id = success (create dev) in
+							let () = success (plug id) in
+							id
+						) positions in
+				List.iter
+					(fun id ->
+						let () = success (unplug id) in
+						let () = success (destroy id) in
+						()) ids
+			)
 			(fun () ->
 				let () = success (Client.VM.destroy rpc id) in
 				())
@@ -192,7 +234,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
 		finally
 			(fun () ->
-				let dev = make () in
+				let dev = make (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				let (devs: t list) = success (list id) in
 				let dev' = find dev_id devs in
@@ -208,7 +250,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
 		finally
 			(fun () ->
-				let dev = make () in
+				let dev = make (List.hd positions) in
 				let (_: id) = success (create dev) in
 				())
 			(fun () ->
@@ -219,9 +261,12 @@ end
 module VbdDeviceTests = DeviceTests(struct
 	type t = Vbd.t
 	type id = Vbd.id
-	let make () =
+	type position = Device_number.t option
+	let positions = [ None; None; None ]
+	let make position =
 		let open Vbd in {
 			Vbd.id = ("one", "51712");
+			position = position;
 			mode = ReadWrite;
 			backend = ("5", "/dev/null");
 			ty = Disk;
@@ -231,6 +276,8 @@ module VbdDeviceTests = DeviceTests(struct
 		}
 	let create = Client.VBD.create rpc
 	let destroy = Client.VBD.destroy rpc
+	let plug = Client.VBD.plug rpc
+	let unplug = Client.VBD.unplug rpc
 	let list = Client.VBD.list rpc
 	let find id vbds = List.find (fun x -> x.Vbd.id = id) vbds
 	let assert_equal vbd vbd' =
@@ -246,9 +293,12 @@ end)
 module VifDeviceTests = DeviceTests(struct
 	type t = Vif.t
 	type id = Vif.id
-	let make () =
+	type position = int
+	let positions = [ 0; 1; 2 ]
+	let make position =
 		let open Vif in {
 			id = "one", "1";
+			position = position;
 			ty = Bridge "xenbr";
 			mac = "c0:ff:ee:c0:ff:ee";
 			carrier = false;
@@ -260,11 +310,14 @@ module VifDeviceTests = DeviceTests(struct
 		}
 	let create = Client.VIF.create rpc
 	let destroy = Client.VIF.destroy rpc
+	let plug = Client.VIF.plug rpc
+	let unplug = Client.VIF.unplug rpc
 	let list = Client.VIF.list rpc
 	let find id vifs = List.find (fun x -> x.Vif.id = id) vifs
 	let assert_equal vif vif' =
 		let open Vif in
 		assert_equal ~msg:"id" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vif.id vif'.id;
+		assert_equal ~msg:"position" ~printer:string_of_int vif.position vif'.position;
 		assert_equal ~msg:"ty" ~printer:(function Bridge x -> "Bridge " ^ x | Vswitch x -> "Vswitch " ^ x) vif.ty vif'.ty;
 		assert_equal ~msg:"mac" ~printer:(fun x -> x) vif.mac vif'.mac;
 		assert_equal ~msg:"carrier" ~printer:string_of_bool vif.carrier vif'.carrier;
@@ -309,9 +362,13 @@ let _ =
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
 			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
+			"vbd_test_create_plug_unplug_destroy" >:: VbdDeviceTests.create_plug_unplug_destroy;
+			"vbd_test_create_plug_unplug_many_destroy" >:: VbdDeviceTests.create_plug_unplug_many_destroy;
 			"vif_test_create_destroy" >:: VifDeviceTests.create_destroy;
 			"vif_test_create_list_destroy" >:: VifDeviceTests.create_list_destroy;
 			"vif_test_create_vm_destroy" >:: VifDeviceTests.create_vm_destroy;
+			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
+			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
 		] in
 
 	run_test_tt ~verbose:!verbose suite

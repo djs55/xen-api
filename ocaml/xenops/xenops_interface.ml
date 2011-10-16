@@ -107,6 +107,7 @@ module Vbd = struct
 
 	type t = {
 		id: id;
+		position: Device_number.t option;
 		mode: mode;
 		backend: string * string; (* vm.id * params *)
 		ty: ty;
@@ -119,6 +120,8 @@ end
 
 module VBD = struct
 	external create: Vbd.t -> (Vbd.id option) * (error option) = ""
+	external plug: Vbd.id -> (unit option) * (error option) = ""
+	external unplug: Vbd.id -> (unit option) * (error option) = ""
 	external list: Vm.id -> (Vbd.t list option) * (error option) = ""
 	external destroy: Vbd.id -> (unit option) * (error option) = ""
 end
@@ -133,6 +136,7 @@ module Vif = struct
 
 	type t = {
 		id: id;
+		position: int;
 		ty: ty;
 		mac: string;
 		carrier: bool;
@@ -146,6 +150,8 @@ end
 
 module VIF = struct
 	external create: Vif.t -> (Vif.id option) * (error option) = ""
+	external plug: Vif.id -> (unit option) * (error option) = ""
+	external unplug: Vif.id -> (unit option) * (error option) = ""
 	external list: Vm.id -> (Vif.t list option) * (error option) = ""
 	external destroy: Vif.id -> (unit option) * (error option) = ""
 end

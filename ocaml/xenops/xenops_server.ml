@@ -93,14 +93,25 @@ module VBD = struct
 
 	module DB = TypedTable(Vbd)
 
+	let key_of k = [ fst k; "vbd." ^ (snd k) ]
 	let create _ vbd =
-		DB.create [ fst (vbd.id); "vbd." ^ (snd vbd.id) ] vbd
+		DB.create (key_of vbd.id) vbd
 		>>= fun () ->
 		return vbd.id
-	let destroy _ (vm, vbd) = DB.destroy [ vm; "vbd." ^ vbd ]
+	let plug _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VBD.plug (fst id) x
+	let unplug _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VBD.unplug (fst id) x
+	let destroy _ id = DB.destroy (key_of id)
 	let list _ vm =
-		let key_of id = [ vm; "vbd." ^ id ] in
-		return (DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of)) |> dropnone)
+		let key_of' id = [ vm; "vbd." ^ id ] in
+		return (DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of')) |> dropnone)
 end
 
 module VIF = struct

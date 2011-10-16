@@ -11,6 +11,9 @@ type spec = bus_type * int * int
 (** A valid device number *)
 type t
 
+val t_of_rpc: Rpc.t -> t
+val rpc_of_t: t -> Rpc.t
+
 (** [make spec] validates a given device number specification [spec] and returns
     a device number *)
 val make: spec -> t

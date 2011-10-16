@@ -22,4 +22,12 @@ module type S = sig
 		val pause: Vm.t -> unit option * error option
 		val unpause: Vm.t -> unit option * error option
 	end
+	module VBD : sig
+		val plug: Vm.id -> Vbd.t -> unit option * error option
+		val unplug: Vm.id -> Vbd.t -> unit option * error option
+	end
+	module VIF : sig
+		val plug: Vm.id -> Vif.t -> unit option * error option
+		val unplug: Vm.id -> Vif.t -> unit option * error option
+	end
 end
