@@ -194,6 +194,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let create_plug_unplug_destroy _ =
 		let vm = make_vm "one" in
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
+		let () = success (Client.VM.make rpc id) in
 		finally
 			(fun () ->
 				let dev = make (List.hd positions) in
@@ -203,12 +204,14 @@ module DeviceTests = functor(D: DEVICE) -> struct
 				let () = success (destroy dev_id) in
 				())
 			(fun () ->
+				let () = success (Client.VM.shutdown rpc id) in
 				let () = success (Client.VM.destroy rpc id) in
 				())
 
 	let create_plug_unplug_many_destroy _ =
 		let vm = make_vm "one" in
 		let (id: Vm.id) = success (Client.VM.create rpc vm) in
+		let () = success (Client.VM.make rpc id) in
 		finally
 			(fun () ->
 				let ids = 
@@ -226,6 +229,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 						()) ids
 			)
 			(fun () ->
+				let () = success (Client.VM.shutdown rpc id) in
 				let () = success (Client.VM.destroy rpc id) in
 				())
 
@@ -359,6 +363,9 @@ let _ =
 			"vm_test_make_shutdown" >:: vm_test_make_shutdown;
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
+			"vm_destroy_running" >:: vm_destroy_running;
+			"vbd_destroy_running" >:: vbd_destroy_running;
+			"vif_destroy_running" >:: vif_destroy_running;
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
 			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
