@@ -42,6 +42,18 @@ let success = function
 	| (Some x, _) -> x
 	| None, None -> failwith "protocol error"
 
+let fail_running = function
+	| (_, Some (Bad_power_state(Running, Halted))) -> ()
+	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| (Some x, _) -> failwith "expected failure, got success"
+	| None, None -> failwith "protocol error"
+
+let fail_connected = function
+	| (_, Some (Device_is_connected)) -> ()
+	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| (Some x, _) -> failwith "expected failure, got success"
+	| None, None -> failwith "protocol error"
+
 let test_query _ = let (_: Query.t) = success (Client.query rpc ()) in ()
 
 let missing_vm = "missing"
@@ -115,51 +127,50 @@ let vm_assert_equal vm vm' =
 					assert_equal ~msg:"devices" ~printer:(String.concat ", ") x.devices x'.devices;
 			end
 
-let vm_test_create_destroy _ =
-	let vm = make_vm "one" in
+let with_vm id f =
+	let vm = make_vm id in
 	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	let () = success (Client.VM.destroy rpc id) in
-	()
+	finally (fun () -> f id) (fun () -> success (Client.VM.destroy rpc id))
+
+let vm_test_create_destroy _ =
+	with_vm "one" (fun _ -> ())
 
 let vm_test_make_shutdown _ =
-	let vm = make_vm "one" in
-	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	finally
-		(fun () ->
-			let () = success (Client.VM.make rpc id) in
-			let () = success (Client.VM.shutdown rpc id) in
-			())
-		(fun () ->
-			let () = success (Client.VM.destroy rpc id) in
-			())
+	with_vm "one"
+		(fun id ->
+			success (Client.VM.make rpc id);
+			success (Client.VM.shutdown rpc id)
+		)
 
 let vm_test_pause_unpause _ =
-	let vm = make_vm "one" in
-	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	finally
-		(fun () ->
-			let () = success (Client.VM.make rpc id) in
-			let () = success (Client.VM.build rpc id) in
-			let () = success (Client.VM.unpause rpc id) in
-			let () = success (Client.VM.pause rpc id) in
-			let () = success (Client.VM.shutdown rpc id) in
-			())
-		(fun () ->
-			let () = success (Client.VM.destroy rpc id) in
-			())
+	with_vm "one"
+		(fun id ->
+			success (Client.VM.make rpc id);
+			success (Client.VM.build rpc id);
+			success (Client.VM.unpause rpc id);
+			success (Client.VM.pause rpc id);
+			success (Client.VM.shutdown rpc id);
+		)
 
 let vm_test_create_list_destroy _ =
-	let vm = make_vm "one" in
-	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	finally
-		(fun () ->
+	with_vm "one"
+		(fun id ->
+			let vm = make_vm "one" in
 			let (vms: Vm.t list) = success (Client.VM.list rpc ()) in
 			let vm' = List.find (fun x -> x.Vm.id = id) vms in
 			vm_assert_equal vm vm'
 		)
-		(fun () ->
-			let () = success (Client.VM.destroy rpc id) in
-			())
+
+let vm_destroy_running _ =
+	with_vm "one"
+		(fun id ->
+			success (Client.VM.make rpc id);
+			success (Client.VM.build rpc id);
+			success (Client.VM.unpause rpc id);
+			fail_running (Client.VM.destroy rpc id);
+			success (Client.VM.shutdown rpc id)
+		)
+	
 
 module type DEVICE = sig
 	type t
@@ -179,87 +190,78 @@ end
 module DeviceTests = functor(D: DEVICE) -> struct
 	open D
 	let create_destroy _ =
-		let vm = make_vm "one" in
-		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		finally
-			(fun () ->
+		with_vm "one"
+			(fun id ->
 				let dev = make (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
-				let () = success (destroy dev_id) in
-				())
-			(fun () ->
-				let () = success (Client.VM.destroy rpc id) in
-				())
+				success (destroy dev_id)
+			)
+
+	let with_created_vm id f =
+		with_vm id
+			(fun id ->
+				success (Client.VM.make rpc id);
+				finally
+					(fun () -> f id)
+					(fun () -> success (Client.VM.shutdown rpc id))
+			)
 
 	let create_plug_unplug_destroy _ =
-		let vm = make_vm "one" in
-		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		let () = success (Client.VM.make rpc id) in
-		finally
-			(fun () ->
+		with_created_vm "one"
+			(fun id ->
 				let dev = make (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
-				let () = success (plug dev_id) in
-				let () = success (unplug dev_id) in
-				let () = success (destroy dev_id) in
-				())
-			(fun () ->
-				let () = success (Client.VM.shutdown rpc id) in
-				let () = success (Client.VM.destroy rpc id) in
-				())
+				success (plug dev_id);
+				success (unplug dev_id);
+				success (destroy dev_id);
+			)
 
 	let create_plug_unplug_many_destroy _ =
-		let vm = make_vm "one" in
-		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		let () = success (Client.VM.make rpc id) in
-		finally
-			(fun () ->
+		with_created_vm "one"
+			(fun id ->
 				let ids = 
 					List.map
 						(fun position ->
 							let dev = make position in
 							let id = success (create dev) in
-							let () = success (plug id) in
+							success (plug id);
 							id
 						) positions in
 				List.iter
 					(fun id ->
-						let () = success (unplug id) in
-						let () = success (destroy id) in
-						()) ids
+						success (unplug id);
+						success (destroy id);
+					) ids
 			)
-			(fun () ->
-				let () = success (Client.VM.shutdown rpc id) in
-				let () = success (Client.VM.destroy rpc id) in
-				())
 
 	let create_list_destroy _ =
-		let vm = make_vm "one" in
-		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		finally
-			(fun () ->
+		with_vm "one"
+			(fun id ->
 				let dev = make (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				let (devs: t list) = success (list id) in
 				let dev' = find dev_id devs in
 				assert_equal dev dev';
-				let () = success (destroy dev_id) in
-				())
-			(fun () ->
-				let () = success (Client.VM.destroy rpc id) in
-				())
+				success (destroy dev_id);
+			)
 
 	let create_vm_destroy _ =
-		let vm = make_vm "one" in
-		let (id: Vm.id) = success (Client.VM.create rpc vm) in
-		finally
-			(fun () ->
+		with_vm "one"
+			(fun id ->
 				let dev = make (List.hd positions) in
 				let (_: id) = success (create dev) in
-				())
-			(fun () ->
-				let () = success (Client.VM.destroy rpc id) in
-				())
+				()
+			)
+
+	let destroy_running _ =
+		with_created_vm "one"
+			(fun id ->
+				let dev = make (List.hd positions) in
+				let (dev_id: id) = success (create dev) in
+				success (plug dev_id);
+				(* no unplug *)
+				fail_connected (destroy dev_id);				
+			)
 end
 
 module VbdDeviceTests = DeviceTests(struct
@@ -364,18 +366,18 @@ let _ =
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
 			"vm_destroy_running" >:: vm_destroy_running;
-			"vbd_destroy_running" >:: vbd_destroy_running;
-			"vif_destroy_running" >:: vif_destroy_running;
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
 			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
 			"vbd_test_create_plug_unplug_destroy" >:: VbdDeviceTests.create_plug_unplug_destroy;
 			"vbd_test_create_plug_unplug_many_destroy" >:: VbdDeviceTests.create_plug_unplug_many_destroy;
+			"vbd_destroy_running" >:: VbdDeviceTests.destroy_running;
 			"vif_test_create_destroy" >:: VifDeviceTests.create_destroy;
 			"vif_test_create_list_destroy" >:: VifDeviceTests.create_list_destroy;
 			"vif_test_create_vm_destroy" >:: VifDeviceTests.create_vm_destroy;
 			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
 			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
+			"vif_destroy_running" >:: VifDeviceTests.destroy_running;
 		] in
 
 	run_test_tt ~verbose:!verbose suite

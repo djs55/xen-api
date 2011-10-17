@@ -19,12 +19,18 @@ type ('a, 'b) result =
 	| Success of 'a
 	| Failure of 'b
 
+type power_state =
+	| Halted
+	| Running
+
 type error =
 	| Internal_error of string
 	| Already_exists
 	| Does_not_exist
 	| Unimplemented
 	| Domain_not_built
+	| Bad_power_state of power_state * power_state
+	| Device_is_connected
 
 module Query = struct
 	type t = {
