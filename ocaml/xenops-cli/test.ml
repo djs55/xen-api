@@ -178,7 +178,8 @@ module type DEVICE = sig
 	type position
 	val positions: position list
 	type id
-	val make: position -> t
+	val ids: id list
+	val make: id -> position -> t
 	val create: t -> id option * error option
 	val destroy: id -> unit option * error option
 	val plug: id -> unit option * error option
@@ -192,7 +193,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let create_destroy _ =
 		with_vm "one"
 			(fun id ->
-				let dev = make (List.hd positions) in
+				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				success (destroy dev_id)
 			)
@@ -209,7 +210,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let create_plug_unplug_destroy _ =
 		with_created_vm "one"
 			(fun id ->
-				let dev = make (List.hd positions) in
+				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				success (plug dev_id);
 				success (unplug dev_id);
@@ -221,12 +222,12 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			(fun id ->
 				let ids = 
 					List.map
-						(fun position ->
-							let dev = make position in
+						(fun (id, position) ->
+							let dev = make id position in
 							let id = success (create dev) in
 							success (plug id);
 							id
-						) positions in
+						) (List.combine ids positions) in
 				List.iter
 					(fun id ->
 						success (unplug id);
@@ -237,7 +238,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let create_list_destroy _ =
 		with_vm "one"
 			(fun id ->
-				let dev = make (List.hd positions) in
+				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				let (devs: t list) = success (list id) in
 				let dev' = find dev_id devs in
@@ -248,7 +249,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let create_vm_destroy _ =
 		with_vm "one"
 			(fun id ->
-				let dev = make (List.hd positions) in
+				let dev = make (List.hd ids) (List.hd positions) in
 				let (_: id) = success (create dev) in
 				()
 			)
@@ -256,7 +257,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let destroy_running _ =
 		with_created_vm "one"
 			(fun id ->
-				let dev = make (List.hd positions) in
+				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
 				success (plug dev_id);
 				(* no unplug *)
@@ -269,9 +270,10 @@ module VbdDeviceTests = DeviceTests(struct
 	type id = Vbd.id
 	type position = Device_number.t option
 	let positions = [ None; None; None ]
-	let make position =
+	let ids = List.map (fun x -> "one", x) [ "0"; "1"; "2" ]
+	let make id position =
 		let open Vbd in {
-			Vbd.id = ("one", "51712");
+			Vbd.id = id;
 			position = position;
 			mode = ReadWrite;
 			backend = ("5", "/dev/null");
@@ -301,9 +303,10 @@ module VifDeviceTests = DeviceTests(struct
 	type id = Vif.id
 	type position = int
 	let positions = [ 0; 1; 2 ]
-	let make position =
+	let ids = List.map (fun x -> "one", x) [ "0"; "1"; "2" ]
+	let make id position =
 		let open Vif in {
-			id = "one", "1";
+			id = id;
 			position = position;
 			ty = Bridge "xenbr";
 			mac = "c0:ff:ee:c0:ff:ee";

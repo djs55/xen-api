@@ -44,9 +44,10 @@ let next_domid =
 let m = Mutex.create ()
 
 let make_nolock vm () =
-	if StringMap.mem vm.Vm.id !uuid_to_domain
-	then throw Already_exists
-	else begin
+	if StringMap.mem vm.Vm.id !uuid_to_domain then begin
+		Printf.fprintf stderr "VM.make_nolock %s: Already_exists\n%!" vm.Vm.id;
+		throw Already_exists
+	end else begin
 		let domain = {
 			domid = next_domid ();
 			uuid = vm.Vm.id;
@@ -103,9 +104,10 @@ let add_vif vm vif () =
 	else begin
 		let d = StringMap.find vm !uuid_to_domain in
 		let existing_positions = List.map (fun vif -> vif.Vif.position) d.vifs in
-		if List.mem vif.Vif.position existing_positions
-		then throw Already_exists
-		else begin
+		if List.mem vif.Vif.position existing_positions then begin
+			Printf.fprintf stderr "VIF.plug %s.%s: Already exists\n%!" (fst vif.Vif.id) (snd vif.Vif.id);
+			throw Already_exists
+		end else begin
 			uuid_to_domain := StringMap.add vm { d with vifs = vif :: d.vifs } !uuid_to_domain;
 			return ()
 		end
@@ -124,16 +126,16 @@ let add_vbd vm vbd () =
 		let next_index = List.fold_left max (-1) indices + 1 in
 		let next_dn = Device_number.of_disk_number d.hvm next_index in
 		let this_dn = Opt.default next_dn vbd.Vbd.position in
-		if List.mem this_dn dns
-		then throw Already_exists
-		else begin
+		if List.mem this_dn dns then begin
+			Printf.fprintf stderr "VBD.plug %s.%s: Already exists\n%!" (fst vbd.Vbd.id) (snd vbd.Vbd.id);
+			throw Already_exists
+		end else begin
 			uuid_to_domain := StringMap.add vm { d with vbds = { vbd with Vbd.position = Some this_dn } :: d.vbds } !uuid_to_domain;
 			return ()
 		end
 	end
 
 let vbd_attached vm vbd () =
-	Printf.fprintf stderr "Looking up vm %s\n%!" vm;
 	if not(StringMap.mem vm !uuid_to_domain)
 	then return false
 	else begin
