@@ -132,6 +132,25 @@ let add_vbd vm vbd () =
 		end
 	end
 
+let vbd_attached vm vbd () =
+	Printf.fprintf stderr "Looking up vm %s\n%!" vm;
+	if not(StringMap.mem vm !uuid_to_domain)
+	then return false
+	else begin
+		let d = StringMap.find vm !uuid_to_domain in
+		let this_one x = x.Vbd.id = vbd.Vbd.id in
+		return (List.filter this_one d.vbds <> [])
+	end
+
+let vif_attached vm vif () =
+	if not(StringMap.mem vm !uuid_to_domain)
+	then return false
+	else begin
+		let d = StringMap.find vm !uuid_to_domain in
+		let this_one x = x.Vif.id = vif.Vif.id in
+		return (List.filter this_one d.vifs <> [])
+	end
+
 let remove_vif vm vif () =
 	if not(StringMap.mem vm !uuid_to_domain)
 	then throw Does_not_exist
@@ -173,9 +192,13 @@ end
 module VBD = struct
 	let plug vm vbd = Mutex.execute m (add_vbd vm vbd)
 	let unplug vm vbd = Mutex.execute m (remove_vbd vm vbd)
+
+	let get_currently_attached vm vbd = Mutex.execute m (vbd_attached vm vbd)
 end
 
 module VIF = struct
 	let plug vm vif = Mutex.execute m (add_vif vm vif)
 	let unplug vm vif = Mutex.execute m (remove_vif vm vif)
+
+	let get_currently_attached vm vif = Mutex.execute m (vif_attached vm vif)
 end

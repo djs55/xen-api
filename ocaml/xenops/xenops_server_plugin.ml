@@ -27,9 +27,13 @@ module type S = sig
 	module VBD : sig
 		val plug: Vm.id -> Vbd.t -> unit option * error option
 		val unplug: Vm.id -> Vbd.t -> unit option * error option
+
+		val get_currently_attached: Vm.id -> Vbd.t -> bool option * error option
 	end
 	module VIF : sig
 		val plug: Vm.id -> Vif.t -> unit option * error option
 		val unplug: Vm.id -> Vif.t -> unit option * error option
+
+		val get_currently_attached: Vm.id -> Vif.t -> bool option * error option
 	end
 end

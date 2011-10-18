@@ -28,9 +28,13 @@ end
 module VBD = struct
 	let plug vm vbd = throw Unimplemented
 	let unplug vm vbd = throw Unimplemented
+
+	let get_currently_attached vm vbd = throw Unimplemented
 end
 
 module VIF = struct
 	let plug vm vbd = throw Unimplemented
 	let unplug vm vbd = throw Unimplemented
+
+	let get_currently_attached vm vbd = throw Unimplemented
 end
