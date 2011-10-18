@@ -46,7 +46,15 @@ module VM = struct
 		DB.create (key_of x.id) x
 		>>= fun () ->
 		return x.id
-	let destroy _ x = DB.destroy [ x ]
+	let destroy _ id =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.get_power_state x
+		>>= fun power ->
+		if power = Running
+		then throw (Bad_power_state(Running, Halted))
+		else DB.destroy [ id ]
 	let list _ () =
 		return (DB.list [ ] |> (List.map (DB.read ++ key_of)) |> dropnone)
 

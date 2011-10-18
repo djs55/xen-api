@@ -61,6 +61,11 @@ let make_nolock vm () =
 		return ()
 	end
 
+let get_power_state_nolock vm () =
+	return (if StringMap.mem vm.Vm.id !uuid_to_domain
+	then Running
+	else Halted)
+
 let destroy_nolock vm () =
 	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
 	then throw Does_not_exist
@@ -161,6 +166,8 @@ module VM = struct
 	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
 	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
 	let build vm = Mutex.execute m (build_nolock vm)
+
+	let get_power_state vm = Mutex.execute m (get_power_state_nolock vm)
 end
 
 module VBD = struct

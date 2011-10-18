@@ -21,6 +21,8 @@ module VM = struct
 	let destroy vm = throw Unimplemented
 	let pause vm = throw Unimplemented
 	let unpause vm = throw Unimplemented
+
+	let get_power_state vm = throw Unimplemented
 end
 
 module VBD = struct
