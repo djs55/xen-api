@@ -48,23 +48,22 @@ module VM = struct
 			)
 	let make = wrap make_exn
 
-	let destroy_exn vm =
+	let on_domain f vm =
 		let uuid = uuid_of_vm vm in
 		with_xc_and_xs
 			(fun xc xs ->
 				match domid_of_uuid ~xc ~xs uuid with
 					| None -> throw Does_not_exist
-					| Some domid ->
-						Domain.destroy xc xs domid;
-						(* XXX: clean up xenstore stuff *)
-						(* wait? *)
-						return ()
+					| Some domid -> return (f xc xs domid)
 			)
-	let destroy = wrap destroy_exn
+
+	let destroy = wrap (on_domain (fun xc xs -> Domain.destroy ~preserve_xs_vm:false ~xc ~xs))
+
+	let pause = wrap (on_domain (fun xc _ -> Domain.pause ~xc))
+
+	let unpause = wrap (on_domain (fun xc _ -> Domain.unpause ~xc))
 
 	let build vm = throw Unimplemented
-	let pause vm = throw Unimplemented
-	let unpause vm = throw Unimplemented
 
 	let suspend vm disk = throw Unimplemented
 	let resume vm disk = throw Unimplemented

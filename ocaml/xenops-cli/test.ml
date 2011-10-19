@@ -148,6 +148,15 @@ let vm_test_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
+			success (Client.VM.unpause rpc id);
+			success (Client.VM.pause rpc id);
+			success (Client.VM.shutdown rpc id)
+		)
+
+let vm_test_build_pause_unpause _ =
+	with_vm example_uuid
+		(fun id ->
+			success (Client.VM.make rpc id);
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.pause rpc id);
@@ -388,6 +397,8 @@ let _ =
 			"vm_test_create_destroy" >:: vm_test_create_destroy;
 			"vm_test_make_shutdown" >:: vm_test_make_shutdown;
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
+(*
+			"vm_test_build_pause_unpause" >:: vm_test_build_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
 			"vm_destroy_running" >:: vm_destroy_running;
 			"vm_test_suspend" >:: vm_test_suspend;
@@ -404,6 +415,7 @@ let _ =
 			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
 			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
 			"vif_destroy_running" >:: VifDeviceTests.destroy_running;
+*)
 		] in
 
 	run_test_tt ~verbose:!verbose suite
