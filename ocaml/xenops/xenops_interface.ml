@@ -92,17 +92,6 @@ module Vm = struct
 	}
 end
 
-module VM = struct
-	external create: Vm.t -> (Vm.id option) * (error option) = ""
-	external destroy: Vm.id -> (unit option) * (error option) = ""
-	external make: Vm.id -> (unit option) * (error option) = ""
-	external build: Vm.id -> (unit option) * (error option) = ""
-	external shutdown: Vm.id -> (unit option) * (error option) = ""
-	external pause: Vm.id -> (unit option) * (error option) = ""
-	external unpause: Vm.id -> (unit option) * (error option) = ""
-	external list: unit -> (Vm.t list option) * (error option) = ""
-end
-
 module Vbd = struct
 
 	type mode = ReadOnly | ReadWrite
@@ -111,25 +100,20 @@ module Vbd = struct
 
 	type id = string * string
 
+	(* FIXME: take a URL and call VDI.attach ourselves *)
+	type disk = string * string (* vm.id * params *)
+
 	type t = {
 		id: id;
 		position: Device_number.t option;
 		mode: mode;
-		backend: string * string; (* vm.id * params *)
+		backend: disk;
 		ty: ty;
 		unpluggable: bool;
 		extra_backend_keys: (string * string) list;
 		extra_private_keys: (string * string) list;
 	}
 
-end
-
-module VBD = struct
-	external create: Vbd.t -> (Vbd.id option) * (error option) = ""
-	external plug: Vbd.id -> (unit option) * (error option) = ""
-	external unplug: Vbd.id -> (unit option) * (error option) = ""
-	external list: Vm.id -> (Vbd.t list option) * (error option) = ""
-	external destroy: Vbd.id -> (unit option) * (error option) = ""
 end
 
 module Vif = struct
@@ -152,6 +136,28 @@ module Vif = struct
 		other_config: (string * string) list;
 		extra_private_keys: (string * string) list;
 	}
+end
+
+module VM = struct
+	external create: Vm.t -> (Vm.id option) * (error option) = ""
+	external destroy: Vm.id -> (unit option) * (error option) = ""
+	external make: Vm.id -> (unit option) * (error option) = ""
+	external build: Vm.id -> (unit option) * (error option) = ""
+	external shutdown: Vm.id -> (unit option) * (error option) = ""
+	external pause: Vm.id -> (unit option) * (error option) = ""
+	external unpause: Vm.id -> (unit option) * (error option) = ""
+	external list: unit -> (Vm.t list option) * (error option) = ""
+
+	external suspend: Vm.id -> Vbd.disk -> (unit option) * (error option) = ""
+	external resume: Vm.id -> Vbd.disk -> (unit option) * (error option) = ""
+end
+
+module VBD = struct
+	external create: Vbd.t -> (Vbd.id option) * (error option) = ""
+	external plug: Vbd.id -> (unit option) * (error option) = ""
+	external unplug: Vbd.id -> (unit option) * (error option) = ""
+	external list: Vm.id -> (Vbd.t list option) * (error option) = ""
+	external destroy: Vbd.id -> (unit option) * (error option) = ""
 end
 
 module VIF = struct

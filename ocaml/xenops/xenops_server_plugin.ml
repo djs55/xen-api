@@ -22,6 +22,9 @@ module type S = sig
 		val pause: Vm.t -> unit option * error option
 		val unpause: Vm.t -> unit option * error option
 
+		val suspend: Vm.t -> Vbd.disk -> unit option * error option
+		val resume: Vm.t -> Vbd.disk -> unit option * error option
+
 		val get_power_state: Vm.t -> power_state option * error option
 	end
 	module VBD : sig

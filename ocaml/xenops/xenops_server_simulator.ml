@@ -26,6 +26,7 @@ type domain = {
 	shutdown_reason: Domain.shutdown_reason option;
 	paused: bool;
 	built: bool;
+	suspended: bool;
 	vbds: Vbd.t list;
 	vifs: Vif.t list;
 }
@@ -55,6 +56,7 @@ let make_nolock vm () =
 			shutdown_reason = None;
 			paused = true;
 			built = false;
+			suspended = false;
 			vifs = [];
 			vbds = [];
 		} in
@@ -80,6 +82,24 @@ let build_nolock vm () =
 	then throw Does_not_exist
 	else begin
 		debug "setting built <- true";
+		let d = StringMap.find vm.Vm.id !uuid_to_domain in
+		uuid_to_domain := StringMap.add vm.Vm.id { d with built = true } !uuid_to_domain;
+		return ()
+	end
+
+let suspend_nolock vm disk () =
+	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
+	then throw Does_not_exist
+	else begin
+		let d = StringMap.find vm.Vm.id !uuid_to_domain in
+		uuid_to_domain := StringMap.add vm.Vm.id { d with suspended = true } !uuid_to_domain;
+		return ()
+	end
+
+let resume_nolock vm disk () =
+	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
+	then throw Does_not_exist
+	else begin
 		let d = StringMap.find vm.Vm.id !uuid_to_domain in
 		uuid_to_domain := StringMap.add vm.Vm.id { d with built = true } !uuid_to_domain;
 		return ()
@@ -187,6 +207,9 @@ module VM = struct
 	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
 	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
 	let build vm = Mutex.execute m (build_nolock vm)
+
+	let suspend vm disk = Mutex.execute m (suspend_nolock vm disk)
+	let resume vm disk = Mutex.execute m (resume_nolock vm disk)
 
 	let get_power_state vm = Mutex.execute m (get_power_state_nolock vm)
 end

@@ -87,6 +87,18 @@ module VM = struct
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.unpause x
+
+	let suspend _ id disk =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.suspend x disk
+
+	let resume _ id disk =
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.resume x disk
 end
 
 let filter_prefix prefix xs =

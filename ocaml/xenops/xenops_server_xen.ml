@@ -22,6 +22,9 @@ module VM = struct
 	let pause vm = throw Unimplemented
 	let unpause vm = throw Unimplemented
 
+	let suspend vm disk = throw Unimplemented
+	let resume vm disk = throw Unimplemented
+
 	let get_power_state vm = throw Unimplemented
 end
 

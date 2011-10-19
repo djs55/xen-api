@@ -170,6 +170,25 @@ let vm_destroy_running _ =
 			fail_running (Client.VM.destroy rpc id);
 			success (Client.VM.shutdown rpc id)
 		)
+
+let vm_test_suspend _ =
+	with_vm "one"
+		(fun id ->
+			success (Client.VM.make rpc id);
+			success (Client.VM.build rpc id);
+			success (Client.VM.unpause rpc id);
+			success (Client.VM.suspend rpc id ("some", "disk"));
+			success (Client.VM.shutdown rpc id)
+		)
+
+let vm_test_resume _ =
+	with_vm "one"
+		(fun id ->
+			success (Client.VM.make rpc id);
+			success (Client.VM.resume rpc id ("some", "disk"));
+			success (Client.VM.unpause rpc id);
+			success (Client.VM.shutdown rpc id)
+		)
 	
 
 module type DEVICE = sig
@@ -369,6 +388,8 @@ let _ =
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
 			"vm_destroy_running" >:: vm_destroy_running;
+			"vm_test_suspend" >:: vm_test_suspend;
+			"vm_test_resume" >:: vm_test_resume;
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
 			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
