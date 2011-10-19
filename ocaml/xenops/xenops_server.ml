@@ -43,10 +43,12 @@ module VM = struct
 
 	let key_of id = [ id; "config" ]
 	let create _ x =
+		debug "VM.create %s" (Jsonrpc.to_string (rpc_of_t x));
 		DB.create (key_of x.id) x
 		>>= fun () ->
 		return x.id
 	let destroy _ id =
+		debug "VM.destroy %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
@@ -56,45 +58,53 @@ module VM = struct
 		then throw (Bad_power_state(Running, Halted))
 		else DB.destroy [ id ]
 	let list _ () =
+		debug "VM.list";
 		return (DB.list [ ] |> (List.map (DB.read ++ key_of)) |> dropnone)
 
 	let make _ id =
+		debug "VM.make %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.make x
 
 	let build _ id =
+		debug "VM.build %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.build x
 
 	let shutdown _ id =
+		debug "VM.shutdown %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.destroy x
 
 	let pause _ id =
+		debug "VM.pause %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.pause x
 
 	let unpause _ id =
+		debug "VM.unpause %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.unpause x
 
 	let suspend _ id disk =
+		debug "VM.suspend %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.suspend x disk
 
 	let resume _ id disk =
+		debug "VM.resume %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
@@ -115,21 +125,26 @@ module VBD = struct
 
 	let vm_of = fst
 	let key_of k = [ fst k; "vbd." ^ (snd k) ]
-	let create _ vbd =
-		DB.create (key_of vbd.id) vbd
+	let string_of_id (a, b) = a ^ "." ^ b
+	let create _ x =
+		debug "VBD.create %s" (Jsonrpc.to_string (rpc_of_t x));
+		DB.create (key_of x.id) x
 		>>= fun () ->
-		return vbd.id
+		return x.id
 	let plug _ id =
+		debug "VBD.plug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VBD.plug (vm_of id) x
 	let unplug _ id =
+		debug "VBD.unplug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VBD.unplug (vm_of id) x
 	let destroy _ id =
+		debug "VBD.destroy %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
@@ -139,6 +154,7 @@ module VBD = struct
 		then throw Device_is_connected
 		else DB.destroy (key_of id)
 	let list _ vm =
+		debug "VBD.list";
 		let key_of' id = [ vm; "vbd." ^ id ] in
 		return (DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of')) |> dropnone)
 end
@@ -150,21 +166,26 @@ module VIF = struct
 
 	let vm_of = fst
 	let key_of k = [ fst k; "vif." ^ (snd k) ]
-	let create _ vif =
-		DB.create (key_of vif.id) vif
+	let string_of_id (a, b) = a ^ "." ^ b
+	let create _ x =
+		debug "VIF.create %s" (Jsonrpc.to_string (rpc_of_t x));
+		DB.create (key_of x.id) x
 		>>= fun () ->
-		return vif.id
+		return x.id
 	let plug _ id =
+		debug "VIF.plug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VIF.plug (vm_of id) x
 	let unplug _ id =
+		debug "VIF.unplug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VIF.unplug (vm_of id) x
 	let destroy _ id =
+		debug "VIF.destroy %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->

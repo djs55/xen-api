@@ -73,7 +73,7 @@ let _ =
 
   Logs.reset_all [ log_file_path ];
 
-  if !daemonize then Unixext.daemonize ();
+  if !daemonize then Unixext.daemonize () else Xenops_utils.print_debug := true;
 
   Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
   Unixext.pidfile_write !pidfile;

@@ -17,6 +17,27 @@ open Stringext
 open Fun
 open Xenops_interface
 
+module D = Debug.Debugger(struct let name = "xenops" end)
+
+let print_debug = ref false
+
+let debug (fmt: ('a , unit, string, unit) format4) =
+	let time_of_float x = 
+		let time = Unix.gmtime x in
+		Printf.sprintf "%04d%02d%02dT%02d:%02d:%02dZ"
+			(time.Unix.tm_year+1900)
+			(time.Unix.tm_mon+1)
+			time.Unix.tm_mday
+			time.Unix.tm_hour
+			time.Unix.tm_min
+			time.Unix.tm_sec in
+	if !print_debug 
+	then Printf.kprintf
+		(fun s -> 
+			Printf.printf "%s %s\n" (time_of_float (Unix.gettimeofday ()))  s; 
+			flush stdout) fmt
+	else Printf.kprintf (fun s -> D.debug "%s" s) fmt
+
 let all = List.fold_left (&&) true
 let any = List.fold_left (||) false
 
@@ -38,13 +59,13 @@ let need_some = function
 
 let dropnone x = List.filter_map (fun x -> x) x
 
-let wrap f =
+let wrap f x =
 	try
-		f ()
+		f x
 	with e ->
-		Printf.fprintf stderr "Caught: %s\n%!" (Printexc.to_string e);
-		Printf.fprintf stderr "%s\n%!" (Printexc.get_backtrace ());
-		raise e
+		debug "Caught: %s" (Printexc.to_string e);
+		debug "%s" (Printexc.get_backtrace ());
+		throw (Internal_error (Printexc.to_string e))
 
 module type READWRITE = sig
 	type t

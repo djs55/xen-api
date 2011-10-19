@@ -64,6 +64,8 @@ let vm_test_destroy_missing _ =
 		| None, Some Does_not_exist -> ()
 		| _, _ -> failwith "protocol error"
 
+let example_uuid = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0"
+
 let make_vm id =
 	let open Vm in
 	let ty = PV {
@@ -133,17 +135,17 @@ let with_vm id f =
 	finally (fun () -> f id) (fun () -> success (Client.VM.destroy rpc id))
 
 let vm_test_create_destroy _ =
-	with_vm "one" (fun _ -> ())
+	with_vm example_uuid (fun _ -> ())
 
 let vm_test_make_shutdown _ =
-	with_vm "one"
+	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
 			success (Client.VM.shutdown rpc id)
 		)
 
 let vm_test_pause_unpause _ =
-	with_vm "one"
+	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
 			success (Client.VM.build rpc id);
@@ -153,16 +155,16 @@ let vm_test_pause_unpause _ =
 		)
 
 let vm_test_create_list_destroy _ =
-	with_vm "one"
+	with_vm example_uuid
 		(fun id ->
-			let vm = make_vm "one" in
+			let vm = make_vm example_uuid in
 			let (vms: Vm.t list) = success (Client.VM.list rpc ()) in
 			let vm' = List.find (fun x -> x.Vm.id = id) vms in
 			vm_assert_equal vm vm'
 		)
 
 let vm_destroy_running _ =
-	with_vm "one"
+	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
 			success (Client.VM.build rpc id);
@@ -172,7 +174,7 @@ let vm_destroy_running _ =
 		)
 
 let vm_test_suspend _ =
-	with_vm "one"
+	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
 			success (Client.VM.build rpc id);
@@ -182,7 +184,7 @@ let vm_test_suspend _ =
 		)
 
 let vm_test_resume _ =
-	with_vm "one"
+	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
 			success (Client.VM.resume rpc id ("some", "disk"));
@@ -210,7 +212,7 @@ end
 module DeviceTests = functor(D: DEVICE) -> struct
 	open D
 	let create_destroy _ =
-		with_vm "one"
+		with_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
@@ -227,7 +229,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			)
 
 	let create_plug_unplug_destroy _ =
-		with_created_vm "one"
+		with_created_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
@@ -237,7 +239,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			)
 
 	let create_plug_unplug_many_destroy _ =
-		with_created_vm "one"
+		with_created_vm example_uuid
 			(fun id ->
 				let ids = 
 					List.map
@@ -255,7 +257,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			)
 
 	let create_list_destroy _ =
-		with_vm "one"
+		with_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
@@ -266,7 +268,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			)
 
 	let create_vm_destroy _ =
-		with_vm "one"
+		with_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
 				let (_: id) = success (create dev) in
@@ -274,7 +276,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			)
 
 	let destroy_running _ =
-		with_created_vm "one"
+		with_created_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (create dev) in
@@ -289,7 +291,7 @@ module VbdDeviceTests = DeviceTests(struct
 	type id = Vbd.id
 	type position = Device_number.t option
 	let positions = [ None; None; None ]
-	let ids = List.map (fun x -> "one", x) [ "0"; "1"; "2" ]
+	let ids = List.map (fun x -> example_uuid, x) [ "0"; "1"; "2" ]
 	let make id position =
 		let open Vbd in {
 			Vbd.id = id;
@@ -322,7 +324,7 @@ module VifDeviceTests = DeviceTests(struct
 	type id = Vif.id
 	type position = int
 	let positions = [ 0; 1; 2 ]
-	let ids = List.map (fun x -> "one", x) [ "0"; "1"; "2" ]
+	let ids = List.map (fun x -> example_uuid, x) [ "0"; "1"; "2" ]
 	let make id position =
 		let open Vif in {
 			id = id;
