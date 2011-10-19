@@ -68,7 +68,7 @@ let example_uuid = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0"
 
 let make_vm id =
 	let open Vm in
-	let ty = PV {
+	let _ = PV {
 		boot = Indirect {
 			bootloader = "pygrub";
 			extra_args = "extra";
@@ -76,6 +76,12 @@ let make_vm id =
 			bootloader_args = "bootloader";
 			devices = [ "0"; "1" ]
 		}
+	} in
+	let hvm = HVM {
+		hap = true;
+		shadow_multiplier = 1.;
+		timeoffset = "";
+		video_mib = 4;
 	} in {
 		id = id;
 		domid = None;
@@ -84,7 +90,7 @@ let make_vm id =
 		xsdata = [ "xs", "data" ];
 		platformdata = [ "platform", "data" ];
 		bios_strings = [ "bios", "strings" ];
-		ty = ty;
+		ty = hvm;
 		suppress_spurious_page_faults = true;
 		machine_address_size = None;
 	}

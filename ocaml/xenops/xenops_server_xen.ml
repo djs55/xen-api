@@ -63,6 +63,26 @@ module VM = struct
 
 	let unpause = wrap (on_domain (fun xc _ -> Domain.unpause ~xc))
 
+(*
+	let build_exn vm =
+		on_domain vm
+			(fun xc xs domid ->
+				let build_info = match vm.ty with
+					| HVM hvm_info ->
+						let builder_spec_info = Domain.BuildHVM {
+							Domain.shadow_multiplier = hvm_info.shadow_multiplier;
+							timeoffset = hvm_info.timeoffset;
+							video_mib = hvm_info.video_mib;
+						} in
+						let build_info = {
+							memory_max: int64;    (* memory max in kilobytes *)
+	memory_target: int64; (* memory target in kilobytes *)
+	kernel: string;       (* in hvm case, point to hvmloader *)
+	vcpus: int;           (* vcpus max *)
+	priv: builder_spec_info;
+}
+			)
+*)
 	let build vm = throw Unimplemented
 
 	let suspend vm disk = throw Unimplemented
