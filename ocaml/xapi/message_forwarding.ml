@@ -1381,9 +1381,14 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
     let suspend ~__context ~vm =
       info "VM.suspend: VM = '%s'" (vm_uuid ~__context vm);
       let local_fn = Local.VM.suspend ~vm in
+(*
       with_vm_operation ~__context ~self:vm ~doc:"VM.suspend" ~op:`suspend
 	(fun () ->
-	   forward_vm_op ~local_fn ~__context ~vm (fun session_id rpc -> Client.VM.suspend rpc session_id vm));
+*)
+	   forward_vm_op ~local_fn ~__context ~vm (fun session_id rpc -> Client.VM.suspend rpc session_id vm);
+(*
+);
+*)
       let uuid = Db.VM.get_uuid ~__context ~self:vm in
 	(* debug "placeholder for retrieving the current value of memory-actual";*)
       let message_body = 
