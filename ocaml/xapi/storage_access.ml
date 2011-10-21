@@ -276,6 +276,9 @@ module Builtin_impl = struct
 					Failure (Backend_error(code, params))
 				| No_VDI ->
 					Failure Vdi_does_not_exist
+
+		let statistics context ~task ~sr ~vdi =
+			Unix.gettimeofday ()
 	end
 end
 
@@ -486,6 +489,58 @@ let on_vdi ~__context ~vbd ~domid f =
 	let rpc, task, dp, sr, vdi = of_vbd ~__context ~vbd ~domid in
 	let dp = Client.DP.create rpc task dp in
 	f rpc task dp sr vdi
+
+let active_vdi_stats = ref []
+let active_vdi_stats_m = Mutex.create ()
+let get_active_vdi_stats () =
+	Mutex.execute active_vdi_stats_m (fun () -> !active_vdi_stats)
+
+let update_stats () =
+	Server_helpers.exec_with_new_task "SM stats" (fun __context -> 
+	let results = ref [] in
+	let uuids = Vmopshelpers.with_xc
+		(fun xc ->
+			List.map (fun di -> Uuid.string_of_uuid (Uuid.uuid_of_int_array di.Xenctrl.handle))
+				(Xenctrl.domain_getinfolist xc 0)
+		) in
+	List.iter
+		(fun uuid ->
+			let vm = Db.VM.get_by_uuid ~__context ~uuid in
+			let vbds = Db.VM.get_VBDs ~__context ~self:vm in
+			List.iter
+				(fun vbd ->
+					if Db.VBD.get_currently_attached ~__context ~self:vbd then begin
+						let device_name = Db.VBD.get_device ~__context ~self:vbd in
+						let vbd_name = "vbd_" ^ device_name in
+						let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
+						if Db.is_valid_ref __context vdi then begin
+							let v = on_vdi ~__context ~vbd ~domid:0
+								(fun rpc task _ sr vdi ->
+									Client.VDI.statistics rpc task sr vdi
+								) in
+							let rd_bytes = Int64.of_float v in
+							let wr_bytes = rd_bytes in
+							let open Ds in
+							let open Rrd_shared in
+							results := 
+								(VM uuid,
+								ds_make ~name:(vbd_name^"_write") ~description:("Writes to device '"^device_name^"' in bytes per second")
+									~value:(Rrd.VT_Int64 wr_bytes) ~ty:Rrd.Derive ~min:0.0 ~default:true ~units:"bytes per second" ()) :: !results;
+							results := 
+								(VM uuid,
+								ds_make ~name:(vbd_name^"_read") ~description:("Reads from device '"^device_name^"' in bytes per second")
+									~value:(Rrd.VT_Int64 rd_bytes) ~ty:Rrd.Derive ~min:0.0 ~default:true ~units:"bytes per second" ()) :: !results;
+
+						end
+					end
+				) vbds
+		) uuids;
+	Mutex.execute active_vdi_stats_m
+		(fun () ->
+			active_vdi_stats := !results
+		)
+)
+	
 
 let reset ~__context ~vm =
 	let task = Context.get_task_id __context in

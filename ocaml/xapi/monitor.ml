@@ -389,6 +389,9 @@ let update_vbds doms =
       with _ -> acc in
     newacc) [] vbds
 
+let update_vbds doms = Storage_access.get_active_vdi_stats ()
+
+
 (*****************************************************)
 (* generic code                                      *)
 (*****************************************************)

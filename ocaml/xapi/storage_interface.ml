@@ -192,4 +192,6 @@ module VDI = struct
 	(** [detach task dp sr vdi] signals that this client no-longer needs the [params]
 		to be valid. *)
     external detach : task:task -> dp:dp -> sr:sr -> vdi:vdi -> result = ""
+
+	external statistics : task:task -> sr:sr -> vdi:vdi -> float = ""
 end

@@ -19,6 +19,10 @@ val start: unit -> unit
 (** once [start ()] returns the storage service is listening for requests on
     its unix domain socket. *)
 
+val get_active_vdi_stats: unit -> (Rrd_shared.ds_type * Ds.ds) list
+
+val update_stats: unit -> unit
+
 module Qemu_blkfront: sig
 
 	(** [path_opt __context self] returns [Some path] where [path] names the

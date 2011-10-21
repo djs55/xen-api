@@ -110,6 +110,8 @@ module Mux = struct
 		let activate context ~task ~dp ~sr ~vdi = Client.VDI.activate (of_sr sr) ~task ~dp ~sr ~vdi
 		let deactivate context ~task ~dp ~sr ~vdi = Client.VDI.deactivate (of_sr sr) ~task ~dp ~sr ~vdi
 		let detach context ~task ~dp ~sr ~vdi = Client.VDI.detach (of_sr sr) ~task ~dp ~sr ~vdi
+
+		let statistics context ~task ~sr ~vdi = Client.VDI.statistics (of_sr sr) ~task ~sr ~vdi
 	end
 end
 

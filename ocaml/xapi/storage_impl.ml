@@ -483,6 +483,9 @@ module Wrapper = functor(Impl: Server_impl) -> struct
                         )
                 )
 
+		let statistics context ~task ~sr ~vdi =
+            info "VDI.statistics task:%s sr:%s vdi:%s" task sr vdi;
+			Impl.VDI.statistics context ~task ~sr ~vdi
 	end
 
 	module DP = struct
