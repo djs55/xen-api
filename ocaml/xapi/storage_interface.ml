@@ -193,5 +193,5 @@ module VDI = struct
 		to be valid. *)
     external detach : task:task -> dp:dp -> sr:sr -> vdi:vdi -> result = ""
 
-	external statistics : task:task -> sr:sr -> vdi:vdi -> float = ""
+	external statistics : task:task -> sr:sr -> vdi:vdi -> int64 = ""
 end

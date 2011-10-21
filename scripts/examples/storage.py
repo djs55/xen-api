@@ -37,8 +37,8 @@ def run(task, cmd):
 
 # Use Linux "losetup" to create block devices from files
 class Loop:
-    # [_find task path] returns the loop device associated with [path]
-    def _find(self, task, path):
+    # [find task path] returns the loop device associated with [path]
+    def find(self, task, path):
         global root
         for line in run(task, "losetup -a").split("\n"):
             line = line.strip()
@@ -52,16 +52,16 @@ class Loop:
     # [add task path] creates a new loop device for [path] and returns it
     def add(self, task, path):
         run(task, "losetup -f %s" % path)
-        return self._find(task, path)
+        return self.find(task, path)
     # [remove task path] removes the loop device associated with [path]
     def remove(self, task, path):
-        loop = self._find(task, path)
+        loop = self.find(task, path)
         run(task, "losetup -d %s" % loop)
 
 # Use FreeBSD "mdconfig" to create block devices from files
 class Mdconfig:
     # [_find task path] returns the unit (mdX) associated with [path]
-    def _find(self, task, path):
+    def find(self, task, path):
         # md0	vnode	 1024M	/root/big.img
         for line in run(task, "mdconfig -l -v").split("\n"):
             bits = line.split()
@@ -74,8 +74,23 @@ class Mdconfig:
         return "/dev/" + run(task, "mdconfig -a -t vnode -f %s" % path)
     # [remove task path] removes the block device associated with [path]
     def remove(self, task, path):
-        md = self._find(task, path)
+        md = self.find(task, path)
         run(task, "mdconfig -d -u %s" % md) 
+
+    def statistics(self, task, path):
+        d = {}
+        f = os.popen('iostat -d -I -x')
+        f.readline()
+        f.readline()
+        for l in f.readlines():
+            x = l[:-1].split(' ')
+            x = filter(lambda y: y != '', x)
+            # kb read, kb write
+            d[x[0]] = (long(float(x[3]))*1024L, long(float(x[4]))*1024L)
+        f.close()
+        return d["ad0"]
+
+
 
 # [path_of_vdi vdi] returns the path in the local filesystem corresponding
 # to vdi location [vdi]
@@ -138,6 +153,15 @@ class RawFiles:
             raise Vdi_does_not_exist(vdi)
         run(task, "rm -f %s%s" % (path_of_vdi(vdi), disk_suffix))
         run(task, "rm -f %s%s" % (path_of_vdi(vdi), metadata_suffix))
+
+    def vdi_statistics(self, task, sr, vdi):
+        path = path_of_vdi(vdi) + disk_suffix
+        if not (os.path.exists(path)):
+            raise Vdi_does_not_exist(vdi)
+        loop = self.device.find(task, path)
+        rd, wr = self.device.statistics(task, loop)
+        log("statistics vdi=%s device=%s rd=%Ld wr=%Ld" % (vdi, loop, rd, wr))
+        return (rd + wr)
 
     def vdi_attach(self, task, dp, sr, vdi, read_write):
         path = path_of_vdi(vdi) + disk_suffix

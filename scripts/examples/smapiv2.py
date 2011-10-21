@@ -168,6 +168,11 @@ class Marshall:
         expect_none(result)
         return value(unit)
 
+    def vdi_statistics(self, args):
+        result = self.x.vdi_statistics(args["task"], args["sr"], args["vdi"])
+        expect_long(result)
+        return value(str(result))
+
     def vdi_attach(self, args):
         result = self.x.vdi_attach(args["task"], args["dp"], args["sr"], args["vdi"], args["read_write"])
         expect_string(result)
@@ -202,6 +207,8 @@ class Marshall:
                 return self.vdi_create(args)
             elif method == "VDI.destroy":
                 return self.vdi_destroy(args)
+            elif method == "VDI.statistics":
+                return self.vdi_statistics(args)
             elif method == "VDI.attach":
                 return self.vdi_attach(args)
             elif method == "VDI.activate":

@@ -278,7 +278,7 @@ module Builtin_impl = struct
 					Failure Vdi_does_not_exist
 
 		let statistics context ~task ~sr ~vdi =
-			Unix.gettimeofday ()
+			Int64.of_float (Unix.gettimeofday ())
 	end
 end
 
@@ -518,7 +518,7 @@ let update_stats () =
 								(fun rpc task _ sr vdi ->
 									Client.VDI.statistics rpc task sr vdi
 								) in
-							let rd_bytes = Int64.of_float v in
+							let rd_bytes = v in
 							let wr_bytes = rd_bytes in
 							let open Ds in
 							let open Rrd_shared in
