@@ -66,6 +66,8 @@ let vm_test_destroy_missing _ =
 
 let example_uuid = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0"
 
+let ( ** ) = Int64.mul
+
 let make_vm id =
 	let open Vm in
 	let _ = PV {
@@ -74,7 +76,7 @@ let make_vm id =
 			extra_args = "extra";
 			legacy_args = "legacy";
 			bootloader_args = "bootloader";
-			devices = [ "0"; "1" ]
+			devices = [ ("dom0", "0"); ("dom0", "1") ]
 		}
 	} in
 	let hvm = HVM {
@@ -93,6 +95,9 @@ let make_vm id =
 		ty = hvm;
 		suppress_spurious_page_faults = true;
 		machine_address_size = None;
+		memory_max_kib = 16L ** 1024L;
+		memory_target_kib = 16L ** 1024L;
+		vcpus = 2;
 	}
 
 let sl x = Printf.sprintf "[ %s ]" (String.concat "; " (List.map (fun (k, v) -> k ^ ":" ^ v) x))
@@ -108,6 +113,9 @@ let vm_assert_equal vm vm' =
     assert_equal ~msg:"bios_strings" ~printer:sl vm.bios_strings vm'.bios_strings;
 	assert_equal ~msg:"suppress_spurious_page_faults" ~printer:string_of_bool vm.suppress_spurious_page_faults vm'.suppress_spurious_page_faults;
 	assert_equal ~msg:"machine_address_size" ~printer:(function None -> "None" | Some x -> string_of_int x) vm.machine_address_size vm'.machine_address_size;
+	assert_equal ~msg:"memory_max_kib" ~printer:Int64.to_string vm.memory_max_kib vm'.memory_max_kib;
+	assert_equal ~msg:"memory_target_kib" ~printer:Int64.to_string vm.memory_target_kib vm'.memory_target_kib;
+	assert_equal ~msg:"vcpus" ~printer:string_of_int vm.vcpus vm'.vcpus;
 	let is_hvm vm = match vm.ty with
 		| HVM _ -> true | PV _ -> false in
 	assert_equal ~msg:"HVM-ness" ~printer:string_of_bool (is_hvm vm) (is_hvm vm');
@@ -132,7 +140,7 @@ let vm_assert_equal vm vm' =
 					assert_equal ~msg:"extra_args" ~printer:(fun x -> x) x.extra_args x'.extra_args;
 					assert_equal ~msg:"legacy_args" ~printer:(fun x -> x) x.legacy_args x'.legacy_args;
 					assert_equal ~msg:"bootloader_args" ~printer:(fun x -> x) x.bootloader_args x'.bootloader_args;
-					assert_equal ~msg:"devices" ~printer:(String.concat ", ") x.devices x'.devices;
+					assert_equal ~msg:"devices" ~printer:(fun xs -> String.concat "; " (List.map (fun (x, y) -> x ^ ":" ^ y) xs)) x.devices x'.devices;
 			end
 
 let with_vm id f =

@@ -59,13 +59,19 @@ let need_some = function
 
 let dropnone x = List.filter_map (fun x -> x) x
 
+exception Exception of error
+
 let wrap f x =
 	try
 		f x
-	with e ->
-		debug "Caught: %s" (Printexc.to_string e);
-		debug "%s" (Printexc.get_backtrace ());
-		throw (Internal_error (Printexc.to_string e))
+	with
+		| Exception e ->
+			debug "Caught: %s" (Jsonrpc.to_string (rpc_of_error e));
+			throw e
+		| e ->
+			debug "Caught: %s" (Printexc.to_string e);
+			debug "%s" (Printexc.get_backtrace ());
+			throw (Internal_error (Printexc.to_string e))
 
 module type READWRITE = sig
 	type t

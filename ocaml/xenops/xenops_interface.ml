@@ -31,6 +31,8 @@ type error =
 	| Domain_not_built
 	| Bad_power_state of power_state * power_state
 	| Device_is_connected
+	| No_bootable_device
+	| Bootloader_error of string * (string list)
 
 module Query = struct
 	type t = {
@@ -41,6 +43,8 @@ module Query = struct
 	}
 end
 external query: unit -> (Query.t option * error option) = ""
+
+type disk = string * string (* vm.id * params *)
 
 module Vm = struct
 	type hvm_info = {
@@ -61,7 +65,7 @@ module Vm = struct
 		extra_args: string;
 		legacy_args: string;
 		bootloader_args: string;
-		devices: string list;
+		devices: disk list;
 	}
 
 	type pv_boot =
@@ -89,6 +93,9 @@ module Vm = struct
 		ty: builder_info;
 		suppress_spurious_page_faults: bool;
 		machine_address_size: int option;
+		memory_max_kib: int64;
+		memory_target_kib: int64;
+		vcpus: int;
 	}
 end
 
@@ -101,7 +108,6 @@ module Vbd = struct
 	type id = string * string
 
 	(* FIXME: take a URL and call VDI.attach ourselves *)
-	type disk = string * string (* vm.id * params *)
 
 	type t = {
 		id: id;
@@ -148,8 +154,8 @@ module VM = struct
 	external unpause: Vm.id -> (unit option) * (error option) = ""
 	external list: unit -> (Vm.t list option) * (error option) = ""
 
-	external suspend: Vm.id -> Vbd.disk -> (unit option) * (error option) = ""
-	external resume: Vm.id -> Vbd.disk -> (unit option) * (error option) = ""
+	external suspend: Vm.id -> disk -> (unit option) * (error option) = ""
+	external resume: Vm.id -> disk -> (unit option) * (error option) = ""
 end
 
 module VBD = struct
