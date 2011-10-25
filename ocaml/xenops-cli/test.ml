@@ -44,7 +44,13 @@ let success = function
 
 let fail_running = function
 	| (_, Some (Bad_power_state(Running, Halted))) -> ()
-	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| (_, Some x) -> failwith (Printf.sprintf "fail_running: %s" (Jsonrpc.to_string (rpc_of_error x)))
+	| (Some x, _) -> failwith "expected failure, got success"
+	| None, None -> failwith "protocol error"
+
+let fail_not_built = function
+	| (_, Some (Domain_not_built)) -> ()
+	| (_, Some x) -> failwith (Printf.sprintf "fail_not_built: %s" (Jsonrpc.to_string (rpc_of_error x)))
 	| (Some x, _) -> failwith "expected failure, got success"
 	| None, None -> failwith "protocol error"
 
@@ -146,10 +152,18 @@ let vm_assert_equal vm vm' =
 let with_vm id f =
 	let vm = make_vm id in
 	let (id: Vm.id) = success (Client.VM.create rpc vm) in
-	finally (fun () -> f id) (fun () -> success (Client.VM.destroy rpc id))
+	finally (fun () -> f id)
+		(fun () ->
+			try
+				success (Client.VM.destroy rpc id)
+			with e ->
+				Printf.fprintf stderr "Caught failure during with_vm cleanup: %s" (Printexc.to_string e);
+				raise e
+		)
 
 let vm_test_create_destroy _ =
 	with_vm example_uuid (fun _ -> ())
+
 
 let vm_test_make_shutdown _ =
 	with_vm example_uuid
@@ -162,8 +176,8 @@ let vm_test_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
-			success (Client.VM.unpause rpc id);
-			success (Client.VM.pause rpc id);
+			fail_not_built (Client.VM.unpause rpc id);
+			fail_not_built (Client.VM.pause rpc id);
 			success (Client.VM.shutdown rpc id)
 		)
 
@@ -411,7 +425,6 @@ let _ =
 			"vm_test_create_destroy" >:: vm_test_create_destroy;
 			"vm_test_make_shutdown" >:: vm_test_make_shutdown;
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
-(*
 			"vm_test_build_pause_unpause" >:: vm_test_build_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
 			"vm_destroy_running" >:: vm_destroy_running;
@@ -429,7 +442,6 @@ let _ =
 			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
 			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
 			"vif_destroy_running" >:: VifDeviceTests.destroy_running;
-*)
 		] in
 
 	run_test_tt ~verbose:!verbose suite
