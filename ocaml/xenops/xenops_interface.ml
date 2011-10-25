@@ -33,6 +33,8 @@ type error =
 	| Device_is_connected
 	| No_bootable_device
 	| Bootloader_error of string * (string list)
+	| Ballooning_error of string * string
+	| No_ballooning_service
 
 module Query = struct
 	type t = {
@@ -93,8 +95,9 @@ module Vm = struct
 		ty: builder_info;
 		suppress_spurious_page_faults: bool;
 		machine_address_size: int option;
-		memory_max_kib: int64;
-		memory_target_kib: int64;
+		memory_static_max: int64;
+		memory_dynamic_max: int64;
+		memory_dynamic_min: int64;
 		vcpus: int;
 	}
 end
