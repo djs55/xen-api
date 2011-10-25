@@ -22,12 +22,13 @@ open Fun
 let this_domid ~xs = int_of_string (xs.Xs.read "domid")
 
 let uuid_of_vm vm = Uuid.uuid_of_string vm.Vm.id
-let domid_of_uuid ~xc ~xs uuid =
+let di_of_uuid ~xc ~xs uuid =
 	let all = Xenctrl.domain_getinfolist xc 0 in
 	try
 		let di = List.find (fun x -> Uuid.uuid_of_int_array x.Xenctrl.handle = uuid) all in
-		Some di.Xenctrl.domid
+		Some di
 	with Not_found -> None
+let domid_of_uuid ~xc ~xs uuid = Opt.map (fun di -> di.Xenctrl.domid) (di_of_uuid ~xc ~xs uuid)
 
 let with_disk ~xc ~xs (backend_vm_id, params) f =
 	let frontend_domid = this_domid ~xs in
@@ -85,17 +86,23 @@ module VM = struct
 		let uuid = uuid_of_vm vm in
 		with_xc_and_xs
 			(fun xc xs ->
-				match domid_of_uuid ~xc ~xs uuid with
+				match di_of_uuid ~xc ~xs uuid with
 					| None -> throw Does_not_exist
-					| Some domid ->
-						wrap return (f xc xs domid)
+					| Some di ->
+						wrap return (f xc xs di)
 			)
 
-	let destroy = wrap (on_domain (fun xc xs -> Domain.destroy ~preserve_xs_vm:false ~xc ~xs))
+	let destroy = wrap (on_domain (fun xc xs di -> Domain.destroy ~preserve_xs_vm:false ~xc ~xs di.Xenctrl.domid))
 
-	let pause = wrap (on_domain (fun xc _ -> Domain.pause ~xc))
+	let pause = wrap (on_domain (fun xc xs di ->
+		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
+		Domain.pause ~xc di.Xenctrl.domid
+	))
 
-	let unpause = wrap (on_domain (fun xc _ -> Domain.unpause ~xc))
+	let unpause = wrap (on_domain (fun xc xs di ->
+		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
+		Domain.unpause ~xc di.Xenctrl.domid
+	))
 
 	let build_domain_exn xc xs domid vm =
 		let make_build_info kernel priv = {
@@ -143,9 +150,9 @@ module VM = struct
 			debug "Built domid %d with architecture %s" domid (Domain.string_of_domarch arch);
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
-	let build_domain vm xc xs domid =
+	let build_domain vm xc xs di =
 		try
-			build_domain_exn xc xs domid vm
+			build_domain_exn xc xs di.Xenctrl.domid vm
 		with
 			| Bootloader.Bad_sexpr x ->
 				let m = Printf.sprintf "Bootloader.Bad_sexpr %s" x in
