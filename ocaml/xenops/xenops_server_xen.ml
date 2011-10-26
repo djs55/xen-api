@@ -340,11 +340,15 @@ end
 let on_frontend_and_backend f frontend backend =
 	with_xc_and_xs
 		(fun xc xs ->
+			(* XXX: consider making this an official part of the disk type *)
+			let back =
+				if backend = "self"
+				then Some(this_domid ~xs)
+				else backend |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs in
 			let front = frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs in
-			let back = backend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs in
 			match front, back with
-				| Some frontend_di, Some backend_di ->
-					wrap return (f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest backend_di.Xenctrl.domid)
+				| Some frontend_di, Some backend_domid ->
+					wrap return (f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest backend_domid)
 				| _, _ -> throw Does_not_exist
 		)
 

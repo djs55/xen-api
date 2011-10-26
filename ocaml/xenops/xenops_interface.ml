@@ -47,6 +47,7 @@ module Query = struct
 end
 external query: unit -> (Query.t option * error option) = ""
 
+(* XXX: NB the vm.id = "self" hack *)
 type disk = string * string (* vm.id * params *)
 
 module Vm = struct
