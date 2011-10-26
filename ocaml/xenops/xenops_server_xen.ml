@@ -173,13 +173,13 @@ end
 module VM = struct
 	open Vm
 
-	let is_hvm vm = match vm.ty with HVM _ -> true | _ -> false
+	let will_be_hvm vm = match vm.ty with HVM _ -> true | _ -> false
 
 	let compute_overhead vm =
 		let static_max_mib = Memory.mib_of_bytes_used vm.memory_static_max in
 		let multiplier = match vm.ty with HVM hvm_info -> hvm_info.shadow_multiplier | _ -> 1. in
 		let memory_overhead_mib =
-			(if is_hvm vm then Memory.HVM.overhead_mib else Memory.Linux.overhead_mib)
+			(if will_be_hvm vm then Memory.HVM.overhead_mib else Memory.Linux.overhead_mib)
 			static_max_mib vm.vcpus multiplier in
 		Memory.bytes_of_mib memory_overhead_mib
 
@@ -293,7 +293,7 @@ module VM = struct
 							) in
 			let arch = Domain.build ~xc ~xs build_info domid in
 			debug "Built domid %d with architecture %s" domid (Domain.string_of_domarch arch);
-			Domain.cpuid_apply ~xc ~hvm:(is_hvm vm) domid;
+			Domain.cpuid_apply ~xc ~hvm:(will_be_hvm vm) domid;
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
 	let build_domain vm xc xs di =
@@ -337,11 +337,95 @@ module VM = struct
 			)
 end
 
-module VBD = struct
-	let plug vm vbd = throw Unimplemented
-	let unplug vm vbd = throw Unimplemented
+let on_frontend_and_backend f frontend backend =
+	with_xc_and_xs
+		(fun xc xs ->
+			let front = frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs in
+			let back = backend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs in
+			match front, back with
+				| Some frontend_di, Some backend_di ->
+					wrap return (f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest backend_di.Xenctrl.domid)
+				| _, _ -> throw Does_not_exist
+		)
 
-	let get_currently_attached vm vbd = throw Unimplemented
+(* We store away the device name so we can lookup devices by name later *)
+let _device_id kind = Device_common.string_of_kind kind ^ "-id"
+
+(* Return the xenstore device with [kind] corresponding to [id] *)
+let device_by_id xc xs vm kind id =
+	match vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs with
+		| None -> raise (Exception Does_not_exist)
+		| Some frontend_domid ->
+			let devices = Device_common.list_frontends ~xs frontend_domid in
+			let key = _device_id kind in
+			let id_of_device device =
+				let path = Hotplug.get_private_data_path_of_device device in
+				try Some (xs.Xs.read (Printf.sprintf "%s/%s" path key))
+				with _ -> None in
+			try
+				List.find (fun device -> id_of_device device = Some id) devices
+			with Not_found ->
+				raise (Exception Device_not_connected)
+
+module VBD = struct
+	open Vbd
+
+	let id_of vbd = snd vbd.id
+
+	let plug_exn vm vbd =
+		on_frontend_and_backend
+			(fun xc xs frontend_domid hvm backend_domid ->
+				(* Remember the VBD id with the device *)
+				let id = _device_id Device_common.Vbd, id_of vbd in
+				let x = {
+					Device.Vbd.mode = (match vbd.mode with 
+						| ReadOnly -> Device.Vbd.ReadOnly 
+						| ReadWrite -> Device.Vbd.ReadWrite
+					);
+					device_number = vbd.position;
+					phystype = Device.Vbd.Phys;
+					params = snd vbd.backend;
+					dev_type = (match vbd.ty with
+						| CDROM -> Device.Vbd.CDROM
+						| Disk -> Device.Vbd.Disk
+					);
+					unpluggable = vbd.unpluggable;
+					protocol = None;
+					extra_backend_keys = vbd.extra_backend_keys;
+					extra_private_keys = id :: vbd.extra_private_keys;
+					backend_domid = backend_domid
+				} in
+				(* Store the VBD ID -> actual frontend ID for unplug *)
+				let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm x frontend_domid in
+				()
+			) vm (vbd.backend |> fst)
+
+	let plug vm = wrap (plug_exn vm)
+
+	let unplug_exn vm vbd =
+		with_xc_and_xs
+			(fun xc xs ->
+				let device = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+				Device.clean_shutdown ~xs device;
+				Device.Vbd.release ~xs device
+			);
+		return ()
+
+	let unplug vm = wrap (unplug_exn vm)
+
+	let get_currently_attached_exn vm vbd =
+		with_xc_and_xs
+			(fun xc xs ->
+				try
+					let (_: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+					return true
+				with
+					| Exception Does_not_exist
+					| Exception Device_not_connected ->
+					return false
+			)
+
+	let get_currently_attached vm = wrap (get_currently_attached_exn vm)
 end
 
 module VIF = struct

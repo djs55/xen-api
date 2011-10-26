@@ -31,6 +31,7 @@ type error =
 	| Domain_not_built
 	| Bad_power_state of power_state * power_state
 	| Device_is_connected
+	| Device_not_connected
 	| No_bootable_device
 	| Bootloader_error of string * (string list)
 	| Ballooning_error of string * string

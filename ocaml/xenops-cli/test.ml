@@ -430,12 +430,13 @@ let _ =
 			"vm_test_build_pause_unpause" >:: vm_test_build_pause_unpause;
 			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
 			"vm_destroy_running" >:: vm_destroy_running;
-(*
-			"vm_test_suspend" >:: vm_test_suspend;
-			"vm_test_resume" >:: vm_test_resume;
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
 			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
+
+(*
+			"vm_test_suspend" >:: vm_test_suspend;
+			"vm_test_resume" >:: vm_test_resume;
 			"vbd_test_create_plug_unplug_destroy" >:: VbdDeviceTests.create_plug_unplug_destroy;
 			"vbd_test_create_plug_unplug_many_destroy" >:: VbdDeviceTests.create_plug_unplug_many_destroy;
 			"vbd_destroy_running" >:: VbdDeviceTests.destroy_running;
