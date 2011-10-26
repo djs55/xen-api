@@ -433,6 +433,9 @@ let _ =
 			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
 			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
 			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
+			"vif_test_create_destroy" >:: VifDeviceTests.create_destroy;
+			"vif_test_create_list_destroy" >:: VifDeviceTests.create_list_destroy;
+			"vif_test_create_vm_destroy" >:: VifDeviceTests.create_vm_destroy;
 
 (*
 			"vm_test_suspend" >:: vm_test_suspend;
@@ -440,9 +443,6 @@ let _ =
 			"vbd_test_create_plug_unplug_destroy" >:: VbdDeviceTests.create_plug_unplug_destroy;
 			"vbd_test_create_plug_unplug_many_destroy" >:: VbdDeviceTests.create_plug_unplug_many_destroy;
 			"vbd_destroy_running" >:: VbdDeviceTests.destroy_running;
-			"vif_test_create_destroy" >:: VifDeviceTests.create_destroy;
-			"vif_test_create_list_destroy" >:: VifDeviceTests.create_list_destroy;
-			"vif_test_create_vm_destroy" >:: VifDeviceTests.create_vm_destroy;
 			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
 			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
 			"vif_destroy_running" >:: VifDeviceTests.destroy_running;

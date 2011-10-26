@@ -367,6 +367,18 @@ let device_by_id xc xs vm kind id =
 			with Not_found ->
 				raise (Exception Device_not_connected)
 
+let get_currently_attached_exn vm kind id =
+	with_xc_and_xs
+		(fun xc xs ->
+			try
+				let (_: Device_common.device) = device_by_id xc xs vm kind id in
+				return true
+			with
+				| Exception Does_not_exist
+				| Exception Device_not_connected ->
+					return false
+		)
+
 module VBD = struct
 	open Vbd
 
@@ -413,24 +425,44 @@ module VBD = struct
 
 	let unplug vm = wrap (unplug_exn vm)
 
-	let get_currently_attached_exn vm vbd =
-		with_xc_and_xs
-			(fun xc xs ->
-				try
-					let (_: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
-					return true
-				with
-					| Exception Does_not_exist
-					| Exception Device_not_connected ->
-					return false
-			)
-
-	let get_currently_attached vm = wrap (get_currently_attached_exn vm)
+	let get_currently_attached vm vbd = wrap (get_currently_attached_exn vm Device_common.Vbd) (id_of vbd)
 end
 
 module VIF = struct
-	let plug vm vbd = throw Unimplemented
-	let unplug vm vbd = throw Unimplemented
+	open Vif
 
-	let get_currently_attached vm vbd = throw Unimplemented
+	let id_of vif = snd vif.id
+
+	let plug_exn vm vif =
+		on_frontend_and_backend
+			(fun xc xs frontend_domid hvm backend_domid ->
+				(* Remember the VIF id with the device *)
+				let id = _device_id Device_common.Vif, id_of vif in
+
+				let (_: Device_common.device) = Device.Vif.add ~xs ~devid:vif.position
+					~netty:(match vif.ty with
+						| Vswitch x -> Netman.Vswitch x
+						| Bridge x -> Netman.Bridge x)
+					~mac:vif.mac ~carrier:vif.carrier ~mtu:vif.mtu
+					~rate:vif.rate ~backend_domid
+					~other_config:vif.other_config
+					~extra_private_keys:(id :: vif.extra_private_keys)
+					frontend_domid in
+				()
+			) vm vif.backend
+
+	let plug vm = wrap (plug_exn vm)
+
+	let unplug_exn vm vif =
+		with_xc_and_xs
+			(fun xc xs ->
+				let device = device_by_id xc xs vm Device_common.Vif (id_of vif) in
+				Device.clean_shutdown ~xs device;
+				Device.Vif.release ~xs device
+			);
+		return ()
+
+	let unplug vm = wrap (unplug_exn vm)
+
+	let get_currently_attached vm vif = wrap (get_currently_attached_exn vm Device_common.Vif) (id_of vif)
 end
