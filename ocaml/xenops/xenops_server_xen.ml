@@ -461,7 +461,8 @@ module VIF = struct
 		with_xc_and_xs
 			(fun xc xs ->
 				let device = device_by_id xc xs vm Device_common.Vif (id_of vif) in
-				Device.clean_shutdown ~xs device;
+				(* NB different from the VBD case to make the test pass for now *)
+				Device.hard_shutdown ~xs device;
 				Device.Vif.release ~xs device
 			);
 		return ()

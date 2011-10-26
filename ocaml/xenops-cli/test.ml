@@ -368,12 +368,12 @@ module VifDeviceTests = DeviceTests(struct
 		let open Vif in {
 			id = id;
 			position = position;
-			ty = Bridge "xenbr";
+			ty = Bridge "xenbr0";
 			mac = "c0:ff:ee:c0:ff:ee";
 			carrier = false;
 			mtu = 1450;
 			rate = Some(1L, 2L);
-			backend = "domN";
+			backend = "self";
 			other_config = [ "other", "config" ];
 			extra_private_keys = [ "private", "keys" ];
 		}
@@ -439,13 +439,13 @@ let _ =
 			"vif_test_create_destroy" >:: VifDeviceTests.create_destroy;
 			"vif_test_create_list_destroy" >:: VifDeviceTests.create_list_destroy;
 			"vif_test_create_vm_destroy" >:: VifDeviceTests.create_vm_destroy;
+			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
+			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
+			"vif_destroy_running" >:: VifDeviceTests.destroy_running;
 
 (*
 			"vm_test_suspend" >:: vm_test_suspend;
 			"vm_test_resume" >:: vm_test_resume;
-			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
-			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
-			"vif_destroy_running" >:: VifDeviceTests.destroy_running;
 *)
 		] in
 
