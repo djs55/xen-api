@@ -38,7 +38,6 @@ let create filename =
 			let lexbuf = Lexing.from_channel ic in
 			let config = Xn_cfg_parser.file Xn_cfg_lexer.token lexbuf in
 			let open Xn_cfg_types in
-			Printf.fprintf stderr "Parsed: %s\n" (config |> rpc_of_config |> Jsonrpc.to_string);
 			let mem x = List.mem_assoc x config in
 			let find x = List.assoc x config in
 			let any xs = List.fold_left (||) false (List.map mem xs) in
@@ -46,7 +45,6 @@ let create filename =
 				false
 				|| (mem _builder && (find _builder |> string = "linux"))
 				|| (not(mem _builder) && (any [ _bootloader; _kernel ])) in
-			Printf.fprintf stderr "PV = %b\n" pv;
 			let open Vm in
 			let builder_info = match pv with
 				| true -> PV {
@@ -107,17 +105,32 @@ let list () =
 		Printf.sprintf "%s %s %s" vm.id (Opt.default "None" (Opt.map (Printf.sprintf "%3d") vm.domid)) vm.name in
 	List.iter (Printf.printf "%s\n") (List.map string_of_vm vms)
 
-let destroy x =
+let find_by_name x =
 	let open Vm in
 	let all = success (Client.VM.list rpc ()) in
 	let this_one y = y.id = x || y.name = x in
 	try
-		let vm = List.find this_one all in
-		let () = success (Client.VM.destroy rpc vm.id) in
-		()
+		List.find this_one all
 	with Not_found ->
 		Printf.fprintf stderr "Failed to find VM: %s\n" x;
 		exit 1
+
+let destroy x =
+	let open Vm in
+	let vm = find_by_name x in
+	success (Client.VM.destroy rpc vm.id)
+
+let start x =
+	let open Vm in
+	let vm = find_by_name x in
+	success (Client.VM.make rpc vm.id);
+	success (Client.VM.build rpc vm.id);
+	success (Client.VM.unpause rpc vm.id)
+
+let shutdown x =
+	let open Vm in
+	let vm = find_by_name x in
+	success (Client.VM.shutdown rpc vm.id)
 
 let _ =
 	match List.tl (Array.to_list Sys.argv) with
@@ -130,6 +143,10 @@ let _ =
 			list ()
 		| [ "destroy"; id ] ->
 			destroy id
+		| [ "start"; id ] ->
+			start id
+		| [ "shutdown"; id ] ->
+			shutdown id
 		| cmd :: _ ->
 			Printf.fprintf stderr "Unrecognised command: %s\n" cmd;
 			usage ();
