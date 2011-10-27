@@ -47,8 +47,17 @@ module Query = struct
 end
 external query: unit -> (Query.t option * error option) = ""
 
-(* XXX: NB the vm.id = "self" hack *)
-type disk = string * string (* vm.id * params *)
+type disk =
+	| Local of string (** path to a local block device *)
+	| Blkback of string * string (** vm.id * params *)
+type disk_list = disk list
+
+(** XXX: this code shouldn't care about the vswitch/bridge difference *)
+type network =
+	| Bridge of string (** name of a local bridge *)
+	| VSwitch of string (** name of a local vswitch *)
+	| Netback of string * string (** vm.id * backend *)
+type network_list = network list
 
 module Vm = struct
 	type hvm_info = {
@@ -129,21 +138,16 @@ end
 
 module Vif = struct
 
-	type ty =
-		| Bridge of string
-		| Vswitch of string
-
 	type id = string * string
 
 	type t = {
 		id: id;
 		position: int;
-		ty: ty;
 		mac: string;
 		carrier: bool;
 		mtu: int;
 		rate: (int64 * int64) option;
-		backend: string;
+		backend: network;
 		other_config: (string * string) list;
 		extra_private_keys: (string * string) list;
 	}

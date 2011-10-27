@@ -20,6 +20,7 @@ open OUnit
 open Listext
 open Stringext
 open Pervasiveext
+open Fun
 
 open Xmlrpc_client
 
@@ -82,7 +83,7 @@ let make_vm id =
 			extra_args = "extra";
 			legacy_args = "legacy";
 			bootloader_args = "bootloader";
-			devices = [ ("dom0", "0"); ("dom0", "1") ]
+			devices = [ Local "0"; Local "1" ]
 		}
 	} in
 	let hvm = HVM {
@@ -148,7 +149,7 @@ let vm_assert_equal vm vm' =
 					assert_equal ~msg:"extra_args" ~printer:(fun x -> x) x.extra_args x'.extra_args;
 					assert_equal ~msg:"legacy_args" ~printer:(fun x -> x) x.legacy_args x'.legacy_args;
 					assert_equal ~msg:"bootloader_args" ~printer:(fun x -> x) x.bootloader_args x'.bootloader_args;
-					assert_equal ~msg:"devices" ~printer:(fun xs -> String.concat "; " (List.map (fun (x, y) -> x ^ ":" ^ y) xs)) x.devices x'.devices;
+					assert_equal ~msg:"devices" ~printer:(fun x -> x |> rpc_of_disk_list |> Jsonrpc.to_string) x.devices x'.devices;
 			end
 
 let with_vm id f =
@@ -218,7 +219,7 @@ let vm_test_suspend _ =
 			success (Client.VM.make rpc id);
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
-			success (Client.VM.suspend rpc id ("some", "disk"));
+			success (Client.VM.suspend rpc id (Local "disk"));
 			success (Client.VM.shutdown rpc id)
 		)
 
@@ -226,7 +227,7 @@ let vm_test_resume _ =
 	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
-			success (Client.VM.resume rpc id ("some", "disk"));
+			success (Client.VM.resume rpc id (Local "disk"));
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.shutdown rpc id)
 		)
@@ -336,7 +337,7 @@ module VbdDeviceTests = DeviceTests(struct
 			Vbd.id = id;
 			position = position;
 			mode = ReadWrite;
-			backend = ("self", "/dev/zero");
+			backend = Local "/dev/zero";
 			ty = Disk;
 			unpluggable = true;
 			extra_backend_keys = [ "backend", "keys" ];
@@ -352,7 +353,7 @@ module VbdDeviceTests = DeviceTests(struct
 		let open Vbd in
 		assert_equal ~msg:"id" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vbd.id vbd'.id;
 		assert_equal ~msg:"mode" ~printer:(function ReadWrite -> "RW" | ReadOnly -> "RO") vbd.mode vbd'.mode;
-		assert_equal ~msg:"backend" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vbd.backend vbd'.backend;
+		assert_equal ~msg:"backend" ~printer:(fun x -> x |> rpc_of_disk |> Jsonrpc.to_string) vbd.backend vbd'.backend;
 		assert_equal ~msg:"unpluggable" ~printer:string_of_bool vbd.unpluggable vbd'.unpluggable;
 		assert_equal ~msg:"extra_backend_keys" ~printer:sl vbd.extra_backend_keys vbd'.extra_backend_keys;
 		assert_equal ~msg:"extra_private_keys" ~printer:sl vbd.extra_private_keys vbd'.extra_private_keys
@@ -368,12 +369,11 @@ module VifDeviceTests = DeviceTests(struct
 		let open Vif in {
 			id = id;
 			position = position;
-			ty = Bridge "xenbr0";
 			mac = "c0:ff:ee:c0:ff:ee";
 			carrier = false;
 			mtu = 1450;
 			rate = Some(1L, 2L);
-			backend = "self";
+			backend = Bridge "xenbr0";
 			other_config = [ "other", "config" ];
 			extra_private_keys = [ "private", "keys" ];
 		}
@@ -387,12 +387,11 @@ module VifDeviceTests = DeviceTests(struct
 		let open Vif in
 		assert_equal ~msg:"id" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vif.id vif'.id;
 		assert_equal ~msg:"position" ~printer:string_of_int vif.position vif'.position;
-		assert_equal ~msg:"ty" ~printer:(function Bridge x -> "Bridge " ^ x | Vswitch x -> "Vswitch " ^ x) vif.ty vif'.ty;
 		assert_equal ~msg:"mac" ~printer:(fun x -> x) vif.mac vif'.mac;
 		assert_equal ~msg:"carrier" ~printer:string_of_bool vif.carrier vif'.carrier;
 		assert_equal ~msg:"mtu" ~printer:string_of_int vif.mtu vif'.mtu;
 		assert_equal ~msg:"rate" ~printer:(function Some (a, b) -> Printf.sprintf "Some %Ld %Ld" a b | None -> "None") vif.rate vif'.rate;
-		assert_equal ~msg:"backend" ~printer:(fun x -> x) vif.backend vif'.backend;
+		assert_equal ~msg:"backend" ~printer:(fun x -> x |> rpc_of_network |> Jsonrpc.to_string) vif.backend vif'.backend;
 		assert_equal ~msg:"other_config" ~printer:sl vif.other_config vif'.other_config;
 		assert_equal ~msg:"extra_private_keys" ~printer:sl vif.extra_private_keys vif'.extra_private_keys
 end)

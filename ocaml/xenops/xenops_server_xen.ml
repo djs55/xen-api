@@ -31,33 +31,36 @@ let di_of_uuid ~xc ~xs uuid =
 	with Not_found -> None
 let domid_of_uuid ~xc ~xs uuid = Opt.map (fun di -> di.Xenctrl.domid) (di_of_uuid ~xc ~xs uuid)
 
-let with_disk ~xc ~xs (backend_vm_id, params) f =
-	let frontend_domid = this_domid ~xs in
-	match domid_of_uuid ~xc ~xs (Uuid.uuid_of_string backend_vm_id) with
-		| None ->
-			debug "Failed to determine my own domain id!";
-			raise (Exception Does_not_exist)
-		| Some backend_domid ->
-			let t = {
-				Device.Vbd.mode = Device.Vbd.ReadOnly;
-				device_number = None; (* we don't mind *)
-				phystype = Device.Vbd.Phys;
-				params = params;
-				dev_type = Device.Vbd.Disk;
-				unpluggable = true;
-				protocol = None;
-				extra_backend_keys = [];
-				extra_private_keys = [];
-				backend_domid = backend_domid;
-			} in
-			let device = Device.Vbd.add ~xs ~hvm:false t frontend_domid in
-			let open Device_common in
-			finally
-				(fun () ->
-					device.frontend.devid 
-				|> Device_number.of_xenstore_key |> Device_number.to_linux_device 
-				|> f)
-				(fun () -> Device.clean_shutdown ~xs device)
+let with_disk ~xc ~xs disk f = match disk with
+	| Local path -> f path
+	| Blkback (backend_vm_id, params) ->		
+		let frontend_domid = this_domid ~xs in
+		begin match domid_of_uuid ~xc ~xs (Uuid.uuid_of_string backend_vm_id) with
+			| None ->
+				debug "Failed to determine my own domain id!";
+				raise (Exception Does_not_exist)
+			| Some backend_domid ->
+				let t = {
+					Device.Vbd.mode = Device.Vbd.ReadOnly;
+					device_number = None; (* we don't mind *)
+					phystype = Device.Vbd.Phys;
+					params = params;
+					dev_type = Device.Vbd.Disk;
+					unpluggable = true;
+					protocol = None;
+					extra_backend_keys = [];
+					extra_private_keys = [];
+					backend_domid = backend_domid;
+				} in
+				let device = Device.Vbd.add ~xs ~hvm:false t frontend_domid in
+				let open Device_common in
+				finally
+					(fun () ->
+						device.frontend.devid 
+					|> Device_number.of_xenstore_key |> Device_number.to_linux_device 
+					|> f)
+					(fun () -> Device.clean_shutdown ~xs device)
+		end
 
 module Mem = struct
 	let call_daemon xs fn args = Squeezed_rpc.Rpc.client ~xs ~service:Squeezed_rpc._service ~fn ~args
@@ -337,19 +340,11 @@ module VM = struct
 			)
 end
 
-let on_frontend_and_backend f frontend backend =
+let on_frontend f frontend =
 	with_xc_and_xs
 		(fun xc xs ->
-			(* XXX: consider making this an official part of the disk type *)
-			let back =
-				if backend = "self"
-				then Some(this_domid ~xs)
-				else backend |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs in
-			let front = frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs in
-			match front, back with
-				| Some frontend_di, Some backend_domid ->
-					wrap return (f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest backend_domid)
-				| _, _ -> throw Does_not_exist
+			let frontend_di = frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs |> unbox in
+			f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest
 		)
 
 (* We store away the device name so we can lookup devices by name later *)
@@ -388,9 +383,21 @@ module VBD = struct
 
 	let id_of vbd = snd vbd.id
 
+	let backend_domid_of xc xs vbd =
+		match vbd.backend with
+			| Local _ -> this_domid ~xs
+			| Blkback (vm, _) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
+
+	let params_of xc xs vbd =
+		match vbd.backend with
+			| Local path -> path
+			| Blkback (_, params) -> params
+
 	let plug_exn vm vbd =
-		on_frontend_and_backend
-			(fun xc xs frontend_domid hvm backend_domid ->
+		on_frontend
+			(fun xc xs frontend_domid hvm ->
+				let backend_domid = backend_domid_of xc xs vbd in
+				let params = params_of xc xs vbd in
 				(* Remember the VBD id with the device *)
 				let id = _device_id Device_common.Vbd, id_of vbd in
 				let x = {
@@ -400,7 +407,7 @@ module VBD = struct
 					);
 					device_number = vbd.position;
 					phystype = Device.Vbd.Phys;
-					params = snd vbd.backend;
+					params = params;
 					dev_type = (match vbd.ty with
 						| CDROM -> Device.Vbd.CDROM
 						| Disk -> Device.Vbd.Disk
@@ -413,8 +420,8 @@ module VBD = struct
 				} in
 				(* Store the VBD ID -> actual frontend ID for unplug *)
 				let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm x frontend_domid in
-				()
-			) vm (vbd.backend |> fst)
+				return ()
+			) vm
 
 	let plug vm = wrap (plug_exn vm)
 
@@ -437,23 +444,31 @@ module VIF = struct
 
 	let id_of vif = snd vif.id
 
+	let backend_domid_of xc xs vif =
+		match vif.backend with
+			| Bridge _
+			| VSwitch _ -> this_domid ~xs
+			| Netback (vm, _) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
+
 	let plug_exn vm vif =
-		on_frontend_and_backend
-			(fun xc xs frontend_domid hvm backend_domid ->
+		on_frontend
+			(fun xc xs frontend_domid hvm ->
+				let backend_domid = backend_domid_of xc xs vif in
 				(* Remember the VIF id with the device *)
 				let id = _device_id Device_common.Vif, id_of vif in
 
 				let (_: Device_common.device) = Device.Vif.add ~xs ~devid:vif.position
-					~netty:(match vif.ty with
-						| Vswitch x -> Netman.Vswitch x
-						| Bridge x -> Netman.Bridge x)
+					~netty:(match vif.backend with
+						| VSwitch x -> Netman.Vswitch x
+						| Bridge x -> Netman.Bridge x
+						| Netback (_, _) -> failwith "Unsupported")
 					~mac:vif.mac ~carrier:vif.carrier ~mtu:vif.mtu
 					~rate:vif.rate ~backend_domid
 					~other_config:vif.other_config
 					~extra_private_keys:(id :: vif.extra_private_keys)
 					frontend_domid in
-				()
-			) vm vif.backend
+				return ()
+			) vm
 
 	let plug vm = wrap (plug_exn vm)
 

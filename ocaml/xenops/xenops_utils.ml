@@ -61,6 +61,10 @@ let dropnone x = List.filter_map (fun x -> x) x
 
 exception Exception of error
 
+let unbox = function
+	| None -> raise (Exception Does_not_exist)
+	| Some x -> x
+
 let wrap f x =
 	try
 		f x
