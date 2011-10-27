@@ -2,6 +2,8 @@ OCAML_LIBS    =
 OCAMLINCLUDES = ../xenops
 OCAMLPACKS    = xml-light2 stdext stunnel log http-svr oUnit
 
+UseCamlp4(rpc-light.syntax, xn_cfg_types)
+
 section
 	OCAMLINCLUDES += .
 	OCAMLFLAGS = -dtypes -thread -warn-error F
@@ -9,8 +11,8 @@ section
 	OCamlProgram(xenopstest, test $(COMMON_FILES))
 	OCamlDocProgram(xenopstest, test $(COMMON_FILES))
 
-	OCamlProgram(xn, xn $(COMMON_FILES))
-	OCamlDocProgram(xn, xn $(COMMON_FILES))
+	OCamlProgram(xn, xn xn_cfg_types xn_cfg_parser xn_cfg_lexer $(COMMON_FILES))
+	OCamlDocProgram(xn, xn xn_cfg_types xn_cfg_parser xn_cfg_lexer $(COMMON_FILES))
 
 .PHONY: clean
 clean:
