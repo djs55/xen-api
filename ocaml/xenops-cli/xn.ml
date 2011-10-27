@@ -100,6 +100,25 @@ let create filename =
 			Printf.printf "%s\n" id
 		)
 
+let list () =
+	let open Vm in
+	let vms = success (Client.VM.list rpc ()) in
+	let string_of_vm vm =
+		Printf.sprintf "%s %s %s" vm.id (Opt.default "None" (Opt.map (Printf.sprintf "%3d") vm.domid)) vm.name in
+	List.iter (Printf.printf "%s\n") (List.map string_of_vm vms)
+
+let destroy x =
+	let open Vm in
+	let all = success (Client.VM.list rpc ()) in
+	let this_one y = y.id = x || y.name = x in
+	try
+		let vm = List.find this_one all in
+		let () = success (Client.VM.destroy rpc vm.id) in
+		()
+	with Not_found ->
+		Printf.fprintf stderr "Failed to find VM: %s\n" x;
+		exit 1
+
 let _ =
 	match List.tl (Array.to_list Sys.argv) with
 		| [ "help" ] | [] ->
@@ -107,6 +126,10 @@ let _ =
 			exit 0
 		| [ "create"; filename ] ->
 			create filename
+		| [ "list" ] ->
+			list ()
+		| [ "destroy"; id ] ->
+			destroy id
 		| cmd :: _ ->
 			Printf.fprintf stderr "Unrecognised command: %s\n" cmd;
 			usage ();
