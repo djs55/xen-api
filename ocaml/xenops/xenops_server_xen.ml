@@ -24,6 +24,8 @@ module VmExtra = struct
 	(** Extra data we store per VM *)
 	type t = {
 		domid: int;
+		create_info: Domain.create_info;
+		build_info: Domain.build_info option;
 	} with rpc
 end
 
@@ -228,7 +230,11 @@ module VM = struct
 				Mem.with_reservation ~xc ~xs ~min:min_kib ~max:max_kib
 					(fun target_plus_overhead_kib reservation_id ->
 						let domid = Domain.make ~xc ~xs create_info (uuid_of_vm vm) in
-						DB.create (key_of vm) { VmExtra.domid = domid }
+						DB.create (key_of vm) {
+							VmExtra.domid = domid;
+							create_info = create_info;
+							build_info = None
+						}
 						>>= fun () ->
 						Mem.transfer_reservation_to_domain ~xs ~reservation_id ~domid;
 						let initial_target =
@@ -315,6 +321,9 @@ module VM = struct
 							) in
 			let arch = Domain.build ~xc ~xs build_info domid in
 			debug "Built domid %d with architecture %s" domid (Domain.string_of_domarch arch);
+			let k = key_of vm in
+			let d = Opt.unbox (DB.read k) in
+			DB.write k { d with VmExtra.build_info = Some build_info };
 			Domain.cpuid_apply ~xc ~hvm:(will_be_hvm vm) domid;
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
