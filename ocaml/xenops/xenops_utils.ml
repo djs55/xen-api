@@ -17,7 +17,9 @@ open Stringext
 open Fun
 open Xenops_interface
 
-module D = Debug.Debugger(struct let name = "xenops" end)
+let service_name = "xenops"
+
+module D = Debug.Debugger(struct let name = service_name end)
 
 let print_debug = ref false
 
@@ -81,9 +83,10 @@ module type READWRITE = sig
 	type t
 	val t_of_rpc: Rpc.t -> t
 	val rpc_of_t: t -> Rpc.t
+	val namespace: string
 end
 
-let root = "/var/run/xapi/vms"
+let root = "/var/run/" ^ service_name
 
 let rec rm_rf f =
 	if not(Sys.is_directory f)
@@ -100,7 +103,7 @@ let empty_database () =
 module TypedTable = functor(RW: READWRITE) -> struct
 	open RW
 	type key = string list
-	let filename_of_key k = Printf.sprintf "%s/%s" root (String.concat "/" k)
+	let filename_of_key k = Printf.sprintf "%s/%s/%s" root RW.namespace (String.concat "/" k)
 	let read (k: key) =
 		let filename = filename_of_key k in
 		try
@@ -110,17 +113,22 @@ module TypedTable = functor(RW: READWRITE) -> struct
 		let filename = filename_of_key k in
 		Unixext.mkdir_rec (Filename.dirname filename) 0o755;
 		let json = Jsonrpc.to_string (rpc_of_t x) in
+		debug "%s <- %s" filename json;
 		Unixext.write_string_to_file filename json
 	let exists (k: key) = Sys.file_exists (filename_of_key k)
 	let delete (k: key) =
 		let filename = filename_of_key k in
 		rm_rf filename
-	let list (k: key) = Array.to_list (Sys.readdir (filename_of_key k))
+	let list (k: key) =
+		if exists k
+		then Array.to_list (Sys.readdir (filename_of_key k))
+		else []
 
 	let create (k: key) (x: t) =
-		if exists k
-		then None, Some Already_exists
-		else begin
+		if exists k then begin
+			debug "Key %s already exists" (String.concat "/" k);
+			None, Some Already_exists
+		end else begin
 			write k x;
 			Some (), None
 		end

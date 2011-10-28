@@ -39,7 +39,10 @@ let get_backend () = match !backend with
 module VM = struct
 	open Vm
 
-	module DB = TypedTable(Vm)
+	module DB = TypedTable(struct
+		include Vm
+		let namespace = "VM"
+	end)
 
 	let key_of id = [ id; "config" ]
 	let create _ x =
@@ -121,13 +124,16 @@ let filter_prefix prefix xs =
 module VBD = struct
 	open Vbd
 
-	module DB = TypedTable(Vbd)
+	module DB = TypedTable(struct
+		include Vbd
+		let namespace = "VM"
+	end)
 
 	let vm_of = fst
 	let key_of k = [ fst k; "vbd." ^ (snd k) ]
 	let string_of_id (a, b) = a ^ "." ^ b
 	let create _ x =
-		debug "VBD.create %s" (Jsonrpc.to_string (rpc_of_t x));
+		debug "VBD.create %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
 		DB.create (key_of x.id) x
 		>>= fun () ->
 		return x.id
@@ -162,7 +168,10 @@ end
 module VIF = struct
 	open Vif
 
-	module DB = TypedTable(Vif)
+	module DB = TypedTable(struct
+		include Vif
+		let namespace = "VM"
+	end)
 
 	let vm_of = fst
 	let key_of k = [ fst k; "vif." ^ (snd k) ]

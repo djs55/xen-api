@@ -11,41 +11,63 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
-module D = Debug.Debugger(struct let name = "xenops" end)
-open D
-
 open Threadext
 open Listext
 open Xenops_interface
 open Xenops_utils
 
-type domain = {
-	domid: int;
-	uuid: string;
-	hvm: bool;
-	shutdown_reason: Domain.shutdown_reason option;
-	paused: bool;
-	built: bool;
-	suspended: bool;
-	vbds: Vbd.t list;
-	vifs: Vif.t list;
-}
+module Domain = struct
+	type t = {
+		domid: int;
+		uuid: string;
+		hvm: bool;
+		shutdown_reason: string option;
+		paused: bool;
+		built: bool;
+		suspended: bool;
+		vbds: Vbd.t list;
+		vifs: Vif.t list;
+	} with rpc
+end
 
-module StringMap = Map.Make(struct type t = string let compare = compare end)
+module DB = TypedTable(struct
+	include Domain
+	let namespace = "domain"
+end)
 
-let uuid_to_domain = ref StringMap.empty
+open Domain
 
 let next_domid =
-	let next = ref 1 in
+	let next = ref None in (* unknown *)
+	let get_next =
+		fun () -> match !next with
+			| None ->
+				let domains = List.filter_map (fun x -> DB.read [x]) (DB.list []) in
+				let domids = List.map (fun x -> x.domid) domains in
+				let highest = List.fold_left max 0 domids in
+				next := Some (highest + 1);
+				highest + 1
+			| Some x -> x in
+	let incr_next () = next := Opt.map (fun x -> x + 1) !next in
 	fun () ->
-		let result = !next in
-		incr next;
+		let result = get_next () in
+		incr_next ();
+		debug "using domid %d" result;
 		result
+
+let key_of vm = [ vm.Vm.id ]
 
 let m = Mutex.create ()
 
+let read x = match DB.read x with
+	| None ->
+		debug "Failed to find key: %s" (String.concat "/" x);
+		throw Does_not_exist
+	| Some y -> return y
+
 let make_nolock vm () =
-	if StringMap.mem vm.Vm.id !uuid_to_domain then begin
+	let k = key_of vm in
+	if DB.exists k then begin
 		debug "VM.make_nolock %s: Already_exists" vm.Vm.id;
 		throw Already_exists
 	end else begin
@@ -60,145 +82,121 @@ let make_nolock vm () =
 			vifs = [];
 			vbds = [];
 		} in
-		uuid_to_domain := StringMap.add vm.Vm.id domain !uuid_to_domain;
+		DB.write k domain;
 		return ()
 	end
 
 let get_power_state_nolock vm () =
-	return (if StringMap.mem vm.Vm.id !uuid_to_domain
-	then Running
-	else Halted)
+	return (if DB.exists (key_of vm) then Running else Halted)
 
 let destroy_nolock vm () =
-	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
+	let k = key_of vm in
+	if not(DB.exists k)
 	then throw Does_not_exist
 	else begin
-		uuid_to_domain := StringMap.remove vm.Vm.id !uuid_to_domain;
+		DB.delete k;
 		return ()
 	end
 
 let build_nolock vm () =
-	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
-	then throw Does_not_exist
-	else begin
-		debug "setting built <- true";
-		let d = StringMap.find vm.Vm.id !uuid_to_domain in
-		uuid_to_domain := StringMap.add vm.Vm.id { d with built = true } !uuid_to_domain;
-		return ()
-	end
+	let k = key_of vm in
+	read k >>= fun d ->
+	debug "setting built <- true";
+	DB.write k { d with built = true };
+	return ()
 
 let suspend_nolock vm disk () =
-	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
-	then throw Does_not_exist
-	else begin
-		let d = StringMap.find vm.Vm.id !uuid_to_domain in
-		uuid_to_domain := StringMap.add vm.Vm.id { d with suspended = true } !uuid_to_domain;
-		return ()
-	end
+	let k = key_of vm in
+	read k >>= fun d ->
+	DB.write k { d with suspended = true };
+	return ()
 
 let resume_nolock vm disk () =
-	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
-	then throw Does_not_exist
-	else begin
-		let d = StringMap.find vm.Vm.id !uuid_to_domain in
-		uuid_to_domain := StringMap.add vm.Vm.id { d with built = true } !uuid_to_domain;
-		return ()
-	end
+	let k = key_of vm in
+	read k >>= fun d ->
+	DB.write k { d with built = true };
+	return ()
 
 let do_pause_unpause_nolock vm paused () =
-	if not(StringMap.mem vm.Vm.id !uuid_to_domain)
-	then throw Does_not_exist
+	let k = key_of vm in
+	read k >>= fun d ->
+	if not d.built
+	then throw Domain_not_built
 	else begin
-		let d = StringMap.find vm.Vm.id !uuid_to_domain in
-		if not d.built
-		then throw Domain_not_built
-		else begin
-			uuid_to_domain := StringMap.add vm.Vm.id { d with paused = paused } !uuid_to_domain;
-			return ()
-		end
+		DB.write k { d with paused = paused };
+		return ();
 	end
 
 let add_vif vm vif () =
-	if not(StringMap.mem vm !uuid_to_domain)
-	then throw Does_not_exist
-	else begin
-		let d = StringMap.find vm !uuid_to_domain in
-		let existing_positions = List.map (fun vif -> vif.Vif.position) d.vifs in
-		if List.mem vif.Vif.position existing_positions then begin
-			debug "VIF.plug %s.%s: Already exists" (fst vif.Vif.id) (snd vif.Vif.id);
-			throw Already_exists
-		end else begin
-			uuid_to_domain := StringMap.add vm { d with vifs = vif :: d.vifs } !uuid_to_domain;
-			return ()
-		end
+	let k = [ vm ] in
+	read k >>= fun d ->
+	let existing_positions = List.map (fun vif -> vif.Vif.position) d.vifs in
+	if List.mem vif.Vif.position existing_positions then begin
+		debug "VIF.plug %s.%s: Already exists" (fst vif.Vif.id) (snd vif.Vif.id);
+		throw Already_exists
+	end else begin
+		DB.write k { d with vifs = vif :: d.vifs };
+		return ()
 	end
 
-let add_vbd vm vbd () =
-	if not(StringMap.mem vm !uuid_to_domain)
-	then throw Does_not_exist
-	else begin
-		let d = StringMap.find vm !uuid_to_domain in
-		(* there shouldn't be any None values in here anyway *)
-		let ps = List.map (fun vbd -> vbd.Vbd.position) d.vbds in
-		assert (not (List.mem None ps));
-		let dns = List.map (Opt.unbox) ps in
-		let indices = List.map Device_number.to_disk_number dns in
-		let next_index = List.fold_left max (-1) indices + 1 in
-		let next_dn = Device_number.of_disk_number d.hvm next_index in
-		let this_dn = Opt.default next_dn vbd.Vbd.position in
-		if List.mem this_dn dns then begin
-			debug "VBD.plug %s.%s: Already exists" (fst vbd.Vbd.id) (snd vbd.Vbd.id);
-			throw Already_exists
-		end else begin
-			uuid_to_domain := StringMap.add vm { d with vbds = { vbd with Vbd.position = Some this_dn } :: d.vbds } !uuid_to_domain;
-			return ()
-		end
+let add_vbd (vm: Vm.id) (vbd: Vbd.t) () =
+	debug "add_vbd";
+	let k = [ vm ] in
+	read k >>= fun d ->
+	(* there shouldn't be any None values in here anyway *)
+	let ps = List.map (fun vbd -> vbd.Vbd.position) d.vbds in
+	assert (not (List.mem None ps));
+	let dns = List.map (Opt.unbox) ps in
+	let indices = List.map Device_number.to_disk_number dns in
+	let next_index = List.fold_left max (-1) indices + 1 in
+	let next_dn = Device_number.of_disk_number d.hvm next_index in
+	let this_dn = Opt.default next_dn vbd.Vbd.position in
+	if List.mem this_dn dns then begin
+		debug "VBD.plug %s.%s: Already exists" (fst vbd.Vbd.id) (snd vbd.Vbd.id);
+		throw Already_exists
+	end else begin
+		DB.write k { d with vbds = { vbd with Vbd.position = Some this_dn } :: d.vbds };
+		return ()
 	end
 
 let vbd_attached vm vbd () =
-	if not(StringMap.mem vm !uuid_to_domain)
+	let k = [ vm ] in
+	if not (DB.exists k)
 	then return false
-	else begin
-		let d = StringMap.find vm !uuid_to_domain in
+	else
+		read k >>= fun d ->
 		let this_one x = x.Vbd.id = vbd.Vbd.id in
 		return (List.filter this_one d.vbds <> [])
-	end
 
 let vif_attached vm vif () =
-	if not(StringMap.mem vm !uuid_to_domain)
+	let k = [ vm ] in
+	if not (DB.exists k)
 	then return false
-	else begin
-		let d = StringMap.find vm !uuid_to_domain in
+	else
+		read k >>= fun d ->
 		let this_one x = x.Vif.id = vif.Vif.id in
 		return (List.filter this_one d.vifs <> [])
-	end
 
 let remove_vif vm vif () =
-	if not(StringMap.mem vm !uuid_to_domain)
+	let k = [ vm ] in
+	read k >>= fun d ->
+	let this_one x = x.Vif.id = vif.Vif.id in
+	if List.filter this_one d.vifs = []
 	then throw Does_not_exist
 	else begin
-		let d = StringMap.find vm !uuid_to_domain in
-		let this_one x = x.Vif.id = vif.Vif.id in
-		if List.filter this_one d.vifs = []
-		then throw Does_not_exist
-		else begin
-			uuid_to_domain := StringMap.add vm { d with vifs = List.filter (fun x -> not (this_one x)) d.vifs } !uuid_to_domain;
-			return ()
-		end
+		DB.write k { d with vifs = List.filter (fun x -> not (this_one x)) d.vifs };
+		return ()
 	end
 
 let remove_vbd vm vbd () =
-	if not(StringMap.mem vm !uuid_to_domain)
+	let k = [ vm ] in
+	read k >>= fun d ->
+	let this_one x = x.Vbd.id = vbd.Vbd.id in
+	if List.filter this_one d.vbds = []
 	then throw Does_not_exist
 	else begin
-		let d = StringMap.find vm !uuid_to_domain in
-		let this_one x = x.Vbd.id = vbd.Vbd.id in
-		if List.filter this_one d.vbds = []
-		then throw Does_not_exist
-		else begin
-			uuid_to_domain := StringMap.add vm { d with vbds = List.filter (fun x -> not (this_one x)) d.vbds } !uuid_to_domain;
-			return ()
-		end
+		DB.write k { d with vbds = List.filter (fun x -> not (this_one x)) d.vbds };
+		return ()
 	end
 	
 module VM = struct
@@ -215,7 +213,7 @@ module VM = struct
 end
 
 module VBD = struct
-	let plug vm vbd = Mutex.execute m (add_vbd vm vbd)
+	let plug (vm: Vm.id) (vbd: Vbd.t) = Mutex.execute m (add_vbd vm vbd)
 	let unplug vm vbd = Mutex.execute m (remove_vbd vm vbd)
 
 	let get_currently_attached vm vbd = Mutex.execute m (vbd_attached vm vbd)
