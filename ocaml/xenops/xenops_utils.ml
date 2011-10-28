@@ -79,6 +79,11 @@ let wrap f x =
 			debug "%s" (Printexc.get_backtrace ());
 			throw (Internal_error (Printexc.to_string e))
 
+let unwrap = function
+	| Some x, None -> x
+	| None, Some e -> raise (Exception e)
+	| _, _ -> failwith "protocol error"
+
 module type READWRITE = sig
 	type t
 	val t_of_rpc: Rpc.t -> t

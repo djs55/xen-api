@@ -20,6 +20,18 @@ open Pervasiveext
 open Threadext
 open Fun
 
+module VmExtra = struct
+	(** Extra data we store per VM *)
+	type t = {
+		domid: int;
+	} with rpc
+end
+
+module DB = TypedTable(struct
+	include VmExtra
+	let namespace = "extra"
+end)
+
 let this_domid ~xs = int_of_string (xs.Xs.read "domid")
 
 let uuid_of_vm vm = Uuid.uuid_of_string vm.Vm.id
@@ -176,6 +188,8 @@ end
 module VM = struct
 	open Vm
 
+	let key_of vm = [ vm.Vm.id ]
+
 	let will_be_hvm vm = match vm.ty with HVM _ -> true | _ -> false
 
 	let compute_overhead vm =
@@ -214,6 +228,8 @@ module VM = struct
 				Mem.with_reservation ~xc ~xs ~min:min_kib ~max:max_kib
 					(fun target_plus_overhead_kib reservation_id ->
 						let domid = Domain.make ~xc ~xs create_info (uuid_of_vm vm) in
+						DB.create (key_of vm) { VmExtra.domid = domid }
+						>>= fun () ->
 						Mem.transfer_reservation_to_domain ~xs ~reservation_id ~domid;
 						let initial_target =
 							let target_plus_overhead_bytes = bytes_of_kib target_plus_overhead_kib in
@@ -235,17 +251,20 @@ module VM = struct
 				match di_of_uuid ~xc ~xs uuid with
 					| None -> throw Does_not_exist
 					| Some di ->
-						wrap return (f xc xs di)
+						wrap return (f xc xs vm di)
 			)
 
-	let destroy = wrap (on_domain (fun xc xs di -> Domain.destroy ~preserve_xs_vm:false ~xc ~xs di.Xenctrl.domid))
+	let destroy = wrap (on_domain (fun xc xs vm di ->
+		let domid = di.Xenctrl.domid in
+		if DB.exists (key_of vm) then unwrap (DB.destroy (key_of vm));
+		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid))
 
-	let pause = wrap (on_domain (fun xc xs di ->
+	let pause = wrap (on_domain (fun xc xs _ di ->
 		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
 		Domain.pause ~xc di.Xenctrl.domid
 	))
 
-	let unpause = wrap (on_domain (fun xc xs di ->
+	let unpause = wrap (on_domain (fun xc xs _ di ->
 		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
 		Domain.unpause ~xc di.Xenctrl.domid
 	))
@@ -299,7 +318,7 @@ module VM = struct
 			Domain.cpuid_apply ~xc ~hvm:(will_be_hvm vm) domid;
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
-	let build_domain vm xc xs di =
+	let build_domain vm xc xs _ di =
 		try
 			build_domain_exn xc xs di.Xenctrl.domid vm
 		with
