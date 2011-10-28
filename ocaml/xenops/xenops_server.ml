@@ -56,13 +56,21 @@ module VM = struct
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.get_power_state x
-		>>= fun power ->
-		if power = Running
-		then throw (Bad_power_state(Running, Halted))
-		else DB.destroy [ id ]
+		>>= fun power -> match power with
+			| Running _ | Suspended | Paused -> throw (Bad_power_state(power, Halted))
+			| Halted -> DB.destroy [ id ]
 	let list _ () =
 		debug "VM.list";
-		return (DB.list [ ] |> (List.map (DB.read ++ key_of)) |> dropnone)
+		let module B = (val get_backend () : S) in
+		let rec loop acc = function
+			| [] -> return acc
+			| x :: xs ->
+				need_some (x |> key_of |> DB.read)
+				>>= fun vm_t ->
+				B.VM.get_power_state vm_t
+				>>= fun power ->
+				loop ((vm_t, power) :: acc) xs in
+		loop [] (DB.list [])
 
 	let make _ id =
 		debug "VM.make %s" id;

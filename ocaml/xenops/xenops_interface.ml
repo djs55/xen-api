@@ -19,9 +19,15 @@ type ('a, 'b) result =
 	| Success of 'a
 	| Failure of 'b
 
+type runtime_info = {
+	domid: int;
+}
+
 type power_state =
+	| Running of runtime_info
 	| Halted
-	| Running
+	| Suspended
+	| Paused
 
 type error =
 	| Internal_error of string
@@ -97,7 +103,6 @@ module Vm = struct
 
 	type t = {
 		id: id;
-		domid: int option;
 		name: string;
 		ssidref: int32;
 		xsdata: (string * string) list;
@@ -111,6 +116,7 @@ module Vm = struct
 		memory_dynamic_min: int64;
 		vcpus: int;
 	}
+
 end
 
 module Vbd = struct
@@ -161,7 +167,7 @@ module VM = struct
 	external shutdown: Vm.id -> (unit option) * (error option) = ""
 	external pause: Vm.id -> (unit option) * (error option) = ""
 	external unpause: Vm.id -> (unit option) * (error option) = ""
-	external list: unit -> (Vm.t list option) * (error option) = ""
+	external list: unit -> ((Vm.t * power_state) list option) * (error option) = ""
 
 	external suspend: Vm.id -> disk -> (unit option) * (error option) = ""
 	external resume: Vm.id -> disk -> (unit option) * (error option) = ""

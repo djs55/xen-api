@@ -80,7 +80,6 @@ let create filename =
 			let vcpus = if mem _vcpus then find _vcpus |> int else 1 in
 			let vm = {
 				id = uuid;
-				domid = None;
 				name = name;
 				ssidref = 0l;
 				xsdata = [];
@@ -100,15 +99,18 @@ let create filename =
 
 let list () =
 	let open Vm in
+(*
 	let vms = success (Client.VM.list rpc ()) in
-	let string_of_vm vm =
-		Printf.sprintf "%s %s %s" vm.id (Opt.default "None" (Opt.map (Printf.sprintf "%3d") vm.domid)) vm.name in
+	let string_of_vm (vm, power_state) =
+		Printf.sprintf "%s %s %s" vm.id (matOpt.default "None" (Opt.map (Printf.sprintf "%3d") vm.domid)) vm.name in
 	List.iter (Printf.printf "%s\n") (List.map string_of_vm vms)
+*)
+	()
 
 let find_by_name x =
 	let open Vm in
 	let all = success (Client.VM.list rpc ()) in
-	let this_one y = y.id = x || y.name = x in
+	let this_one (y, _) = y.id = x || y.name = x in
 	try
 		List.find this_one all
 	with Not_found ->
@@ -117,19 +119,19 @@ let find_by_name x =
 
 let destroy x =
 	let open Vm in
-	let vm = find_by_name x in
+	let vm, _ = find_by_name x in
 	success (Client.VM.destroy rpc vm.id)
 
 let start x =
 	let open Vm in
-	let vm = find_by_name x in
+	let vm, _ = find_by_name x in
 	success (Client.VM.make rpc vm.id);
 	success (Client.VM.build rpc vm.id);
 	success (Client.VM.unpause rpc vm.id)
 
 let shutdown x =
 	let open Vm in
-	let vm = find_by_name x in
+	let vm, _ = find_by_name x in
 	success (Client.VM.shutdown rpc vm.id)
 
 let _ =

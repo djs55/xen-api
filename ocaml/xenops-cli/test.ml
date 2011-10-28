@@ -44,7 +44,7 @@ let success = function
 	| None, None -> failwith "protocol error"
 
 let fail_running = function
-	| (_, Some (Bad_power_state(Running, Halted))) -> ()
+	| (_, Some (Bad_power_state(Running _, Halted))) -> ()
 	| (_, Some x) -> failwith (Printf.sprintf "fail_running: %s" (Jsonrpc.to_string (rpc_of_error x)))
 	| (Some x, _) -> failwith "expected failure, got success"
 	| None, None -> failwith "protocol error"
@@ -93,7 +93,6 @@ let make_vm id =
 		video_mib = 4;
 	} in {
 		id = id;
-		domid = None;
 		name = "Example: " ^ id;
 		ssidref = 1l;
 		xsdata = [ "xs", "data" ];
@@ -113,7 +112,6 @@ let sl x = Printf.sprintf "[ %s ]" (String.concat "; " (List.map (fun (k, v) -> 
 let vm_assert_equal vm vm' =
 	let open Vm in
     assert_equal ~msg:"id" ~printer:(fun x -> x) vm.id vm'.id;
-    assert_equal ~msg:"domid" ~printer:(function None -> "None" | Some x -> string_of_int x) vm.domid vm'.domid;
     assert_equal ~msg:"name" ~printer:(fun x -> x) vm.name vm'.name;
     assert_equal ~msg:"ssidref" ~printer:Int32.to_string vm.ssidref vm'.ssidref;
     assert_equal ~msg:"xsdata" ~printer:sl vm.xsdata vm'.xsdata;
@@ -198,8 +196,8 @@ let vm_test_create_list_destroy _ =
 	with_vm example_uuid
 		(fun id ->
 			let vm = make_vm example_uuid in
-			let (vms: Vm.t list) = success (Client.VM.list rpc ()) in
-			let vm' = List.find (fun x -> x.Vm.id = id) vms in
+			let (vms: (Vm.t * power_state) list) = success (Client.VM.list rpc ()) in
+			let vm' = List.find (fun x -> x.Vm.id = id) (List.map fst vms) in
 			vm_assert_equal vm vm'
 		)
 

@@ -354,8 +354,8 @@ module VM = struct
 			(fun xc xs ->
 				match domid_of_uuid ~xc ~xs uuid with
 					| None -> return Halted
-					| Some _ ->
-						return Running
+					| Some d ->
+						return (Running { domid = d })
 			)
 end
 
