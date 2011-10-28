@@ -12,6 +12,7 @@
  * GNU Lesser General Public License for more details.
  *)
 
+open Stringext
 open Fun
 
 let usage () =
@@ -94,6 +95,38 @@ let create filename =
 				vcpus = vcpus
 			} in
 			let (id: Vm.id) = success (Client.VM.create rpc vm) in
+			let disks = if mem _disk then find _disk |> list string else [] in
+			let parse_disk x = match String.split ',' x with
+				| [ source; device_number; rw ] ->
+					let device_number' = Device_number.of_string false device_number in
+					let mode = match String.lowercase rw with
+						| "r" -> Vbd.ReadOnly
+						| "w" -> Vbd.ReadWrite
+						| x ->
+							Printf.fprintf stderr "Failed to understand disk mode '%s'. It should be 'r' or 'w'\n" x;
+							exit 2 in
+					let backend = match String.split ':' source with
+						| [ "phy"; path ] -> Local path
+						| [ "file"; path ] ->
+							Printf.fprintf stderr "I don't understand 'file' disk paths. Please use 'phy'.\n";
+							exit 2
+						| _ ->
+							Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,...\n" source;
+							exit 2 in {
+						Vbd.id = id, device_number;
+						position = Some device_number';
+						mode = mode;
+						backend = backend;
+						ty = Vbd.Disk;
+						unpluggable = true;
+						extra_backend_keys = [];
+						extra_private_keys = [];
+					}
+				| _ ->
+					Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,xvda,w'\n" x;
+					exit 2 in
+			let one x = x |> parse_disk |> Client.VBD.create rpc |> success in
+			let (_: Vbd.id list) = List.map one disks in
 			Printf.printf "%s\n" id
 		)
 
@@ -131,6 +164,16 @@ let find_by_name x =
 let destroy x =
 	let open Vm in
 	let vm, _ = find_by_name x in
+	let vbds = success (Client.VBD.list rpc vm.id) in
+	List.iter
+		(fun vbd ->
+			success (Client.VBD.destroy rpc vbd.Vbd.id)
+		) vbds;
+	let vifs = success (Client.VIF.list rpc vm.id) in
+	List.iter
+		(fun vif ->
+			success (Client.VIF.destroy rpc vif.Vif.id)
+		) vifs;
 	success (Client.VM.destroy rpc vm.id)
 
 let start x =

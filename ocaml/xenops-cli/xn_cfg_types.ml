@@ -16,6 +16,10 @@ let int = function
 	| Int x -> x
 	| x -> raise (Type_error("int", x |> rpc_of_value |> Jsonrpc.to_string))
 
+let list f = function
+	| List vs -> List.map f vs
+	| x -> raise (Type_error("int", x |> rpc_of_value |> Jsonrpc.to_string))
+
 type config = (string * value) list with rpc
 
 (* Well-known constants *)
@@ -40,4 +44,3 @@ let _type = "type"
 let _vifname = "vifname"
 
 let _disk = "disk"
-
