@@ -127,6 +127,28 @@ let create filename =
 					exit 2 in
 			let one x = x |> parse_disk |> Client.VBD.create rpc |> success in
 			let (_: Vbd.id list) = List.map one disks in
+			let vifs = if mem _disk then find _vif |> list string else [] in
+			let vifs = List.combine vifs (Range.to_list (Range.make 0 (List.length vifs))) in
+			let parse_vif (x, idx) =
+				let xs = List.filter (fun x -> x <> "") (List.map (String.strip String.isspace) (String.split ',' x)) in
+				let kvpairs = List.map (fun x -> match String.split ~limit:2 '=' x with
+					| [ k; v ] -> k, v
+					| _ ->
+						Printf.fprintf stderr "I don't understand '%s'. Please use 'mac=xx:xx:xx:xx:xx:xx,bridge=xenbrX'.\n" x;
+						exit 2
+				) xs in {
+					Vif.id = id, string_of_int idx;
+					position = idx;
+					mac = if List.mem_assoc _mac kvpairs then List.assoc _mac kvpairs else "c0:ff:ee:c0:ff:ee";
+					carrier = true;
+					mtu = 1500;
+					rate = None;
+					backend = if List.mem_assoc _bridge kvpairs then VSwitch (List.assoc _bridge kvpairs) else VSwitch "xenbr0";
+					other_config = [];
+					extra_private_keys = [];
+				} in
+			let one x = x |> parse_vif |> Client.VIF.create rpc |> success in
+			let (_: Vif.id list) = List.map one vifs in
 			Printf.printf "%s\n" id
 		)
 
