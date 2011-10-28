@@ -99,13 +99,24 @@ let create filename =
 
 let list () =
 	let open Vm in
-(*
-	let vms = success (Client.VM.list rpc ()) in
+	let line name domid mem vcpus state time =
+		Printf.sprintf "%-45s%-5s%-4s%-5s     %-8s%-s" name domid mem vcpus state time in
+	let header = line "Name" "ID" "Mem" "VCPUs" "State" "Time(s)" in
 	let string_of_vm (vm, power_state) =
-		Printf.sprintf "%s %s %s" vm.id (matOpt.default "None" (Opt.map (Printf.sprintf "%3d") vm.domid)) vm.name in
-	List.iter (Printf.printf "%s\n") (List.map string_of_vm vms)
-*)
-	()
+		let domid = match power_state with
+			| Running { domid = d } -> string_of_int d
+			| _ -> "-" in
+		let mem = Int64.to_string (Int64.div (Int64.div vm.memory_static_max 1024L) 1024L) in
+		let vcpus = string_of_int vm.vcpus in
+		let state = match power_state with
+			| Running _ -> "Running"
+			| Suspended -> "Suspend"
+			| Halted    -> "Halted "
+			| Paused    -> "Paused " in
+		line vm.name domid mem vcpus state "" in
+	let vms = success (Client.VM.list rpc ()) in
+	let lines = header :: (List.map string_of_vm vms) in
+	List.iter (Printf.printf "%s\n") lines
 
 let find_by_name x =
 	let open Vm in
