@@ -7,7 +7,7 @@ CFLAGS          += $(XEN_CFLAGS)
 OCAMLPACKS     = threads xenctrl xenstore stdext log cdrom netdev http-svr sexpr
 OCAMLFLAGS    += -thread
 
-UseCamlp4(rpc-light.syntax, device_number xenops_server_simulator xenops_server_xen)
+UseCamlp4(rpc-light.syntax, device_number xenops_server_simulator xenops_server_xen domain)
 UseCamlp4(rpc-light.idl, xenops_interface)
 
 LIBFILES = table xenops_helpers xenbus_utils balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom bootloader xenops_interface xenops_utils xenops_server_plugin xenops_server xenops_server_xen xenops_server_simulator
