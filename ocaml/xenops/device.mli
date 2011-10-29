@@ -176,7 +176,7 @@ sig
 
 	type disp_opt =
 		| NONE
-		| VNC of disp_intf_opt * bool * int * string (* auto-allocate, port if previous false, keymap *)
+		| VNC of disp_intf_opt * string option * bool * int * string (* IP address, auto-allocate, port if previous false, keymap *)
 		| SDL of disp_intf_opt * string (* X11 display *)
 		| Passthrough of int option
 		| Intel of disp_intf_opt * int option
@@ -204,7 +204,7 @@ sig
 		oem_features: int option;
 		inject_sci: int option;
 		video_mib: int;
-	       
+
 		extras: (string * string option) list;
 	}
 

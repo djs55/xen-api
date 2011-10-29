@@ -1449,7 +1449,7 @@ with rpc
 (* Display output / keyboard input *)
 type disp_opt =
 	| NONE
-	| VNC of disp_intf_opt * bool * int * string (* auto-allocate, port if previous false, keymap *)
+	| VNC of disp_intf_opt * string option * bool * int * string (* IP address, auto-allocate, port if previous false, keymap *)
 	| SDL of disp_intf_opt * string (* X11 display *)
 	| Passthrough of int option
 	| Intel of disp_intf_opt * int option
@@ -1624,12 +1624,13 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 		    (vga_type_opts @ dom0_input_opts), false		
 		| SDL (opts,x11name) ->
 		    ( [], false)
-		| VNC (disp_intf, auto, port, keymap) ->
+		| VNC (disp_intf, ip_addr_opt, auto, port, keymap) ->
+			let ip_addr = Opt.default "127.0.0.1" ip_addr_opt in
 		    let vga_type_opts = vga_type_opts disp_intf in
 		    let vnc_opts = 
 		      if auto
-		      then [ "-vncunused"; "-k"; keymap ]
-		      else [ "-vnc"; string_of_int port; "-k"; keymap ]
+		      then [ "-vncunused"; "-k"; keymap; "-vnc"; ip_addr ^ ":1" ]
+		      else [ "-vnc"; ip_addr ^ ":" ^ (string_of_int port); "-k"; keymap ]
 		    in
 		    (vga_type_opts @ vnc_opts), true
 		| Intel (opt,dom0_input) -> 
@@ -1654,7 +1655,7 @@ let __start ~xs ~dmpath ~restore ?(timeout=qemu_dm_ready_timeout) info domid =
 	   @ (if info.pci_passthrough then ["-priv"] else [])
 	   @ xenclient_specific_options
 	   @ (List.fold_left (fun l (k, v) -> ("-" ^ k) :: (match v with None -> l | Some v -> v :: l)) [] info.extras)
-	   @ [ "-monitor"; "pty"; "-vnc"; "127.0.0.1:1" ]
+	   @ [ "-monitor"; "pty" ]
 		in
 	(* Execute qemu-dm-wrapper, forwarding stdout to the syslog, with the key "qemu-dm-<domid>" *)
 	let syslog_stdout = Forkhelpers.Syslog_WithKey (Printf.sprintf "qemu-dm-%d" domid) in

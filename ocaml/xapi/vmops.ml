@@ -608,7 +608,7 @@ let create_device_emulator ~__context ~xc ~xs ~self ?(restore=false) ?vnc_statef
 
 		(* Display and input devices are usually conflated *)
 		let disp,usb = 
-		  let default_disp_usb = (Device.Dm.VNC (vga, true, 0, vnc_keymap), ["tablet"]) in
+		  let default_disp_usb = (Device.Dm.VNC (vga, None, true, 0, vnc_keymap), ["tablet"]) in
 		  if Xapi_globs.xenclient_enabled then begin 
 		    try 
 		      match List.assoc "vga_mode" platform with
