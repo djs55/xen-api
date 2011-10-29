@@ -230,7 +230,7 @@ module VM = struct
 				Mem.with_reservation ~xc ~xs ~min:min_kib ~max:max_kib
 					(fun target_plus_overhead_kib reservation_id ->
 						let domid = Domain.make ~xc ~xs create_info (uuid_of_vm vm) in
-						DB.create (key_of vm) {
+						DB.add (key_of vm) {
 							VmExtra.domid = domid;
 							create_info = create_info;
 							build_info = None
@@ -262,7 +262,7 @@ module VM = struct
 
 	let destroy = wrap (on_domain (fun xc xs vm di ->
 		let domid = di.Xenctrl.domid in
-		if DB.exists (key_of vm) then unwrap (DB.destroy (key_of vm));
+		if DB.exists (key_of vm) then unwrap (DB.remove (key_of vm));
 		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid))
 
 	let pause = wrap (on_domain (fun xc xs _ di ->

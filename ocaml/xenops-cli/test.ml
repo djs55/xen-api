@@ -65,9 +65,9 @@ let test_query _ = let (_: Query.t) = success (Client.query rpc ()) in ()
 
 let missing_vm = "missing"
 
-let vm_test_destroy_missing _ =
-	match Client.VM.destroy rpc missing_vm with
-		| Some _, _ -> failwith "VDI.destroy succeeded"
+let vm_test_remove_missing _ =
+	match Client.VM.remove rpc missing_vm with
+		| Some _, _ -> failwith "VDI.remove succeeded"
 		| None, Some Does_not_exist -> ()
 		| _, _ -> failwith "protocol error"
 
@@ -152,17 +152,17 @@ let vm_assert_equal vm vm' =
 
 let with_vm id f =
 	let vm = make_vm id in
-	let (id: Vm.id) = success (Client.VM.create rpc vm) in
+	let (id: Vm.id) = success (Client.VM.add rpc vm) in
 	finally (fun () -> f id)
 		(fun () ->
 			try
-				success (Client.VM.destroy rpc id)
+				success (Client.VM.remove rpc id)
 			with e ->
 				Printf.fprintf stderr "Caught failure during with_vm cleanup: %s" (Printexc.to_string e);
 				raise e
 		)
 
-let vm_test_create_destroy _ =
+let vm_test_add_remove _ =
 	with_vm example_uuid (fun _ -> ())
 
 
@@ -192,7 +192,7 @@ let vm_test_build_pause_unpause _ =
 			success (Client.VM.shutdown rpc id);
 		)
 
-let vm_test_create_list_destroy _ =
+let vm_test_add_list_remove _ =
 	with_vm example_uuid
 		(fun id ->
 			let vm = make_vm example_uuid in
@@ -201,13 +201,13 @@ let vm_test_create_list_destroy _ =
 			vm_assert_equal vm vm'
 		)
 
-let vm_destroy_running _ =
+let vm_remove_running _ =
 	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.make rpc id);
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
-			fail_running (Client.VM.destroy rpc id);
+			fail_running (Client.VM.remove rpc id);
 			success (Client.VM.shutdown rpc id)
 		)
 
@@ -239,8 +239,8 @@ module type DEVICE = sig
 	type id
 	val ids: id list
 	val make: id -> position -> t
-	val create: t -> id option * error option
-	val destroy: id -> unit option * error option
+	val add: t -> id option * error option
+	val remove: id -> unit option * error option
 	val plug: id -> unit option * error option
 	val unplug: id -> unit option * error option
 	val list: Vm.id -> t list option * error option
@@ -249,15 +249,15 @@ end
 
 module DeviceTests = functor(D: DEVICE) -> struct
 	open D
-	let create_destroy _ =
+	let add_remove _ =
 		with_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
-				let (dev_id: id) = success (create dev) in
-				success (destroy dev_id)
+				let (dev_id: id) = success (add dev) in
+				success (remove dev_id)
 			)
 
-	let with_created_vm id f =
+	let with_added_vm id f =
 		with_vm id
 			(fun id ->
 				success (Client.VM.make rpc id);
@@ -266,61 +266,61 @@ module DeviceTests = functor(D: DEVICE) -> struct
 					(fun () -> success (Client.VM.shutdown rpc id))
 			)
 
-	let create_plug_unplug_destroy _ =
-		with_created_vm example_uuid
+	let add_plug_unplug_remove _ =
+		with_added_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
-				let (dev_id: id) = success (create dev) in
+				let (dev_id: id) = success (add dev) in
 				success (plug dev_id);
 				success (unplug dev_id);
-				success (destroy dev_id);
+				success (remove dev_id);
 			)
 
-	let create_plug_unplug_many_destroy _ =
-		with_created_vm example_uuid
+	let add_plug_unplug_many_remove _ =
+		with_added_vm example_uuid
 			(fun id ->
 				let ids = 
 					List.map
 						(fun (id, position) ->
 							let dev = make id position in
-							let id = success (create dev) in
+							let id = success (add dev) in
 							success (plug id);
 							id
 						) (List.combine ids positions) in
 				List.iter
 					(fun id ->
 						success (unplug id);
-						success (destroy id);
+						success (remove id);
 					) ids
 			)
 
-	let create_list_destroy _ =
+	let add_list_remove _ =
 		with_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
-				let (dev_id: id) = success (create dev) in
+				let (dev_id: id) = success (add dev) in
 				let (devs: t list) = success (list id) in
 				let dev' = find dev_id devs in
 				assert_equal dev dev';
-				success (destroy dev_id);
+				success (remove dev_id);
 			)
 
-	let create_vm_destroy _ =
+	let add_vm_remove _ =
 		with_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
-				let (_: id) = success (create dev) in
+				let (_: id) = success (add dev) in
 				()
 			)
 
-	let destroy_running _ =
-		with_created_vm example_uuid
+	let remove_running _ =
+		with_added_vm example_uuid
 			(fun id ->
 				let dev = make (List.hd ids) (List.hd positions) in
-				let (dev_id: id) = success (create dev) in
+				let (dev_id: id) = success (add dev) in
 				success (plug dev_id);
 				(* no unplug *)
-				fail_connected (destroy dev_id);				
+				fail_connected (remove dev_id);				
 			)
 end
 
@@ -341,8 +341,8 @@ module VbdDeviceTests = DeviceTests(struct
 			extra_backend_keys = [ "backend", "keys" ];
 			extra_private_keys = [ "private", "keys" ];
 		}
-	let create = Client.VBD.create rpc
-	let destroy = Client.VBD.destroy rpc
+	let add = Client.VBD.add rpc
+	let remove = Client.VBD.remove rpc
 	let plug = Client.VBD.plug rpc
 	let unplug = Client.VBD.unplug rpc
 	let list = Client.VBD.list rpc
@@ -375,8 +375,8 @@ module VifDeviceTests = DeviceTests(struct
 			other_config = [ "other", "config" ];
 			extra_private_keys = [ "private", "keys" ];
 		}
-	let create = Client.VIF.create rpc
-	let destroy = Client.VIF.destroy rpc
+	let add = Client.VIF.add rpc
+	let remove = Client.VIF.remove rpc
 	let plug = Client.VIF.plug rpc
 	let unplug = Client.VIF.unplug rpc
 	let list = Client.VIF.list rpc
@@ -420,25 +420,25 @@ let _ =
 	let suite = "xenops test" >::: 
 		[
 			"test_query" >:: test_query;
-			"vm_test_destroy_missing" >:: vm_test_destroy_missing;
-			"vm_test_create_destroy" >:: vm_test_create_destroy;
+			"vm_test_remove_missing" >:: vm_test_remove_missing;
+			"vm_test_add_remove" >:: vm_test_add_remove;
 			"vm_test_make_shutdown" >:: vm_test_make_shutdown;
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
 			"vm_test_build_pause_unpause" >:: vm_test_build_pause_unpause;
-			"vm_test_create_list_destroy" >:: vm_test_create_list_destroy;
-			"vm_destroy_running" >:: vm_destroy_running;
-			"vbd_test_create_destroy" >:: VbdDeviceTests.create_destroy;
-			"vbd_test_create_list_destroy" >:: VbdDeviceTests.create_list_destroy;
-			"vbd_test_create_vm_destroy" >:: VbdDeviceTests.create_vm_destroy;
-			"vbd_test_create_plug_unplug_destroy" >:: VbdDeviceTests.create_plug_unplug_destroy;
-			"vbd_test_create_plug_unplug_many_destroy" >:: VbdDeviceTests.create_plug_unplug_many_destroy;
-			"vbd_destroy_running" >:: VbdDeviceTests.destroy_running;
-			"vif_test_create_destroy" >:: VifDeviceTests.create_destroy;
-			"vif_test_create_list_destroy" >:: VifDeviceTests.create_list_destroy;
-			"vif_test_create_vm_destroy" >:: VifDeviceTests.create_vm_destroy;
-			"vif_test_create_plug_unplug_destroy" >:: VifDeviceTests.create_plug_unplug_destroy;
-			"vif_test_create_plug_unplug_many_destroy" >:: VifDeviceTests.create_plug_unplug_many_destroy;
-			"vif_destroy_running" >:: VifDeviceTests.destroy_running;
+			"vm_test_add_list_remove" >:: vm_test_add_list_remove;
+			"vm_remove_running" >:: vm_remove_running;
+			"vbd_test_add_remove" >:: VbdDeviceTests.add_remove;
+			"vbd_test_add_list_remove" >:: VbdDeviceTests.add_list_remove;
+			"vbd_test_add_vm_remove" >:: VbdDeviceTests.add_vm_remove;
+			"vbd_test_add_plug_unplug_remove" >:: VbdDeviceTests.add_plug_unplug_remove;
+			"vbd_test_add_plug_unplug_many_remove" >:: VbdDeviceTests.add_plug_unplug_many_remove;
+			"vbd_remove_running" >:: VbdDeviceTests.remove_running;
+			"vif_test_add_remove" >:: VifDeviceTests.add_remove;
+			"vif_test_add_list_remove" >:: VifDeviceTests.add_list_remove;
+			"vif_test_add_vm_remove" >:: VifDeviceTests.add_vm_remove;
+			"vif_test_add_plug_unplug_remove" >:: VifDeviceTests.add_plug_unplug_remove;
+			"vif_test_add_plug_unplug_many_remove" >:: VifDeviceTests.add_plug_unplug_many_remove;
+			"vif_remove_running" >:: VifDeviceTests.remove_running;
 (*
 			"vm_test_suspend" >:: vm_test_suspend;
 			"vm_test_resume" >:: vm_test_resume;

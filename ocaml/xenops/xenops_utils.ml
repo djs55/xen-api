@@ -131,7 +131,7 @@ module TypedTable = functor(RW: READWRITE) -> struct
 		then Array.to_list (Sys.readdir (filename_of_key k))
 		else []
 
-	let create (k: key) (x: t) =
+	let add (k: key) (x: t) =
 		if exists k then begin
 			debug "Key %s already exists" (String.concat "/" k);
 			None, Some Already_exists
@@ -140,7 +140,7 @@ module TypedTable = functor(RW: READWRITE) -> struct
 			Some (), None
 		end
 
-	let destroy (k: key) =
+	let remove (k: key) =
 		if not(exists k)
 		then None, Some Does_not_exist
 		else begin

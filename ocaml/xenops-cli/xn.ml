@@ -17,7 +17,7 @@ open Fun
 
 let usage () =
 	Printf.fprintf stderr "%s <command> [args] - send commands to the xenops daemon\n" Sys.argv.(0);
-	Printf.fprintf stderr "%s create <config> - create a VM from <config>\n" Sys.argv.(0)
+	Printf.fprintf stderr "%s add <config> - add a VM from <config>\n" Sys.argv.(0)
 
 open Xenops_interface
 open Xmlrpc_client
@@ -33,7 +33,7 @@ let success = function
 	| (Some x, _) -> x
 	| None, None -> failwith "protocol error"
 
-let create filename =
+let add filename =
 	Unixext.with_input_channel filename
 		(fun ic ->
 			let lexbuf = Lexing.from_channel ic in
@@ -94,7 +94,7 @@ let create filename =
 				memory_dynamic_min = bytes;
 				vcpus = vcpus
 			} in
-			let (id: Vm.id) = success (Client.VM.create rpc vm) in
+			let (id: Vm.id) = success (Client.VM.add rpc vm) in
 			let disks = if mem _disk then find _disk |> list string else [] in
 			let parse_disk x = match String.split ',' x with
 				| [ source; device_number; rw ] ->
@@ -125,7 +125,7 @@ let create filename =
 				| _ ->
 					Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,xvda,w'\n" x;
 					exit 2 in
-			let one x = x |> parse_disk |> Client.VBD.create rpc |> success in
+			let one x = x |> parse_disk |> Client.VBD.add rpc |> success in
 			let (_: Vbd.id list) = List.map one disks in
 			let vifs = if mem _disk then find _vif |> list string else [] in
 			let vifs = List.combine vifs (Range.to_list (Range.make 0 (List.length vifs))) in
@@ -147,7 +147,7 @@ let create filename =
 					other_config = [];
 					extra_private_keys = [];
 				} in
-			let one x = x |> parse_vif |> Client.VIF.create rpc |> success in
+			let one x = x |> parse_vif |> Client.VIF.add rpc |> success in
 			let (_: Vif.id list) = List.map one vifs in
 			Printf.printf "%s\n" id
 		)
@@ -183,20 +183,20 @@ let find_by_name x =
 		Printf.fprintf stderr "Failed to find VM: %s\n" x;
 		exit 1
 
-let destroy x =
+let remove x =
 	let open Vm in
 	let vm, _ = find_by_name x in
 	let vbds = success (Client.VBD.list rpc vm.id) in
 	List.iter
 		(fun vbd ->
-			success (Client.VBD.destroy rpc vbd.Vbd.id)
+			success (Client.VBD.remove rpc vbd.Vbd.id)
 		) vbds;
 	let vifs = success (Client.VIF.list rpc vm.id) in
 	List.iter
 		(fun vif ->
-			success (Client.VIF.destroy rpc vif.Vif.id)
+			success (Client.VIF.remove rpc vif.Vif.id)
 		) vifs;
-	success (Client.VM.destroy rpc vm.id)
+	success (Client.VM.remove rpc vm.id)
 
 let start x =
 	let open Vm in
@@ -215,12 +215,12 @@ let _ =
 		| [ "help" ] | [] ->
 			usage ();
 			exit 0
-		| [ "create"; filename ] ->
-			create filename
+		| [ "add"; filename ] ->
+			add filename
 		| [ "list" ] ->
 			list ()
-		| [ "destroy"; id ] ->
-			destroy id
+		| [ "remove"; id ] ->
+			remove id
 		| [ "start"; id ] ->
 			start id
 		| [ "shutdown"; id ] ->

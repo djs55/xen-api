@@ -54,9 +54,9 @@ module VBD = struct
 	let vm_of = fst
 	let key_of k = [ fst k; "vbd." ^ (snd k) ]
 	let string_of_id (a, b) = a ^ "." ^ b
-	let create _ x =
-		debug "VBD.create %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
-		DB.create (key_of x.id) x
+	let add _ x =
+		debug "VBD.add %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
+		DB.add (key_of x.id) x
 		>>= fun () ->
 		return x.id
 	let plug _ id =
@@ -71,8 +71,8 @@ module VBD = struct
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VBD.unplug (vm_of id) x
-	let destroy _ id =
-		debug "VBD.destroy %s" (string_of_id id);
+	let remove _ id =
+		debug "VBD.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
@@ -80,7 +80,7 @@ module VBD = struct
 		>>= fun attached ->
 		if attached
 		then throw Device_is_connected
-		else DB.destroy (key_of id)
+		else DB.remove (key_of id)
 	let list _ vm =
 		debug "VBD.list";
 		let key_of' id = [ vm; "vbd." ^ id ] in
@@ -98,9 +98,9 @@ module VIF = struct
 	let vm_of = fst
 	let key_of k = [ fst k; "vif." ^ (snd k) ]
 	let string_of_id (a, b) = a ^ "." ^ b
-	let create _ x =
-		debug "VIF.create %s" (Jsonrpc.to_string (rpc_of_t x));
-		DB.create (key_of x.id) x
+	let add _ x =
+		debug "VIF.add %s" (Jsonrpc.to_string (rpc_of_t x));
+		DB.add (key_of x.id) x
 		>>= fun () ->
 		return x.id
 	let plug _ id =
@@ -115,8 +115,8 @@ module VIF = struct
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VIF.unplug (vm_of id) x
-	let destroy _ id =
-		debug "VIF.destroy %s" (string_of_id id);
+	let remove _ id =
+		debug "VIF.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
@@ -124,7 +124,7 @@ module VIF = struct
 		>>= fun attached ->
 		if attached
 		then throw Device_is_connected
-		else DB.destroy (key_of id)
+		else DB.remove (key_of id)
 	let list _ vm =
 		let key_of' id = [ vm; "vif." ^ id ] in
 		return (DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone)
@@ -139,20 +139,20 @@ module VM = struct
 	end)
 
 	let key_of id = [ id; "config" ]
-	let create _ x =
-		debug "VM.create %s" (Jsonrpc.to_string (rpc_of_t x));
-		DB.create (key_of x.id) x
+	let add _ x =
+		debug "VM.add %s" (Jsonrpc.to_string (rpc_of_t x));
+		DB.add (key_of x.id) x
 		>>= fun () ->
 		return x.id
-	let destroy _ id =
-		debug "VM.destroy %s" id;
+	let remove _ id =
+		debug "VM.remove %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
 		B.VM.get_power_state x
 		>>= fun power -> match power with
 			| Running _ | Suspended | Paused -> throw (Bad_power_state(power, Halted))
-			| Halted -> DB.destroy [ id ]
+			| Halted -> DB.remove [ id ]
 	let list _ () =
 		debug "VM.list";
 		let module B = (val get_backend () : S) in
