@@ -75,7 +75,7 @@ let example_uuid = "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0"
 
 let ( ** ) = Int64.mul
 
-let make_vm id =
+let create_vm id =
 	let open Vm in
 	let _ = PV {
 		boot = Indirect {
@@ -151,7 +151,7 @@ let vm_assert_equal vm vm' =
 			end
 
 let with_vm id f =
-	let vm = make_vm id in
+	let vm = create_vm id in
 	let (id: Vm.id) = success (Client.VM.add rpc vm) in
 	finally (fun () -> f id)
 		(fun () ->
@@ -166,36 +166,36 @@ let vm_test_add_remove _ =
 	with_vm example_uuid (fun _ -> ())
 
 
-let vm_test_make_shutdown _ =
+let vm_test_create_destroy _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.make rpc id);
-			success (Client.VM.shutdown rpc id)
+			success (Client.VM.create rpc id);
+			success (Client.VM.destroy rpc id)
 		)
 
 let vm_test_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.make rpc id);
+			success (Client.VM.create rpc id);
 			fail_not_built (Client.VM.unpause rpc id);
 			fail_not_built (Client.VM.pause rpc id);
-			success (Client.VM.shutdown rpc id)
+			success (Client.VM.destroy rpc id)
 		)
 
 let vm_test_build_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.make rpc id);
+			success (Client.VM.create rpc id);
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.pause rpc id);
-			success (Client.VM.shutdown rpc id);
+			success (Client.VM.destroy rpc id);
 		)
 
 let vm_test_add_list_remove _ =
 	with_vm example_uuid
 		(fun id ->
-			let vm = make_vm example_uuid in
+			let vm = create_vm example_uuid in
 			let (vms: (Vm.t * power_state) list) = success (Client.VM.list rpc ()) in
 			let vm' = List.find (fun x -> x.Vm.id = id) (List.map fst vms) in
 			vm_assert_equal vm vm'
@@ -204,30 +204,30 @@ let vm_test_add_list_remove _ =
 let vm_remove_running _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.make rpc id);
+			success (Client.VM.create rpc id);
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
 			fail_running (Client.VM.remove rpc id);
-			success (Client.VM.shutdown rpc id)
+			success (Client.VM.destroy rpc id)
 		)
 
 let vm_test_suspend _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.make rpc id);
+			success (Client.VM.create rpc id);
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.suspend rpc id (Local "disk"));
-			success (Client.VM.shutdown rpc id)
+			success (Client.VM.destroy rpc id)
 		)
 
 let vm_test_resume _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.make rpc id);
+			success (Client.VM.create rpc id);
 			success (Client.VM.resume rpc id (Local "disk"));
 			success (Client.VM.unpause rpc id);
-			success (Client.VM.shutdown rpc id)
+			success (Client.VM.destroy rpc id)
 		)
 	
 
@@ -238,7 +238,7 @@ module type DEVICE = sig
 	val positions: position list
 	type id
 	val ids: id list
-	val make: id -> position -> t
+	val create: id -> position -> t
 	val add: t -> id option * error option
 	val remove: id -> unit option * error option
 	val plug: id -> unit option * error option
@@ -252,7 +252,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let add_remove _ =
 		with_vm example_uuid
 			(fun id ->
-				let dev = make (List.hd ids) (List.hd positions) in
+				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
 				success (remove dev_id)
 			)
@@ -260,16 +260,16 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let with_added_vm id f =
 		with_vm id
 			(fun id ->
-				success (Client.VM.make rpc id);
+				success (Client.VM.create rpc id);
 				finally
 					(fun () -> f id)
-					(fun () -> success (Client.VM.shutdown rpc id))
+					(fun () -> success (Client.VM.destroy rpc id))
 			)
 
 	let add_plug_unplug_remove _ =
 		with_added_vm example_uuid
 			(fun id ->
-				let dev = make (List.hd ids) (List.hd positions) in
+				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
 				success (plug dev_id);
 				success (unplug dev_id);
@@ -282,7 +282,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 				let ids = 
 					List.map
 						(fun (id, position) ->
-							let dev = make id position in
+							let dev = create id position in
 							let id = success (add dev) in
 							success (plug id);
 							id
@@ -297,7 +297,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let add_list_remove _ =
 		with_vm example_uuid
 			(fun id ->
-				let dev = make (List.hd ids) (List.hd positions) in
+				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
 				let (devs: t list) = success (list id) in
 				let dev' = find dev_id devs in
@@ -308,7 +308,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let add_vm_remove _ =
 		with_vm example_uuid
 			(fun id ->
-				let dev = make (List.hd ids) (List.hd positions) in
+				let dev = create (List.hd ids) (List.hd positions) in
 				let (_: id) = success (add dev) in
 				()
 			)
@@ -316,7 +316,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let remove_running _ =
 		with_added_vm example_uuid
 			(fun id ->
-				let dev = make (List.hd ids) (List.hd positions) in
+				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
 				success (plug dev_id);
 				(* no unplug *)
@@ -330,7 +330,7 @@ module VbdDeviceTests = DeviceTests(struct
 	type position = Device_number.t option
 	let positions = [ None; None; None ]
 	let ids = List.map (fun x -> example_uuid, x) [ "0"; "1"; "2" ]
-	let make id position =
+	let create id position =
 		let open Vbd in {
 			Vbd.id = id;
 			position = position;
@@ -363,7 +363,7 @@ module VifDeviceTests = DeviceTests(struct
 	type position = int
 	let positions = [ 0; 1; 2 ]
 	let ids = List.map (fun x -> example_uuid, x) [ "0"; "1"; "2" ]
-	let make id position =
+	let create id position =
 		let open Vif in {
 			id = id;
 			position = position;
@@ -422,7 +422,7 @@ let _ =
 			"test_query" >:: test_query;
 			"vm_test_remove_missing" >:: vm_test_remove_missing;
 			"vm_test_add_remove" >:: vm_test_add_remove;
-			"vm_test_make_shutdown" >:: vm_test_make_shutdown;
+			"vm_test_create_destroy" >:: vm_test_create_destroy;
 			"vm_test_pause_unpause" >:: vm_test_pause_unpause;
 			"vm_test_build_pause_unpause" >:: vm_test_build_pause_unpause;
 			"vm_test_add_list_remove" >:: vm_test_add_list_remove;

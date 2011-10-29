@@ -63,10 +63,10 @@ let read x = match DB.read x with
 		throw Does_not_exist
 	| Some y -> return y
 
-let make_nolock vm () =
+let create_nolock vm () =
 	let k = key_of vm in
 	if DB.exists k then begin
-		debug "VM.make_nolock %s: Already_exists" vm.Vm.id;
+		debug "VM.create_nolock %s: Already_exists" vm.Vm.id;
 		throw Already_exists
 	end else begin
 		let open Domain in
@@ -203,7 +203,7 @@ let remove_vbd vm vbd () =
 	end
 	
 module VM = struct
-	let make vm = Mutex.execute m (make_nolock vm)
+	let create vm = Mutex.execute m (create_nolock vm)
 	let destroy vm = Mutex.execute m (destroy_nolock vm)
 	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
 	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)

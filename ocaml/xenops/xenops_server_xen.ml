@@ -210,7 +210,7 @@ module VM = struct
 	let get_initial_target ~xs domid =
 		Int64.of_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/initial-target" domid))
 
-	let make_exn vm =
+	let create_exn vm =
 		let hvm = match vm.ty with HVM _ -> true | _ -> false in
 		let create_info = {
 			Domain.ssidref = vm.ssidref;
@@ -248,7 +248,7 @@ module VM = struct
 						return ()
 					)
 			)
-	let make = wrap make_exn
+	let create = wrap create_exn
 
 	let on_domain f vm =
 		let uuid = uuid_of_vm vm in

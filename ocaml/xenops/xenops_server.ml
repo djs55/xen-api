@@ -166,12 +166,12 @@ module VM = struct
 				loop ((vm_t, power) :: acc) xs in
 		loop [] (DB.list [])
 
-	let make _ id =
-		debug "VM.make %s" id;
+	let create _ id =
+		debug "VM.create %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.VM.make x
+		B.VM.create x
 
 	let build _ id =
 		debug "VM.build %s" id;
@@ -180,8 +180,8 @@ module VM = struct
 		>>= fun x ->
 		B.VM.build x
 
-	let shutdown _ id =
-		debug "VM.shutdown %s" id;
+	let destroy _ id =
+		debug "VM.destroy %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
@@ -203,7 +203,7 @@ module VM = struct
 
 	let start c id =
 		debug "VM.start %s" id;
-		make c id
+		create c id
 		>>= fun () ->
 		build c id
 		>>= fun () ->
@@ -214,6 +214,18 @@ module VM = struct
 		VIF.list c id
 		>>= fun vifs ->
 		iter (fun vif -> VIF.plug c vif.Vif.id) vifs
+
+	let shutdown c id =
+		debug "VM.shutdown %s" id;
+		destroy c id
+		>>= fun () ->
+		VBD.list c id
+		>>= fun vbds ->
+		iter (fun vbd -> VBD.unplug c vbd.Vbd.id) vbds
+		>>= fun () ->
+		VIF.list c id
+		>>= fun vifs ->
+		iter (fun vif -> VIF.unplug c vif.Vif.id) vifs
 
 	let suspend _ id disk =
 		debug "VM.suspend %s" id;

@@ -162,14 +162,15 @@ end
 module VM = struct
 	external add: Vm.t -> (Vm.id option) * (error option) = ""
 	external remove: Vm.id -> (unit option) * (error option) = ""
-	external make: Vm.id -> (unit option) * (error option) = ""
+	external create: Vm.id -> (unit option) * (error option) = ""
 	external build: Vm.id -> (unit option) * (error option) = ""
-	external shutdown: Vm.id -> (unit option) * (error option) = ""
+	external destroy: Vm.id -> (unit option) * (error option) = ""
 	external pause: Vm.id -> (unit option) * (error option) = ""
 	external unpause: Vm.id -> (unit option) * (error option) = ""
 	external list: unit -> ((Vm.t * power_state) list option) * (error option) = ""
 
 	external start: Vm.id -> (unit option) * (error option) = ""
+	external shutdown: Vm.id -> (unit option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (unit option) * (error option) = ""
 	external resume: Vm.id -> disk -> (unit option) * (error option) = ""
 end

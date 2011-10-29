@@ -201,9 +201,7 @@ let remove x =
 let start x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.make rpc vm.id);
-	success (Client.VM.build rpc vm.id);
-	success (Client.VM.unpause rpc vm.id)
+	success (Client.VM.start rpc vm.id)
 
 let shutdown x =
 	let open Vm in
