@@ -289,7 +289,7 @@ module VM = struct
 		let make ?(boot_order="cd") ?(serial="pty") ?(nics=[])
 				?(disks=[]) ?(pci_emulations=[]) ?(usb=["tablet"])
 				?(acpi=true) ?(video=Cirrus) ?(keymap="en-us")
-				?(pci_passthrough=false) ?(hvm=true) ?(video_mib=4) () =
+				?vnc_ip ?(pci_passthrough=false) ?(hvm=true) ?(video_mib=4) () =
 			let video = match video with
 				| Cirrus -> Device.Dm.Cirrus
 				| Standard_VGA -> Device.Dm.Std_vga in
@@ -303,7 +303,7 @@ module VM = struct
                 pci_emulations = pci_emulations;
                 usb = usb;
                 acpi = acpi;
-                disp = VNC (video, true, 0, keymap);
+                disp = VNC (video, vnc_ip, true, 0, keymap);
                 pci_passthrough = pci_passthrough;
                 xenclient_enabled=false;
                 hvm=hvm;
@@ -333,6 +333,7 @@ module VM = struct
 				Some (make ~video_mib:hvm_info.video_mib
 					~video:hvm_info.video ~acpi:hvm_info.acpi
 					?serial:hvm_info.serial ?keymap:hvm_info.keymap
+					?vnc_ip:hvm_info.vnc_ip
 					~pci_emulations:hvm_info.pci_emulations
 					~pci_passthrough:hvm_info.pci_passthrough
 					~boot_order:hvm_info.boot_order ~nics ())

@@ -96,6 +96,7 @@ let create_vm id =
 		acpi = true;
 		serial = None;
 		keymap = Some "en-gb";
+		vnc_ip = Some "hello";
 		pci_emulations = [ "1" ];
 		pci_passthrough = false;
 		boot_order = "boot";
@@ -147,6 +148,7 @@ let vm_assert_equal vm vm' =
 			assert_equal ~msg:"acpi" ~printer:string_of_bool h.acpi h'.acpi;
 			assert_equal ~msg:"serial" ~printer:(Opt.default "None") h.serial h'.serial;
 			assert_equal ~msg:"keymap" ~printer:(Opt.default "None") h.keymap h'.keymap;
+			assert_equal ~msg:"vnc_ip" ~printer:(Opt.default "None") h.vnc_ip h'.vnc_ip;
 			assert_equal ~msg:"pci_emulations" ~printer:(String.concat ";")  h.pci_emulations h'.pci_emulations;
 			assert_equal ~msg:"pci_passthrough" ~printer:string_of_bool  h.pci_passthrough h'.pci_passthrough;
 			assert_equal ~msg:"boot_order" ~printer:(fun x -> x) h.boot_order h'.boot_order;

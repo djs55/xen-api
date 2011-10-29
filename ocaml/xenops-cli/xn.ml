@@ -78,6 +78,7 @@ let add filename =
 					acpi = true;
 					serial = None;
 					keymap = None;
+					vnc_ip = Some "0.0.0.0";
 					pci_emulations = [];
 					pci_passthrough = false;
 					boot_order = "cd";
@@ -223,6 +224,16 @@ let shutdown x =
 	let vm, _ = find_by_name x in
 	success (Client.VM.shutdown rpc vm.id)
 
+let pause x =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	success (Client.VM.pause rpc vm.id)
+
+let unpause x =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	success (Client.VM.unpause rpc vm.id)
+
 let _ =
 	match List.tl (Array.to_list Sys.argv) with
 		| [ "help" ] | [] ->
@@ -236,6 +247,10 @@ let _ =
 			remove id
 		| [ "start"; id ] ->
 			start id
+		| [ "pause"; id ] ->
+			pause id
+		| [ "unpause"; id ] ->
+			unpause id
 		| [ "shutdown"; id ] ->
 			shutdown id
 		| cmd :: _ ->

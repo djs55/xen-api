@@ -79,6 +79,7 @@ module Vm = struct
 		acpi: bool;
 		serial: string option;
 		keymap: string option;
+		vnc_ip: string option;
 		pci_emulations: string list;
 		pci_passthrough: bool;
 		boot_order: string;
