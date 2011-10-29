@@ -1454,7 +1454,6 @@ let vif_create printer rpc session_id params =
 	let network_uuid = List.assoc "network-uuid" params in
 	let vm_uuid=List.assoc "vm-uuid" params in
 	let mac=List.assoc_default "mac" params "" in
-	let mac=if mac="random" then (Record_util.random_mac_local ()) else mac in
 	let vm=Client.VM.get_by_uuid rpc session_id vm_uuid in
 	let network=Client.Network.get_by_uuid rpc session_id network_uuid in
 	let mtu = Client.Network.get_MTU rpc session_id network in

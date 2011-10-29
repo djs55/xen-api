@@ -65,6 +65,4 @@ val copy :
   vm:[ `VM ] Ref.t ->
   preserve_mac_address:bool -> [ `VIF ] Ref.t -> API.ref_VIF
 
-(** Generate a MAC address *)  
-val gen_mac : int * string -> string
 

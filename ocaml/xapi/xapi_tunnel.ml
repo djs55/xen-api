@@ -29,7 +29,7 @@ let create_internal ~__context ~transport_PIF ~network ~host =
 	let access_PIF = Ref.make () in
 	let device = choose_tunnel_device_name ~__context ~host in
 	let device_name = device in
-	let mAC = Xapi_vif_helpers.gen_mac (0, Uuid.to_string (Uuid.make_uuid ())) in
+	let mAC = Device.Vif.random_local_mac () in
 	Db.PIF.create ~__context ~ref:access_PIF ~uuid:(Uuid.to_string (Uuid.make_uuid ()))
 		~device ~device_name ~network ~host ~mAC ~mTU:(-1L) ~vLAN:(-1L) ~metrics:Ref.null
 		~physical:false ~currently_attached:false 

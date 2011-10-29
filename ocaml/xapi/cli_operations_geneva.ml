@@ -366,7 +366,7 @@ let vm_install fd printer rpc session_id params =
 
 	let device=ref 0 in
 	let add_vif net =
-	  let mac = Record_util.random_mac_local () in
+	  let mac = "random" in
 	  marshal fd (Command (Print ("Adding VIF, device "^(string_of_int !device)^" to network '"^(Client.Network.get_name_label rpc session_id net)^"' mac="^mac)));
 	  ignore(Client.VIF.create rpc session_id (string_of_int !device) net new_vm mac 1500L [] "" []);
 	  device := !device + 1

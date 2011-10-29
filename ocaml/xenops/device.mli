@@ -87,6 +87,10 @@ module Vif :
 sig
 	exception Invalid_Mac of string
 
+	val xensource_mac: unit -> string
+	val random_local_mac: unit -> string
+	val hashchain_local_mac: int -> string -> string
+
 	val add : xs:Xenstore.Xs.xsh -> devid:int -> netty:Netman.netty
 	       -> mac:string -> carrier:bool 
 	       -> ?mtu:int -> ?rate:(int64 * int64) option

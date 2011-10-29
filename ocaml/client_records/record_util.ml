@@ -419,20 +419,3 @@ let bytes_of_string field x =
 	number ** multiplier
     end
   | _ -> raise (Record_failure (Printf.sprintf "Failed to parse field '%s': expecting an integer (possibly with suffix)" field))
-
-(* Vincent's random mac utils *)
-
-(* generate a random mac with XenSource OUI "00:16:3e" *)
-let random_mac () =
-	let macs = [0x00; 0x16; 0x3e] @ (List.map Random.int [0x80; 0x100; 0x100]) in
-	String.concat ":" (List.map (Printf.sprintf "%02x") macs)
-
-let mac_from_int_array macs =
-  (* make sure bit 1 (local) is set and bit 0 (unicast) is clear *)
-  macs.(0) <- ((macs.(0) lor 0x2) land (lnot 0x1));
-  Printf.sprintf "%02x:%02x:%02x:%02x:%02x:%02x" macs.(0) macs.(1) macs.(2)
-    macs.(3) macs.(4) macs.(5)
-
-(* generate a random mac that is locally administered *)
-let random_mac_local () =
-  mac_from_int_array (Array.init 6 (fun i -> Random.int 0x100))
