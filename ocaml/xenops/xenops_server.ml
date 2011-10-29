@@ -100,7 +100,12 @@ module VIF = struct
 	let string_of_id (a, b) = a ^ "." ^ b
 	let add _ x =
 		debug "VIF.add %s" (Jsonrpc.to_string (rpc_of_t x));
-		DB.add (key_of x.id) x
+		(* Generate MAC if necessary *)
+		let mac = match x.mac with
+			| "random" -> Device.Vif.random_local_mac ()
+			| "" -> Device.Vif.hashchain_local_mac x.position (vm_of x.id)
+			| mac -> mac in
+		DB.add (key_of x.id) { x with mac = mac }
 		>>= fun () ->
 		return x.id
 	let plug _ id =

@@ -155,7 +155,7 @@ let add filename =
 				) xs in {
 					Vif.id = id, string_of_int idx;
 					position = idx;
-					mac = if List.mem_assoc _mac kvpairs then List.assoc _mac kvpairs else "c0:ff:ee:c0:ff:ee";
+					mac = if List.mem_assoc _mac kvpairs then List.assoc _mac kvpairs else "";
 					carrier = true;
 					mtu = 1500;
 					rate = None;
