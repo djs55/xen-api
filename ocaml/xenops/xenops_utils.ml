@@ -55,6 +55,8 @@ let ( >>= ) (a, b) f = match b with
 let return x = Some x, None
 let throw e = None, Some e
 
+let iter f xs = List.fold_left (fun acc x -> acc >>= fun () -> f x) (return ()) xs
+
 let need_some = function
 	| Some x -> Some x, None
 	| None -> None, Some Does_not_exist

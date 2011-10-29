@@ -36,92 +36,6 @@ let get_backend () = match !backend with
   | Some x -> x 
   | None -> failwith "No backend implementation set"
 
-module VM = struct
-	open Vm
-
-	module DB = TypedTable(struct
-		include Vm
-		let namespace = "VM"
-	end)
-
-	let key_of id = [ id; "config" ]
-	let create _ x =
-		debug "VM.create %s" (Jsonrpc.to_string (rpc_of_t x));
-		DB.create (key_of x.id) x
-		>>= fun () ->
-		return x.id
-	let destroy _ id =
-		debug "VM.destroy %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.get_power_state x
-		>>= fun power -> match power with
-			| Running _ | Suspended | Paused -> throw (Bad_power_state(power, Halted))
-			| Halted -> DB.destroy [ id ]
-	let list _ () =
-		debug "VM.list";
-		let module B = (val get_backend () : S) in
-		let rec loop acc = function
-			| [] -> return acc
-			| x :: xs ->
-				need_some (x |> key_of |> DB.read)
-				>>= fun vm_t ->
-				B.VM.get_power_state vm_t
-				>>= fun power ->
-				loop ((vm_t, power) :: acc) xs in
-		loop [] (DB.list [])
-
-	let make _ id =
-		debug "VM.make %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.make x
-
-	let build _ id =
-		debug "VM.build %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.build x
-
-	let shutdown _ id =
-		debug "VM.shutdown %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.destroy x
-
-	let pause _ id =
-		debug "VM.pause %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.pause x
-
-	let unpause _ id =
-		debug "VM.unpause %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.unpause x
-
-	let suspend _ id disk =
-		debug "VM.suspend %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.suspend x disk
-
-	let resume _ id disk =
-		debug "VM.resume %s" id;
-		let module B = (val get_backend () : S) in
-		need_some (id |> key_of |> DB.read)
-		>>= fun x ->
-		B.VM.resume x disk
-end
-
 let filter_prefix prefix xs =
 	List.filter_map
 		(fun x ->
@@ -215,3 +129,104 @@ module VIF = struct
 		let key_of' id = [ vm; "vif." ^ id ] in
 		return (DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone)
 end
+
+module VM = struct
+	open Vm
+
+	module DB = TypedTable(struct
+		include Vm
+		let namespace = "VM"
+	end)
+
+	let key_of id = [ id; "config" ]
+	let create _ x =
+		debug "VM.create %s" (Jsonrpc.to_string (rpc_of_t x));
+		DB.create (key_of x.id) x
+		>>= fun () ->
+		return x.id
+	let destroy _ id =
+		debug "VM.destroy %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.get_power_state x
+		>>= fun power -> match power with
+			| Running _ | Suspended | Paused -> throw (Bad_power_state(power, Halted))
+			| Halted -> DB.destroy [ id ]
+	let list _ () =
+		debug "VM.list";
+		let module B = (val get_backend () : S) in
+		let rec loop acc = function
+			| [] -> return acc
+			| x :: xs ->
+				need_some (x |> key_of |> DB.read)
+				>>= fun vm_t ->
+				B.VM.get_power_state vm_t
+				>>= fun power ->
+				loop ((vm_t, power) :: acc) xs in
+		loop [] (DB.list [])
+
+	let make _ id =
+		debug "VM.make %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.make x
+
+	let build _ id =
+		debug "VM.build %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.build x
+
+	let shutdown _ id =
+		debug "VM.shutdown %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.destroy x
+
+	let pause _ id =
+		debug "VM.pause %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.pause x
+
+	let unpause _ id =
+		debug "VM.unpause %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.unpause x
+
+	let start c id =
+		debug "VM.start %s" id;
+		make c id
+		>>= fun () ->
+		build c id
+		>>= fun () ->
+		VBD.list c id
+		>>= fun vbds ->
+		iter (fun vbd -> VBD.plug c vbd.Vbd.id) vbds
+		>>= fun () ->
+		VIF.list c id
+		>>= fun vifs ->
+		iter (fun vif -> VIF.plug c vif.Vif.id) vifs
+
+	let suspend _ id disk =
+		debug "VM.suspend %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.suspend x disk
+
+	let resume _ id disk =
+		debug "VM.resume %s" id;
+		let module B = (val get_backend () : S) in
+		need_some (id |> key_of |> DB.read)
+		>>= fun x ->
+		B.VM.resume x disk
+end
+

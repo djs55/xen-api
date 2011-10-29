@@ -169,6 +169,7 @@ module VM = struct
 	external unpause: Vm.id -> (unit option) * (error option) = ""
 	external list: unit -> ((Vm.t * power_state) list option) * (error option) = ""
 
+	external start: Vm.id -> (unit option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (unit option) * (error option) = ""
 	external resume: Vm.id -> disk -> (unit option) * (error option) = ""
 end
