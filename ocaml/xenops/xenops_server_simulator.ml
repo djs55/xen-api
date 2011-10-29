@@ -101,7 +101,7 @@ let destroy_nolock vm () =
 		return ()
 	end
 
-let build_nolock vm () =
+let build_nolock vm vbds vifs () =
 	let k = key_of vm in
 	read k >>= fun d ->
 	debug "setting built <- true";
@@ -207,7 +207,7 @@ module VM = struct
 	let destroy vm = Mutex.execute m (destroy_nolock vm)
 	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
 	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
-	let build vm = Mutex.execute m (build_nolock vm)
+	let build vm vbds vifs = Mutex.execute m (build_nolock vm vbds vifs)
 
 	let suspend vm disk = Mutex.execute m (suspend_nolock vm disk)
 	let resume vm disk = Mutex.execute m (resume_nolock vm disk)

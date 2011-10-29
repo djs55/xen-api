@@ -78,7 +78,8 @@ let ( ** ) = Int64.mul
 let create_vm id =
 	let open Vm in
 	let _ = PV {
-		boot = Indirect {
+		framebuffer = false;
+		Vm.boot = Indirect {
 			bootloader = "pygrub";
 			extra_args = "extra";
 			legacy_args = "legacy";
@@ -91,6 +92,14 @@ let create_vm id =
 		shadow_multiplier = 1.;
 		timeoffset = "";
 		video_mib = 4;
+		video = Cirrus;
+		acpi = true;
+		serial = None;
+		keymap = Some "en-gb";
+		pci_emulations = [ "1" ];
+		pci_passthrough = false;
+		boot_order = "boot";
+		qemu_disk_cmdline = false;
 	} in {
 		id = id;
 		name = "Example: " ^ id;
@@ -133,8 +142,17 @@ let vm_assert_equal vm vm' =
 			assert_equal ~msg:"HAP" ~printer:string_of_bool h.hap h'.hap;
 			assert_equal ~msg:"shadow_multipler" ~printer:string_of_float h.shadow_multiplier h'.shadow_multiplier;
 			assert_equal ~msg:"timeoffset" ~printer:(fun x -> x) h.timeoffset h'.timeoffset;
-			assert_equal ~msg:"video_mib" ~printer:string_of_int h.video_mib h'.video_mib
+			assert_equal ~msg:"video_mib" ~printer:string_of_int h.video_mib h'.video_mib;
+			assert_equal ~msg:"video" ~printer:(fun x -> x |> rpc_of_video_card |> Jsonrpc.to_string) h.video h'.video;
+			assert_equal ~msg:"acpi" ~printer:string_of_bool h.acpi h'.acpi;
+			assert_equal ~msg:"serial" ~printer:(Opt.default "None") h.serial h'.serial;
+			assert_equal ~msg:"keymap" ~printer:(Opt.default "None") h.keymap h'.keymap;
+			assert_equal ~msg:"pci_emulations" ~printer:(String.concat ";")  h.pci_emulations h'.pci_emulations;
+			assert_equal ~msg:"pci_passthrough" ~printer:string_of_bool  h.pci_passthrough h'.pci_passthrough;
+			assert_equal ~msg:"boot_order" ~printer:(fun x -> x) h.boot_order h'.boot_order;
+			assert_equal ~msg:"qemu_disk_cmdline" ~printer:string_of_bool h.qemu_disk_cmdline h'.qemu_disk_cmdline;
 		| PV p, PV p' ->
+			assert_equal ~msg:"framebuffer" ~printer:string_of_bool p.framebuffer p'.framebuffer;
 			begin match p.boot, p'.boot with
 				| Direct _, Indirect _
 				| Indirect _, Direct _ -> failwith "pv-boot-ness"

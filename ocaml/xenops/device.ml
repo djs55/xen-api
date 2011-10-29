@@ -803,7 +803,7 @@ let add ~xs ~devid ~netty ~mac ~carrier ?mtu ?(rate=None) ?(protocol=Protocol_Na
 		match rate with
 		| None                              -> []
 		| Some (kbytes_per_s, timeslice_us) ->
-			let (^*) = Int64.mul and (^/) = Int64.div in
+			let ( ^* ) = Int64.mul and ( ^/ ) = Int64.div in
 			let timeslice_us =
 				if timeslice_us > 0L then
 					timeslice_us
@@ -1444,6 +1444,7 @@ let max_emulated_nics = 8 (** Should be <= the hardcoded maximum number of emula
 type disp_intf_opt =
     | Std_vga
     | Cirrus
+with rpc
 
 (* Display output / keyboard input *)
 type disp_opt =

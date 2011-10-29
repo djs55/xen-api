@@ -66,11 +66,23 @@ type network =
 type network_list = network list
 
 module Vm = struct
+	type video_card =
+		| Cirrus
+		| Standard_VGA
+
 	type hvm_info = {
 		hap: bool;
 		shadow_multiplier: float;
 		timeoffset: string;
 		video_mib: int;
+		video: video_card;
+		acpi: bool;
+		serial: string option;
+		keymap: string option;
+		pci_emulations: string list;
+		pci_passthrough: bool;
+		boot_order: string;
+		qemu_disk_cmdline: bool;
 	}
 
 	type pv_direct_boot = {
@@ -93,6 +105,7 @@ module Vm = struct
 
 	type pv_info = {
 		boot: pv_boot;
+		framebuffer: bool;
 	}
 
 	type builder_info =

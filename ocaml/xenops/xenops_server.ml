@@ -173,12 +173,16 @@ module VM = struct
 		>>= fun x ->
 		B.VM.create x
 
-	let build _ id =
+	let build c id =
 		debug "VM.build %s" id;
 		let module B = (val get_backend () : S) in
 		need_some (id |> key_of |> DB.read)
 		>>= fun x ->
-		B.VM.build x
+		VBD.list c id
+		>>= fun vbds ->
+		VIF.list c id
+		>>= fun vifs ->
+		B.VM.build x vbds vifs
 
 	let destroy _ id =
 		debug "VM.destroy %s" id;

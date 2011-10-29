@@ -17,7 +17,7 @@ open Xenops_interface
 module type S = sig
 	module VM : sig
 		val create: Vm.t -> unit option * error option
-		val build: Vm.t -> unit option * error option
+		val build: Vm.t -> Vbd.t list -> Vif.t list -> unit option * error option
 		val destroy: Vm.t -> unit option * error option
 		val pause: Vm.t -> unit option * error option
 		val unpause: Vm.t -> unit option * error option

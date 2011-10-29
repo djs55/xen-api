@@ -20,12 +20,17 @@ open Pervasiveext
 open Threadext
 open Fun
 
+let dmpath = "/opt/xensource/libexec/qemu-dm-wrapper"
+
 module VmExtra = struct
 	(** Extra data we store per VM *)
 	type t = {
 		domid: int;
 		create_info: Domain.create_info;
 		build_info: Domain.build_info option;
+		ty: Vm.builder_info option;
+		vbds: Vbd.t list; (* needed to regenerate qemu IDE config *)
+		vifs: Vif.t list;
 	} with rpc
 end
 
@@ -233,7 +238,10 @@ module VM = struct
 						DB.add (key_of vm) {
 							VmExtra.domid = domid;
 							create_info = create_info;
-							build_info = None
+							build_info = None;
+							ty = None;
+							vbds = [];
+							vifs = [];
 						}
 						>>= fun () ->
 						Mem.transfer_reservation_to_domain ~xs ~reservation_id ~domid;
@@ -275,7 +283,62 @@ module VM = struct
 		Domain.unpause ~xc di.Xenctrl.domid
 	))
 
-	let build_domain_exn xc xs domid vm =
+	(* NB: the arguments which affect the qemu configuration must be saved and
+	   restored with the VM. *)
+	let create_device_model_config ty build_info vifs vbds =
+		let make ?(boot_order="cd") ?(serial="pty") ?(nics=[])
+				?(disks=[]) ?(pci_emulations=[]) ?(usb=["tablet"])
+				?(acpi=true) ?(video=Cirrus) ?(keymap="en-us")
+				?(pci_passthrough=false) ?(hvm=true) ?(video_mib=4) () =
+			let video = match video with
+				| Cirrus -> Device.Dm.Cirrus
+				| Standard_VGA -> Device.Dm.Std_vga in
+			let open Device.Dm in {
+                memory = build_info.Domain.memory_max;
+                boot = boot_order;
+                serial = serial;
+                vcpus = build_info.Domain.vcpus;
+                nics = nics;
+                disks = disks;
+                pci_emulations = pci_emulations;
+                usb = usb;
+                acpi = acpi;
+                disp = VNC (video, true, 0, keymap);
+                pci_passthrough = pci_passthrough;
+                xenclient_enabled=false;
+                hvm=hvm;
+                sound=None;
+                power_mgmt=None;
+                oem_features=None;
+                inject_sci = None;
+                video_mib=video_mib;
+                extras = [];
+			} in
+		let bridge_of_network = function
+			| Bridge b -> b
+			| VSwitch v -> v
+			| Netback (_, _) -> failwith "Need to create a VIF frontend" in
+		let nics = List.map (fun vif ->
+			vif.Vif.mac,
+			bridge_of_network vif.Vif.backend,
+			vif.Vif.position
+		) vifs in
+		match ty with
+			| PV { framebuffer = false } -> None
+			| PV { framebuffer = true } ->
+				Some (make ~hvm:false ())
+			| HVM hvm_info ->
+				if hvm_info.qemu_disk_cmdline
+				then failwith "Need a disk frontend in this domain";
+				Some (make ~video_mib:hvm_info.video_mib
+					~video:hvm_info.video ~acpi:hvm_info.acpi
+					?serial:hvm_info.serial ?keymap:hvm_info.keymap
+					~pci_emulations:hvm_info.pci_emulations
+					~pci_passthrough:hvm_info.pci_passthrough
+					~boot_order:hvm_info.boot_order ~nics ())
+
+
+	let build_domain_exn xc xs domid vm vbds vifs =
 		let open Memory in
 		let initial_target = get_initial_target ~xs domid in
 		let make_build_info kernel priv = {
@@ -323,13 +386,21 @@ module VM = struct
 			debug "Built domid %d with architecture %s" domid (Domain.string_of_domarch arch);
 			let k = key_of vm in
 			let d = Opt.unbox (DB.read k) in
-			DB.write k { d with VmExtra.build_info = Some build_info };
+			DB.write k { d with
+				VmExtra.build_info = Some build_info;
+				ty = Some vm.ty;
+				vbds = vbds;
+				vifs = vifs;
+			};
 			Domain.cpuid_apply ~xc ~hvm:(will_be_hvm vm) domid;
+
+			let info = create_device_model_config vm.ty build_info vifs vbds in
+			Opt.iter (fun info -> Device.Dm.start ~xs ~dmpath info domid) info
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
-	let build_domain vm xc xs _ di =
+	let build_domain vm vbds vifs xc xs _ di =
 		try
-			build_domain_exn xc xs di.Xenctrl.domid vm
+			build_domain_exn xc xs di.Xenctrl.domid vm vbds vifs
 		with
 			| Bootloader.Bad_sexpr x ->
 				let m = Printf.sprintf "Bootloader.Bad_sexpr %s" x in
@@ -352,7 +423,7 @@ module VM = struct
 				debug "%s" m;
 				raise (Exception (Internal_error m))
 
-	let build vm = on_domain (build_domain vm) vm
+	let build vm vbds vifs = on_domain (build_domain vm vbds vifs) vm
 
 	let suspend vm disk = throw Unimplemented
 	let resume vm disk = throw Unimplemented

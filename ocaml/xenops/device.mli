@@ -171,6 +171,8 @@ sig
 	type disp_intf_opt =
 	    | Std_vga
 	    | Cirrus
+	val disp_intf_opt_of_rpc: Rpc.t -> disp_intf_opt
+	val rpc_of_disp_intf_opt: disp_intf_opt -> Rpc.t
 
 	type disp_opt =
 		| NONE

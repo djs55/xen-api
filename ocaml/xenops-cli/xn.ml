@@ -49,6 +49,7 @@ let add filename =
 			let open Vm in
 			let builder_info = match pv with
 				| true -> PV {
+					framebuffer = false;
 					boot =
 						if mem _bootloader then Indirect {
 							bootloader = find _bootloader |> string;
@@ -73,6 +74,14 @@ let add filename =
 					shadow_multiplier = 1.;
 					timeoffset = "";
 					video_mib = 4;
+					video = Cirrus;
+					acpi = true;
+					serial = None;
+					keymap = None;
+					pci_emulations = [];
+					pci_passthrough = false;
+					boot_order = "cd";
+					qemu_disk_cmdline = false;
 				} in
 			let uuid = if mem _uuid then find _uuid |> string else "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0" in
 			let name = if mem _name then find _name |> string else uuid in
