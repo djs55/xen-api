@@ -81,7 +81,7 @@ let add filename =
 					vnc_ip = Some "0.0.0.0";
 					pci_emulations = [];
 					pci_passthrough = false;
-					boot_order = "cd";
+					boot_order = if mem _boot then find _boot |> string else "cd";
 					qemu_disk_cmdline = false;
 				} in
 			let uuid = if mem _uuid then find _uuid |> string else "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0" in

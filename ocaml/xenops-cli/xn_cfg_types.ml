@@ -28,6 +28,7 @@ let _ramdisk = "ramdisk"
 let _root = "root"
 let _builder = "builder"
 let _bootloader = "bootloader"
+let _boot = "boot"
 let _name = "name"
 let _uuid = "uuid"
 let _memory = "memory" (* MiB *)
