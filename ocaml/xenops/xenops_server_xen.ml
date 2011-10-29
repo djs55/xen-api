@@ -381,7 +381,9 @@ let _device_id kind = Device_common.string_of_kind kind ^ "-id"
 (* Return the xenstore device with [kind] corresponding to [id] *)
 let device_by_id xc xs vm kind id =
 	match vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs with
-		| None -> raise (Exception Does_not_exist)
+		| None ->
+			debug "VM %s does not exist in domain list" vm;
+			raise (Exception Does_not_exist)
 		| Some frontend_domid ->
 			let devices = Device_common.list_frontends ~xs frontend_domid in
 			let key = _device_id kind in
@@ -456,9 +458,13 @@ module VBD = struct
 	let unplug_exn vm vbd =
 		with_xc_and_xs
 			(fun xc xs ->
-				let device = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
-				Device.clean_shutdown ~xs device;
-				Device.Vbd.release ~xs device
+				try
+					(* If the device is gone then this is ok *)
+					let device = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+					Device.clean_shutdown ~xs device;
+					Device.Vbd.release ~xs device
+				with (Exception Does_not_exist) ->
+					debug "Ignoring missing device: %s" (id_of vbd)
 			);
 		return ()
 
@@ -503,10 +509,14 @@ module VIF = struct
 	let unplug_exn vm vif =
 		with_xc_and_xs
 			(fun xc xs ->
-				let device = device_by_id xc xs vm Device_common.Vif (id_of vif) in
-				(* NB different from the VBD case to make the test pass for now *)
-				Device.hard_shutdown ~xs device;
-				Device.Vif.release ~xs device
+				try
+					(* If the device is gone then this is ok *)
+					let device = device_by_id xc xs vm Device_common.Vif (id_of vif) in
+					(* NB different from the VBD case to make the test pass for now *)
+					Device.hard_shutdown ~xs device;
+					Device.Vif.release ~xs device
+				with (Exception Does_not_exist) ->
+					debug "Ignoring missing device: %s" (id_of vif)
 			);
 		return ()
 
