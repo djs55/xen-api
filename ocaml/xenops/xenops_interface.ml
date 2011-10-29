@@ -133,7 +133,7 @@ module Vbd = struct
 		id: id;
 		position: Device_number.t option;
 		mode: mode;
-		backend: disk;
+		backend: disk option; (* can be empty *)
 		ty: ty;
 		unpluggable: bool;
 		extra_backend_keys: (string * string) list;

@@ -415,13 +415,15 @@ module VBD = struct
 
 	let backend_domid_of xc xs vbd =
 		match vbd.backend with
-			| Local _ -> this_domid ~xs
-			| Blkback (vm, _) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
+			| None (* XXX: do something better with CDROMs *)
+			| Some (Local _) -> this_domid ~xs
+			| Some (Blkback (vm, _)) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
 
 	let params_of xc xs vbd =
 		match vbd.backend with
-			| Local path -> path
-			| Blkback (_, params) -> params
+			| None -> ""
+			| Some (Local path) -> path
+			| Some (Blkback (_, params)) -> params
 
 	let plug_exn vm vbd =
 		on_frontend

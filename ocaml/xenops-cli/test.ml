@@ -343,7 +343,7 @@ module VbdDeviceTests = DeviceTests(struct
 			Vbd.id = id;
 			position = position;
 			mode = ReadWrite;
-			backend = Local "/dev/zero";
+			backend = Some (Local "/dev/zero");
 			ty = Disk;
 			unpluggable = true;
 			extra_backend_keys = [ "backend", "keys" ];
@@ -359,7 +359,7 @@ module VbdDeviceTests = DeviceTests(struct
 		let open Vbd in
 		assert_equal ~msg:"id" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vbd.id vbd'.id;
 		assert_equal ~msg:"mode" ~printer:(function ReadWrite -> "RW" | ReadOnly -> "RO") vbd.mode vbd'.mode;
-		assert_equal ~msg:"backend" ~printer:(fun x -> x |> rpc_of_disk |> Jsonrpc.to_string) vbd.backend vbd'.backend;
+		assert_equal ~msg:"backend" ~printer:(fun x -> Opt.default "None" (Opt.map (fun x -> x |> rpc_of_disk |> Jsonrpc.to_string) x)) vbd.backend vbd'.backend;
 		assert_equal ~msg:"unpluggable" ~printer:string_of_bool vbd.unpluggable vbd'.unpluggable;
 		assert_equal ~msg:"extra_backend_keys" ~printer:sl vbd.extra_backend_keys vbd'.extra_backend_keys;
 		assert_equal ~msg:"extra_private_keys" ~printer:sl vbd.extra_private_keys vbd'.extra_private_keys

@@ -98,18 +98,24 @@ let add filename =
 			let disks = if mem _disk then find _disk |> list string else [] in
 			let parse_disk x = match String.split ',' x with
 				| [ source; device_number; rw ] ->
-					let device_number' = Device_number.of_string false device_number in
+					let ty, device_number' = match String.split ':' device_number with
+						| [ x ] -> Vbd.Disk, Device_number.of_string false x
+						| [ x; "cdrom" ] -> Vbd.CDROM, Device_number.of_string false x
+						| _ ->
+							Printf.fprintf stderr "Failed to understand disk name '%s'. It should be 'xvda' or 'hda:cdrom'\n" device_number;
+							exit 2 in
 					let mode = match String.lowercase rw with
 						| "r" -> Vbd.ReadOnly
 						| "w" -> Vbd.ReadWrite
 						| x ->
 							Printf.fprintf stderr "Failed to understand disk mode '%s'. It should be 'r' or 'w'\n" x;
 							exit 2 in
-					let backend = match String.split ':' source with
-						| [ "phy"; path ] -> Local path
+					let backend = match List.filter (fun x -> x <> "") (String.split ':' source) with
+						| [ "phy"; path ] -> Some (Local path)
 						| [ "file"; path ] ->
 							Printf.fprintf stderr "I don't understand 'file' disk paths. Please use 'phy'.\n";
 							exit 2
+						| [] -> None (* empty *)
 						| _ ->
 							Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,...\n" source;
 							exit 2 in {
@@ -117,7 +123,7 @@ let add filename =
 						position = Some device_number';
 						mode = mode;
 						backend = backend;
-						ty = Vbd.Disk;
+						ty = ty;
 						unpluggable = true;
 						extra_backend_keys = [];
 						extra_private_keys = [];
