@@ -242,6 +242,14 @@ let vm_test_start_shutdown _ =
 			success (Client.VM.shutdown rpc id)
 		)
 
+let vm_test_consoles _ =
+	with_vm example_uuid
+		(fun id ->
+			success (Client.VM.start rpc id);
+			let (_: Console.t list) = success (Client.CONSOLE.list rpc id) in
+			success (Client.VM.shutdown rpc id);
+		)
+
 let vm_test_suspend _ =
 	with_vm example_uuid
 		(fun id ->
@@ -459,6 +467,7 @@ let _ =
 			"vm_test_add_list_remove" >:: vm_test_add_list_remove;
 			"vm_remove_running" >:: vm_remove_running;
 			"vm_test_start_shutdown" >:: vm_test_start_shutdown;
+			"vm_test_consoles" >:: vm_test_consoles;
 			"vbd_test_add_remove" >:: VbdDeviceTests.add_remove;
 			"vbd_test_add_list_remove" >:: VbdDeviceTests.add_list_remove;
 			"vbd_test_add_vm_remove" >:: VbdDeviceTests.add_vm_remove;

@@ -175,6 +175,16 @@ module Vif = struct
 	}
 end
 
+module Console = struct
+	type protocol =
+		| Rfb
+		| Vt100
+	type t = {
+		protocol: protocol;
+		port: int;
+	}
+end
+
 module VM = struct
 	external add: Vm.t -> (Vm.id option) * (error option) = ""
 	external remove: Vm.id -> (unit option) * (error option) = ""
@@ -206,4 +216,8 @@ module VIF = struct
 	external unplug: Vif.id -> (unit option) * (error option) = ""
 	external list: Vm.id -> (Vif.t list option) * (error option) = ""
 	external remove: Vif.id -> (unit option) * (error option) = ""
+end
+
+module CONSOLE = struct
+	external list: Vm.id -> (Console.t list option) * (error option) = ""
 end
