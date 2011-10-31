@@ -60,14 +60,14 @@ let m = Mutex.create ()
 let read x = match DB.read x with
 	| None ->
 		debug "Failed to find key: %s" (String.concat "/" x);
-		throw Does_not_exist
-	| Some y -> return y
+		raise (Exception Does_not_exist)
+	| Some y -> y
 
 let create_nolock vm () =
 	let k = key_of vm in
 	if DB.exists k then begin
 		debug "VM.create_nolock %s: Already_exists" vm.Vm.id;
-		throw Already_exists
+		raise (Exception Already_exists)
 	end else begin
 		let open Domain in
 		let domain = {
@@ -81,71 +81,58 @@ let create_nolock vm () =
 			vifs = [];
 			vbds = [];
 		} in
-		DB.write k domain;
-		return ()
+		DB.write k domain
 	end
 
 let get_power_state_nolock vm () =
 	let k = key_of vm in
 	if DB.exists k then begin
-		read k >>= fun d ->
-		return (Running { domid = d.Domain.domid })
-	end else return Halted
+		let d = read k in
+		Running { domid = d.Domain.domid }
+	end else Halted
 
 let destroy_nolock vm () =
 	let k = key_of vm in
 	if not(DB.exists k)
-	then throw Does_not_exist
-	else begin
-		DB.delete k;
-		return ()
-	end
+	then raise (Exception Does_not_exist)
+	else DB.delete k
 
 let build_nolock vm vbds vifs () =
 	let k = key_of vm in
-	read k >>= fun d ->
+	let d = read k in
 	debug "setting built <- true";
-	DB.write k { d with Domain.built = true };
-	return ()
+	DB.write k { d with Domain.built = true }
 
 let suspend_nolock vm disk () =
 	let k = key_of vm in
-	read k >>= fun d ->
-	DB.write k { d with Domain.suspended = true };
-	return ()
+	let d = read k in
+	DB.write k { d with Domain.suspended = true }
 
 let resume_nolock vm disk () =
 	let k = key_of vm in
-	read k >>= fun d ->
-	DB.write k { d with Domain.built = true };
-	return ()
+	let d = read k in
+	DB.write k { d with Domain.built = true }
 
 let do_pause_unpause_nolock vm paused () =
 	let k = key_of vm in
-	read k >>= fun d ->
+	let d = read k in
 	if not d.Domain.built
-	then throw Domain_not_built
-	else begin
-		DB.write k { d with Domain.paused = paused };
-		return ();
-	end
+	then raise (Exception Domain_not_built)
+	else DB.write k { d with Domain.paused = paused }
 
 let add_vif vm vif () =
 	let k = [ vm ] in
-	read k >>= fun d ->
+	let d = read k in
 	let existing_positions = List.map (fun vif -> vif.Vif.position) d.Domain.vifs in
 	if List.mem vif.Vif.position existing_positions then begin
 		debug "VIF.plug %s.%s: Already exists" (fst vif.Vif.id) (snd vif.Vif.id);
-		throw Already_exists
-	end else begin
-		DB.write k { d with Domain.vifs = vif :: d.Domain.vifs };
-		return ()
-	end
+		raise (Exception Already_exists)
+	end else DB.write k { d with Domain.vifs = vif :: d.Domain.vifs }
 
 let add_vbd (vm: Vm.id) (vbd: Vbd.t) () =
 	debug "add_vbd";
 	let k = [ vm ] in
-	read k >>= fun d ->
+	let d = read k in
 	(* there shouldn't be any None values in here anyway *)
 	let ps = List.map (fun vbd -> vbd.Vbd.position) d.Domain.vbds in
 	assert (not (List.mem None ps));
@@ -156,51 +143,42 @@ let add_vbd (vm: Vm.id) (vbd: Vbd.t) () =
 	let this_dn = Opt.default next_dn vbd.Vbd.position in
 	if List.mem this_dn dns then begin
 		debug "VBD.plug %s.%s: Already exists" (fst vbd.Vbd.id) (snd vbd.Vbd.id);
-		throw Already_exists
-	end else begin
-		DB.write k { d with Domain.vbds = { vbd with Vbd.position = Some this_dn } :: d.Domain.vbds };
-		return ()
-	end
+		raise (Exception Already_exists)
+	end else DB.write k { d with Domain.vbds = { vbd with Vbd.position = Some this_dn } :: d.Domain.vbds }
 
 let vbd_attached vm vbd () =
 	let k = [ vm ] in
 	if not (DB.exists k)
-	then return false
+	then false
 	else
-		read k >>= fun d ->
+		let d = read k in
 		let this_one x = x.Vbd.id = vbd.Vbd.id in
-		return (List.filter this_one d.Domain.vbds <> [])
+		List.filter this_one d.Domain.vbds <> []
 
 let vif_attached vm vif () =
 	let k = [ vm ] in
 	if not (DB.exists k)
-	then return false
+	then false
 	else
-		read k >>= fun d ->
+		let d = read k in
 		let this_one x = x.Vif.id = vif.Vif.id in
-		return (List.filter this_one d.Domain.vifs <> [])
+		List.filter this_one d.Domain.vifs <> []
 
 let remove_vif vm vif () =
 	let k = [ vm ] in
-	read k >>= fun d ->
+	let d = read k in
 	let this_one x = x.Vif.id = vif.Vif.id in
 	if List.filter this_one d.Domain.vifs = []
-	then throw Does_not_exist
-	else begin
-		DB.write k { d with Domain.vifs = List.filter (fun x -> not (this_one x)) d.Domain.vifs };
-		return ()
-	end
+	then raise (Exception Does_not_exist)
+	else DB.write k { d with Domain.vifs = List.filter (fun x -> not (this_one x)) d.Domain.vifs }
 
 let remove_vbd vm vbd () =
 	let k = [ vm ] in
-	read k >>= fun d ->
+	let d = read k in
 	let this_one x = x.Vbd.id = vbd.Vbd.id in
 	if List.filter this_one d.Domain.vbds = []
-	then throw Does_not_exist
-	else begin
-		DB.write k { d with Domain.vbds = List.filter (fun x -> not (this_one x)) d.Domain.vbds };
-		return ()
-	end
+	then raise (Exception Does_not_exist)
+	else DB.write k { d with Domain.vbds = List.filter (fun x -> not (this_one x)) d.Domain.vbds }
 	
 module VM = struct
 	let create vm = Mutex.execute m (create_nolock vm)

@@ -31,12 +31,19 @@ let xmlrpc_handler process req bio =
     let body = Http_svr.read_body req bio in
     let s = Buf_io.fd_of bio in
     let rpc = Xmlrpc.call_of_string body in
-    (* Printf.fprintf stderr "Request: %s %s\n%!" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params)); *)
+	(* Xenops_utils.debug "Request: %s %s" rpc.Rpc.name (Jsonrpc.to_string (List.hd rpc.Rpc.params)); *)
 	try
 		let result = process (Xenops_server.make_context ()) rpc in
+		(* Xenops_utils.debug "Response: success:%b %s" result.Rpc.success (Jsonrpc.to_string result.Rpc.contents); *)
 		let str = Xmlrpc.string_of_response result in
 		Http_svr.response_str req s str
-	with e ->
+	with Xenops_utils.Exception e ->
+		let rpc = Xenops_interface.rpc_of_error_response (None, Some e) in
+		Xenops_utils.debug "Caught %s" (Jsonrpc.to_string rpc);
+		let str = Xmlrpc.string_of_response { Rpc.success = true; contents = rpc } in
+		Http_svr.response_str req s str
+	| e ->
+		Xenops_utils.debug "Caught %s" (Printexc.to_string e);
 		Http_svr.response_unauthorised ~req (Printf.sprintf "Go away: %s" (Printexc.to_string e)) s
 
 let start path process =

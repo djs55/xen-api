@@ -242,8 +242,7 @@ module VM = struct
 							ty = None;
 							vbds = [];
 							vifs = [];
-						}
-						>>= fun () ->
+						};
 						Mem.transfer_reservation_to_domain ~xs ~reservation_id ~domid;
 						let initial_target =
 							let target_plus_overhead_bytes = bytes_of_kib target_plus_overhead_kib in
@@ -252,36 +251,35 @@ module VM = struct
 						set_initial_target ~xs domid initial_target;
 						if vm.suppress_spurious_page_faults
 						then Domain.suppress_spurious_page_faults ~xc domid;
-						Domain.set_machine_address_size ~xc domid vm.machine_address_size;
-						return ()
+						Domain.set_machine_address_size ~xc domid vm.machine_address_size
 					)
 			)
-	let create = wrap create_exn
+	let create = create_exn
 
 	let on_domain f vm =
 		let uuid = uuid_of_vm vm in
 		with_xc_and_xs
 			(fun xc xs ->
 				match di_of_uuid ~xc ~xs uuid with
-					| None -> throw Does_not_exist
-					| Some di ->
-						wrap return (f xc xs vm di)
+					| None -> raise (Exception Does_not_exist)
+					| Some di -> f xc xs vm di
 			)
 
-	let destroy = wrap (on_domain (fun xc xs vm di ->
+	let destroy = on_domain (fun xc xs vm di ->
 		let domid = di.Xenctrl.domid in
-		if DB.exists (key_of vm) then unwrap (DB.remove (key_of vm));
-		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid))
+		if DB.exists (key_of vm) then DB.remove (key_of vm);
+		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid
+	)
 
-	let pause = wrap (on_domain (fun xc xs _ di ->
+	let pause = on_domain (fun xc xs _ di ->
 		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
 		Domain.pause ~xc di.Xenctrl.domid
-	))
+	)
 
-	let unpause = wrap (on_domain (fun xc xs _ di ->
+	let unpause = on_domain (fun xc xs _ di ->
 		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
 		Domain.unpause ~xc di.Xenctrl.domid
-	))
+	)
 
 	(* NB: the arguments which affect the qemu configuration must be saved and
 	   restored with the VM. *)
@@ -426,17 +424,16 @@ module VM = struct
 
 	let build vm vbds vifs = on_domain (build_domain vm vbds vifs) vm
 
-	let suspend vm disk = throw Unimplemented
-	let resume vm disk = throw Unimplemented
+	let suspend vm disk = raise (Exception Unimplemented)
+	let resume vm disk = raise (Exception Unimplemented)
 
 	let get_power_state vm =
 		let uuid = uuid_of_vm vm in
 		with_xc_and_xs
 			(fun xc xs ->
 				match domid_of_uuid ~xc ~xs uuid with
-					| None -> return Halted
-					| Some d ->
-						return (Running { domid = d })
+					| None -> Halted
+					| Some d -> Running { domid = d }
 			)
 end
 
@@ -473,11 +470,11 @@ let get_currently_attached_exn vm kind id =
 		(fun xc xs ->
 			try
 				let (_: Device_common.device) = device_by_id xc xs vm kind id in
-				return true
+				true
 			with
 				| Exception Does_not_exist
 				| Exception Device_not_connected ->
-					return false
+					false
 		)
 
 module VBD = struct
@@ -524,10 +521,10 @@ module VBD = struct
 				} in
 				(* Store the VBD ID -> actual frontend ID for unplug *)
 				let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm x frontend_domid in
-				return ()
+				()
 			) vm
 
-	let plug vm = wrap (plug_exn vm)
+	let plug vm = plug_exn vm
 
 	let unplug_exn vm vbd =
 		with_xc_and_xs
@@ -539,12 +536,11 @@ module VBD = struct
 					Device.Vbd.release ~xs device
 				with (Exception Does_not_exist) ->
 					debug "Ignoring missing device: %s" (id_of vbd)
-			);
-		return ()
+			)
 
-	let unplug vm = wrap (unplug_exn vm)
+	let unplug vm = unplug_exn vm
 
-	let get_currently_attached vm vbd = wrap (get_currently_attached_exn vm Device_common.Vbd) (id_of vbd)
+	let get_currently_attached vm vbd = get_currently_attached_exn vm Device_common.Vbd (id_of vbd)
 end
 
 module VIF = struct
@@ -575,10 +571,10 @@ module VIF = struct
 					~other_config:vif.other_config
 					~extra_private_keys:(id :: vif.extra_private_keys)
 					frontend_domid in
-				return ()
+				()
 			) vm
 
-	let plug vm = wrap (plug_exn vm)
+	let plug vm = plug_exn vm
 
 	let unplug_exn vm vif =
 		with_xc_and_xs
@@ -592,9 +588,9 @@ module VIF = struct
 				with (Exception Does_not_exist) ->
 					debug "Ignoring missing device: %s" (id_of vif)
 			);
-		return ()
+		()
 
-	let unplug vm = wrap (unplug_exn vm)
+	let unplug vm = unplug_exn vm
 
-	let get_currently_attached vm vif = wrap (get_currently_attached_exn vm Device_common.Vif) (id_of vif)
+	let get_currently_attached vm vif = get_currently_attached_exn vm Device_common.Vif (id_of vif)
 end

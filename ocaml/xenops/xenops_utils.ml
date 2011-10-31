@@ -43,48 +43,20 @@ let debug (fmt: ('a , unit, string, unit) format4) =
 let all = List.fold_left (&&) true
 let any = List.fold_left (||) false
 
-exception Protocol_error
-
-let ( >>= ) (a, b) f = match b with
-	| Some error -> None, Some error
-	| None ->
-		begin match a with
-			| None -> raise Protocol_error
-			| Some x -> f x
-		end
 let return x = Some x, None
-let throw e = None, Some e
-
-let iter f xs = List.fold_left (fun acc x -> acc >>= fun () -> f x) (return ()) xs
-
-let need_some = function
-	| Some x -> Some x, None
-	| None -> None, Some Does_not_exist
-
-let dropnone x = List.filter_map (fun x -> x) x
 
 exception Exception of error
+
+let unwrap = function
+    | Some x, None -> x
+    | None, Some e -> raise (Exception e)
+    | _, _ -> failwith "protocol error"
+
+let dropnone x = List.filter_map (fun x -> x) x
 
 let unbox = function
 	| None -> raise (Exception Does_not_exist)
 	| Some x -> x
-
-let wrap f x =
-	try
-		f x
-	with
-		| Exception e ->
-			debug "Caught: %s" (Jsonrpc.to_string (rpc_of_error e));
-			throw e
-		| e ->
-			debug "Caught: %s" (Printexc.to_string e);
-			debug "%s" (Printexc.get_backtrace ());
-			throw (Internal_error (Printexc.to_string e))
-
-let unwrap = function
-	| Some x, None -> x
-	| None, Some e -> raise (Exception e)
-	| _, _ -> failwith "protocol error"
 
 module type READWRITE = sig
 	type t
@@ -134,18 +106,12 @@ module TypedTable = functor(RW: READWRITE) -> struct
 	let add (k: key) (x: t) =
 		if exists k then begin
 			debug "Key %s already exists" (String.concat "/" k);
-			None, Some Already_exists
-		end else begin
-			write k x;
-			Some (), None
-		end
+			raise (Exception Already_exists)
+		end else write k x
 
 	let remove (k: key) =
 		if not(exists k)
-		then None, Some Does_not_exist
-		else begin
-			delete k;
-			Some (), None
-		end
+		then raise (Exception Does_not_exist)
+		else delete k
 end
 

@@ -43,6 +43,8 @@ type error =
 	| Ballooning_error of string * string
 	| No_ballooning_service
 
+type error_response = unit option * error option
+
 module Query = struct
 	type t = {
 		name: string;

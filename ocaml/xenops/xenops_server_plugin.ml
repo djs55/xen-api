@@ -16,27 +16,27 @@ open Xenops_interface
 
 module type S = sig
 	module VM : sig
-		val create: Vm.t -> unit option * error option
-		val build: Vm.t -> Vbd.t list -> Vif.t list -> unit option * error option
-		val destroy: Vm.t -> unit option * error option
-		val pause: Vm.t -> unit option * error option
-		val unpause: Vm.t -> unit option * error option
+		val create: Vm.t -> unit
+		val build: Vm.t -> Vbd.t list -> Vif.t list -> unit
+		val destroy: Vm.t -> unit
+		val pause: Vm.t -> unit
+		val unpause: Vm.t -> unit
 
-		val suspend: Vm.t -> disk -> unit option * error option
-		val resume: Vm.t -> disk -> unit option * error option
+		val suspend: Vm.t -> disk -> unit
+		val resume: Vm.t -> disk -> unit
 
-		val get_power_state: Vm.t -> power_state option * error option
+		val get_power_state: Vm.t -> power_state
 	end
 	module VBD : sig
-		val plug: Vm.id -> Vbd.t -> unit option * error option
-		val unplug: Vm.id -> Vbd.t -> unit option * error option
+		val plug: Vm.id -> Vbd.t -> unit
+		val unplug: Vm.id -> Vbd.t -> unit
 
-		val get_currently_attached: Vm.id -> Vbd.t -> bool option * error option
+		val get_currently_attached: Vm.id -> Vbd.t -> bool
 	end
 	module VIF : sig
-		val plug: Vm.id -> Vif.t -> unit option * error option
-		val unplug: Vm.id -> Vif.t -> unit option * error option
+		val plug: Vm.id -> Vif.t -> unit
+		val unplug: Vm.id -> Vif.t -> unit
 
-		val get_currently_attached: Vm.id -> Vif.t -> bool option * error option
+		val get_currently_attached: Vm.id -> Vif.t -> bool
 	end
 end
