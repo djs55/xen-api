@@ -18,6 +18,7 @@ module type S = sig
 	module VM : sig
 		val create: Vm.t -> unit
 		val build: Vm.t -> Vbd.t list -> Vif.t list -> unit
+		val create_device_model: Vm.t -> unit
 		val destroy: Vm.t -> unit
 		val pause: Vm.t -> unit
 		val unpause: Vm.t -> unit

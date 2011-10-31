@@ -24,6 +24,7 @@ module Domain = struct
 		shutdown_reason: string option;
 		paused: bool;
 		built: bool;
+		qemu_created: bool;
 		suspended: bool;
 		vbds: Vbd.t list;
 		vifs: Vif.t list;
@@ -77,6 +78,7 @@ let create_nolock vm () =
 			shutdown_reason = None;
 			paused = true;
 			built = false;
+			qemu_created = false;
 			suspended = false;
 			vifs = [];
 			vbds = [];
@@ -99,24 +101,25 @@ let destroy_nolock vm () =
 
 let build_nolock vm vbds vifs () =
 	let k = key_of vm in
-	let d = read k in
 	debug "setting built <- true";
-	DB.write k { d with Domain.built = true }
+	DB.write k { read k with Domain.built = true }
+
+let create_device_model_nolock vm () =
+	let k = key_of vm in
+	DB.write k { read k with Domain.qemu_created = true }
 
 let suspend_nolock vm disk () =
 	let k = key_of vm in
-	let d = read k in
-	DB.write k { d with Domain.suspended = true }
+	DB.write k { read k with Domain.suspended = true }
 
 let resume_nolock vm disk () =
 	let k = key_of vm in
-	let d = read k in
-	DB.write k { d with Domain.built = true }
+	DB.write k { read k with Domain.built = true }
 
 let do_pause_unpause_nolock vm paused () =
 	let k = key_of vm in
 	let d = read k in
-	if not d.Domain.built
+	if not d.Domain.built || (d.Domain.hvm && not(d.Domain.qemu_created))
 	then raise (Exception Domain_not_built)
 	else DB.write k { d with Domain.paused = paused }
 
@@ -186,6 +189,7 @@ module VM = struct
 	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
 	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
 	let build vm vbds vifs = Mutex.execute m (build_nolock vm vbds vifs)
+	let create_device_model vm = Mutex.execute m (create_device_model_nolock vm)
 
 	let suspend vm disk = Mutex.execute m (suspend_nolock vm disk)
 	let resume vm disk = Mutex.execute m (resume_nolock vm disk)

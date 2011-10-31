@@ -207,6 +207,8 @@ let vm_test_build_pause_unpause _ =
 		(fun id ->
 			success (Client.VM.create rpc id);
 			success (Client.VM.build rpc id);
+			fail_not_built (Client.VM.unpause rpc id);
+			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.pause rpc id);
 			success (Client.VM.destroy rpc id);
@@ -226,6 +228,7 @@ let vm_remove_running _ =
 		(fun id ->
 			success (Client.VM.create rpc id);
 			success (Client.VM.build rpc id);
+			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
 			fail_running (Client.VM.remove rpc id);
 			success (Client.VM.destroy rpc id)

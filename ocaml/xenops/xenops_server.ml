@@ -161,6 +161,11 @@ module VM = struct
 		let vifs : Vif.t list = VIF.list c id |> unwrap in
 		B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs |> return
 
+	let create_device_model c id =
+		debug "VM.create_device_model %s" id;
+		let module B = (val get_backend () : S) in
+		B.VM.create_device_model (id |> key_of |> DB.read |> unbox) |> return
+
 	let destroy _ id =
 		debug "VM.destroy %s" id;
 		let module B = (val get_backend () : S) in
@@ -182,7 +187,10 @@ module VM = struct
 		build c id |> unwrap;
 		List.iter (fun vbd -> VBD.plug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap);
 		List.iter (fun vif -> VIF.plug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap);
-		return ()
+		(* Unfortunately this has to be done after the devices have been created since
+		   qemu reads xenstore keys in preference to its own commandline. After this is
+		   fixed we can consider creating qemu as a part of the 'build' *)
+		create_device_model c id |> unwrap |> return
 
 	let shutdown c id =
 		debug "VM.shutdown %s" id;

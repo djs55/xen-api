@@ -283,58 +283,61 @@ module VM = struct
 
 	(* NB: the arguments which affect the qemu configuration must be saved and
 	   restored with the VM. *)
-	let create_device_model_config ty build_info vifs vbds =
-		let make ?(boot_order="cd") ?(serial="pty") ?(nics=[])
-				?(disks=[]) ?(pci_emulations=[]) ?(usb=["tablet"])
-				?(acpi=true) ?(video=Cirrus) ?(keymap="en-us")
-				?vnc_ip ?(pci_passthrough=false) ?(hvm=true) ?(video_mib=4) () =
-			let video = match video with
-				| Cirrus -> Device.Dm.Cirrus
-				| Standard_VGA -> Device.Dm.Std_vga in
-			let open Device.Dm in {
-                memory = build_info.Domain.memory_max;
-                boot = boot_order;
-                serial = serial;
-                vcpus = build_info.Domain.vcpus;
-                nics = nics;
-                disks = disks;
-                pci_emulations = pci_emulations;
-                usb = usb;
-                acpi = acpi;
-                disp = VNC (video, vnc_ip, true, 0, keymap);
-                pci_passthrough = pci_passthrough;
-                xenclient_enabled=false;
-                hvm=hvm;
-                sound=None;
-                power_mgmt=None;
-                oem_features=None;
-                inject_sci = None;
-                video_mib=video_mib;
-                extras = [];
-			} in
-		let bridge_of_network = function
-			| Bridge b -> b
-			| VSwitch v -> v
-			| Netback (_, _) -> failwith "Need to create a VIF frontend" in
-		let nics = List.map (fun vif ->
-			vif.Vif.mac,
-			bridge_of_network vif.Vif.backend,
-			vif.Vif.position
-		) vifs in
-		match ty with
-			| PV { framebuffer = false } -> None
-			| PV { framebuffer = true } ->
-				Some (make ~hvm:false ())
-			| HVM hvm_info ->
-				if hvm_info.qemu_disk_cmdline
-				then failwith "Need a disk frontend in this domain";
-				Some (make ~video_mib:hvm_info.video_mib
-					~video:hvm_info.video ~acpi:hvm_info.acpi
-					?serial:hvm_info.serial ?keymap:hvm_info.keymap
-					?vnc_ip:hvm_info.vnc_ip
-					~pci_emulations:hvm_info.pci_emulations
-					~pci_passthrough:hvm_info.pci_passthrough
-					~boot_order:hvm_info.boot_order ~nics ())
+	let create_device_model_config = function
+		| { VmExtra.build_info = None }
+		| { VmExtra.ty = None } -> raise (Exception Domain_not_built)
+		| { VmExtra.ty = Some ty; build_info = Some build_info; vifs = vifs; vbds = vbds } ->
+			let make ?(boot_order="cd") ?(serial="pty") ?(nics=[])
+					?(disks=[]) ?(pci_emulations=[]) ?(usb=["tablet"])
+					?(acpi=true) ?(video=Cirrus) ?(keymap="en-us")
+					?vnc_ip ?(pci_passthrough=false) ?(hvm=true) ?(video_mib=4) () =
+				let video = match video with
+					| Cirrus -> Device.Dm.Cirrus
+					| Standard_VGA -> Device.Dm.Std_vga in
+				let open Device.Dm in {
+					memory = build_info.Domain.memory_max;
+					boot = boot_order;
+					serial = serial;
+					vcpus = build_info.Domain.vcpus;
+					nics = nics;
+					disks = disks;
+					pci_emulations = pci_emulations;
+					usb = usb;
+					acpi = acpi;
+					disp = VNC (video, vnc_ip, true, 0, keymap);
+					pci_passthrough = pci_passthrough;
+					xenclient_enabled=false;
+					hvm=hvm;
+					sound=None;
+					power_mgmt=None;
+					oem_features=None;
+					inject_sci = None;
+					video_mib=video_mib;
+					extras = [];
+				} in
+			let bridge_of_network = function
+				| Bridge b -> b
+				| VSwitch v -> v
+				| Netback (_, _) -> failwith "Need to create a VIF frontend" in
+			let nics = List.map (fun vif ->
+				vif.Vif.mac,
+				bridge_of_network vif.Vif.backend,
+				vif.Vif.position
+			) vifs in
+			match ty with
+				| PV { framebuffer = false } -> None
+				| PV { framebuffer = true } ->
+					Some (make ~hvm:false ())
+				| HVM hvm_info ->
+					if hvm_info.qemu_disk_cmdline
+					then failwith "Need a disk frontend in this domain";
+					Some (make ~video_mib:hvm_info.video_mib
+						~video:hvm_info.video ~acpi:hvm_info.acpi
+						?serial:hvm_info.serial ?keymap:hvm_info.keymap
+						?vnc_ip:hvm_info.vnc_ip
+						~pci_emulations:hvm_info.pci_emulations
+						~pci_passthrough:hvm_info.pci_passthrough
+						~boot_order:hvm_info.boot_order ~nics ())
 
 
 	let build_domain_exn xc xs domid vm vbds vifs =
@@ -382,6 +385,7 @@ module VM = struct
 								make_build_info b.Bootloader.kernel_path builder_spec_info
 							) in
 			let arch = Domain.build ~xc ~xs build_info domid in
+			Domain.cpuid_apply ~xc ~hvm:(will_be_hvm vm) domid;
 			debug "Built domid %d with architecture %s" domid (Domain.string_of_domarch arch);
 			let k = key_of vm in
 			let d = Opt.unbox (DB.read k) in
@@ -390,12 +394,9 @@ module VM = struct
 				ty = Some vm.ty;
 				vbds = vbds;
 				vifs = vifs;
-			};
-			Domain.cpuid_apply ~xc ~hvm:(will_be_hvm vm) domid;
-
-			let info = create_device_model_config vm.ty build_info vifs vbds in
-			Opt.iter (fun info -> Device.Dm.start ~xs ~dmpath info domid) info
+			}
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
+
 
 	let build_domain vm vbds vifs xc xs _ di =
 		try
@@ -423,6 +424,12 @@ module VM = struct
 				raise (Exception (Internal_error m))
 
 	let build vm vbds vifs = on_domain (build_domain vm vbds vifs) vm
+
+	let create_device_model_exn vm xc xs _ di =
+		let info = vm |> key_of |> DB.read |> Opt.unbox |> create_device_model_config in
+		Opt.iter (fun info -> Device.Dm.start ~xs ~dmpath info di.Xenctrl.domid) info
+
+	let create_device_model vm = on_domain (create_device_model_exn vm) vm
 
 	let suspend vm disk = raise (Exception Unimplemented)
 	let resume vm disk = raise (Exception Unimplemented)
