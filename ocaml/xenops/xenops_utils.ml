@@ -115,3 +115,12 @@ module TypedTable = functor(RW: READWRITE) -> struct
 		else delete k
 end
 
+let halted_vm = {
+	Vm.power_state = Halted;
+	domids = [];
+	consoles = [];
+	memory_target = 0L;
+	rtc_timeoffset = "";
+	uncooperative_balloon_driver = false;
+	guest_agent = []
+}

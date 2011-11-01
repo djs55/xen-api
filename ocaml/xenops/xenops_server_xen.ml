@@ -434,13 +434,16 @@ module VM = struct
 	let suspend vm disk = raise (Exception Unimplemented)
 	let resume vm disk = raise (Exception Unimplemented)
 
-	let get_power_state vm =
+	let get_state vm =
 		let uuid = uuid_of_vm vm in
 		with_xc_and_xs
 			(fun xc xs ->
 				match domid_of_uuid ~xc ~xs uuid with
-					| None -> Halted
-					| Some d -> Running { domid = d }
+					| None -> halted_vm
+					| Some d -> { halted_vm with
+						Vm.power_state = Running;
+						domids = [ d ];
+					}
 			)
 end
 

@@ -86,12 +86,15 @@ let create_nolock vm () =
 		DB.write k domain
 	end
 
-let get_power_state_nolock vm () =
+let get_state_nolock vm () =
 	let k = key_of vm in
 	if DB.exists k then begin
 		let d = read k in
-		Running { domid = d.Domain.domid }
-	end else Halted
+		{ halted_vm with
+			Vm.power_state = Running;
+			domids = [ d.Domain.domid ];
+		}
+	end else halted_vm
 
 let destroy_nolock vm () =
 	let k = key_of vm in
@@ -194,7 +197,7 @@ module VM = struct
 	let suspend vm disk = Mutex.execute m (suspend_nolock vm disk)
 	let resume vm disk = Mutex.execute m (resume_nolock vm disk)
 
-	let get_power_state vm = Mutex.execute m (get_power_state_nolock vm)
+	let get_state vm = Mutex.execute m (get_state_nolock vm)
 end
 
 module VBD = struct

@@ -218,7 +218,7 @@ let vm_test_add_list_remove _ =
 	with_vm example_uuid
 		(fun id ->
 			let vm = create_vm example_uuid in
-			let (vms: (Vm.t * power_state) list) = success (Client.VM.list rpc ()) in
+			let (vms: (Vm.t * Vm.state) list) = success (Client.VM.list rpc ()) in
 			let vm' = List.find (fun x -> x.Vm.id = id) (List.map fst vms) in
 			vm_assert_equal vm vm'
 		)

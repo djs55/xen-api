@@ -19,12 +19,8 @@ type ('a, 'b) result =
 	| Success of 'a
 	| Failure of 'b
 
-type runtime_info = {
-	domid: int;
-}
-
 type power_state =
-	| Running of runtime_info
+	| Running
 	| Halted
 	| Suspended
 	| Paused
@@ -144,6 +140,7 @@ module Vm = struct
 
 	type state = {
 		power_state: power_state;
+		domids: int list;
 		consoles: console list;
 		memory_target: int64;
 		rtc_timeoffset: string;
@@ -214,7 +211,7 @@ module VM = struct
 	external destroy: Vm.id -> (unit option) * (error option) = ""
 	external pause: Vm.id -> (unit option) * (error option) = ""
 	external unpause: Vm.id -> (unit option) * (error option) = ""
-	external list: unit -> ((Vm.t * power_state) list option) * (error option) = ""
+	external list: unit -> ((Vm.t * Vm.state) list option) * (error option) = ""
 
 	external start: Vm.id -> (unit option) * (error option) = ""
 	external shutdown: Vm.id -> (unit option) * (error option) = ""

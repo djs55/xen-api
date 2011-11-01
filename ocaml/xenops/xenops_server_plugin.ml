@@ -26,7 +26,7 @@ module type S = sig
 		val suspend: Vm.t -> disk -> unit
 		val resume: Vm.t -> disk -> unit
 
-		val get_power_state: Vm.t -> power_state
+		val get_state: Vm.t -> Vm.state
 	end
 	module VBD : sig
 		val plug: Vm.id -> Vbd.t -> unit

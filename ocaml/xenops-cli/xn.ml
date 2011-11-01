@@ -173,14 +173,14 @@ let list () =
 	let line name domid mem vcpus state time =
 		Printf.sprintf "%-45s%-5s%-4s%-5s     %-8s%-s" name domid mem vcpus state time in
 	let header = line "Name" "ID" "Mem" "VCPUs" "State" "Time(s)" in
-	let string_of_vm (vm, power_state) =
-		let domid = match power_state with
-			| Running { domid = d } -> string_of_int d
+	let string_of_vm (vm, state) =
+		let domid = match state.Vm.power_state with
+			| Running -> String.concat "," (List.map string_of_int state.Vm.domids)
 			| _ -> "-" in
 		let mem = Int64.to_string (Int64.div (Int64.div vm.memory_static_max 1024L) 1024L) in
 		let vcpus = string_of_int vm.vcpus in
-		let state = match power_state with
-			| Running _ -> "Running"
+		let state = match state.Vm.power_state with
+			| Running   -> "Running"
 			| Suspended -> "Suspend"
 			| Halted    -> "Halted "
 			| Paused    -> "Paused " in

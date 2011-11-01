@@ -133,7 +133,7 @@ module VM = struct
 	let remove _ id =
 		debug "VM.remove %s" id;
 		let module B = (val get_backend () : S) in
-		let power = B.VM.get_power_state (id |> key_of |> DB.read |> unbox) in
+		let power = (B.VM.get_state (id |> key_of |> DB.read |> unbox)).Vm.power_state in
 		match power with
 			| Running _ | Suspended | Paused -> raise (Exception (Bad_power_state(power, Halted)))
 			| Halted ->
@@ -144,8 +144,8 @@ module VM = struct
 		let module B = (val get_backend () : S) in
 		let ls = List.fold_left (fun acc x ->
 			let vm_t = x |> key_of |> DB.read |> unbox in
-			let power = B.VM.get_power_state vm_t in
-			(vm_t, power) :: acc
+			let state = B.VM.get_state vm_t in
+			(vm_t, state) :: acc
 		) [] (DB.list []) in
 		return ls
 
