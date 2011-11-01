@@ -152,23 +152,38 @@ let add_vbd (vm: Vm.id) (vbd: Vbd.t) () =
 		raise (Exception Already_exists)
 	end else DB.write k { d with Domain.vbds = { vbd with Vbd.position = Some this_dn } :: d.Domain.vbds }
 
-let vbd_attached vm vbd () =
+let vbd_state vm vbd () =
 	let k = [ vm ] in
 	if not (DB.exists k)
-	then false
+	then unplugged_vbd
 	else
 		let d = read k in
 		let this_one x = x.Vbd.id = vbd.Vbd.id in
-		List.filter this_one d.Domain.vbds <> []
+		match List.filter this_one d.Domain.vbds with
+			| [ domain ] ->
+				{
+					unplugged_vbd with
+						Vbd.plugged = true;
+				}
+			| [] -> unplugged_vbd
+			| _ -> assert false (* at most one *)
+				
 
-let vif_attached vm vif () =
+let vif_state vm vif () =
 	let k = [ vm ] in
 	if not (DB.exists k)
-	then false
+	then unplugged_vif
 	else
 		let d = read k in
 		let this_one x = x.Vif.id = vif.Vif.id in
-		List.filter this_one d.Domain.vifs <> []
+		match List.filter this_one d.Domain.vifs with
+			| [ domain ] ->
+				{
+					unplugged_vif with
+						Vif.plugged = true;
+				}
+			| [] -> unplugged_vif
+			| _ -> assert false (* at most one *)
 
 let remove_vif vm vif () =
 	let k = [ vm ] in
@@ -204,12 +219,12 @@ module VBD = struct
 	let plug (vm: Vm.id) (vbd: Vbd.t) = Mutex.execute m (add_vbd vm vbd)
 	let unplug vm vbd = Mutex.execute m (remove_vbd vm vbd)
 
-	let get_currently_attached vm vbd = Mutex.execute m (vbd_attached vm vbd)
+	let get_state vm vbd = Mutex.execute m (vbd_state vm vbd)
 end
 
 module VIF = struct
 	let plug vm vif = Mutex.execute m (add_vif vm vif)
 	let unplug vm vif = Mutex.execute m (remove_vif vm vif)
 
-	let get_currently_attached vm vif = Mutex.execute m (vif_attached vm vif)
+	let get_state vm vif = Mutex.execute m (vif_state vm vif)
 end

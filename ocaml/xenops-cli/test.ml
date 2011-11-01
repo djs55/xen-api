@@ -275,6 +275,7 @@ let vm_test_resume _ =
 
 module type DEVICE = sig
 	type t
+	type state
 	val assert_equal: t -> t -> unit
 	type position
 	val positions: position list
@@ -285,8 +286,8 @@ module type DEVICE = sig
 	val remove: id -> unit option * error option
 	val plug: id -> unit option * error option
 	val unplug: id -> unit option * error option
-	val list: Vm.id -> t list option * error option
-	val find: id -> t list -> t
+	val list: Vm.id -> (t * state) list option * error option
+	val find: id -> (t * state) list -> t
 end
 
 module DeviceTests = functor(D: DEVICE) -> struct
@@ -341,7 +342,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			(fun id ->
 				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
-				let (devs: t list) = success (list id) in
+				let (devs: (t * state) list) = success (list id) in
 				let dev' = find dev_id devs in
 				assert_equal dev dev';
 				success (remove dev_id);
@@ -369,6 +370,7 @@ end
 module VbdDeviceTests = DeviceTests(struct
 	type t = Vbd.t
 	type id = Vbd.id
+	type state = Vbd.state
 	type position = Device_number.t option
 	let positions = [ None; None; None ]
 	let ids = List.map (fun x -> example_uuid, x) [ "0"; "1"; "2" ]
@@ -388,7 +390,7 @@ module VbdDeviceTests = DeviceTests(struct
 	let plug = Client.VBD.plug rpc
 	let unplug = Client.VBD.unplug rpc
 	let list = Client.VBD.list rpc
-	let find id vbds = List.find (fun x -> x.Vbd.id = id) vbds
+	let find id vbds = List.find (fun (x, _) -> x.Vbd.id = id) vbds |> fst
 	let assert_equal vbd vbd' =
 		let open Vbd in
 		assert_equal ~msg:"id" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vbd.id vbd'.id;
@@ -402,6 +404,7 @@ end)
 module VifDeviceTests = DeviceTests(struct
 	type t = Vif.t
 	type id = Vif.id
+	type state = Vif.state
 	type position = int
 	let positions = [ 0; 1; 2 ]
 	let ids = List.map (fun x -> example_uuid, x) [ "0"; "1"; "2" ]
@@ -422,7 +425,7 @@ module VifDeviceTests = DeviceTests(struct
 	let plug = Client.VIF.plug rpc
 	let unplug = Client.VIF.unplug rpc
 	let list = Client.VIF.list rpc
-	let find id vifs = List.find (fun x -> x.Vif.id = id) vifs
+	let find id vifs = List.find (fun (x, _) -> x.Vif.id = id) vifs |> fst
 	let assert_equal vif vif' =
 		let open Vif in
 		assert_equal ~msg:"id" ~printer:(fun (a, b) -> Printf.sprintf "%s.%s" a b) vif.id vif'.id;

@@ -475,17 +475,6 @@ let device_by_id xc xs vm kind id =
 			with Not_found ->
 				raise (Exception Device_not_connected)
 
-let get_currently_attached_exn vm kind id =
-	with_xc_and_xs
-		(fun xc xs ->
-			try
-				let (_: Device_common.device) = device_by_id xc xs vm kind id in
-				true
-			with
-				| Exception Does_not_exist
-				| Exception Device_not_connected ->
-					false
-		)
 
 module VBD = struct
 	open Vbd
@@ -550,7 +539,24 @@ module VBD = struct
 
 	let unplug vm = unplug_exn vm
 
-	let get_currently_attached vm vbd = get_currently_attached_exn vm Device_common.Vbd (id_of vbd)
+	let get_state vm vbd =
+		with_xc_and_xs
+			(fun xc xs ->
+				try
+					let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+					let path = Device_common.kthread_pid_path_of_device ~xs d in
+					let kthread_pid = try xs.Xs.read path |> int_of_string with _ -> 0 in
+					let plugged = Hotplug.device_is_online ~xs d in
+					{
+						Vbd.plugged = plugged;
+						media_present = plugged;
+						kthread_pid = kthread_pid
+					}
+				with
+					| Exception Does_not_exist
+					| Exception Device_not_connected ->
+						unplugged_vbd
+			)
 end
 
 module VIF = struct
@@ -602,5 +608,23 @@ module VIF = struct
 
 	let unplug vm = unplug_exn vm
 
-	let get_currently_attached vm vif = get_currently_attached_exn vm Device_common.Vif (id_of vif)
+	let get_state vm vif =
+		with_xc_and_xs
+			(fun xc xs ->
+				try
+					let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vif (id_of vif) in
+					let path = Device_common.kthread_pid_path_of_device ~xs d in
+					let kthread_pid = try xs.Xs.read path |> int_of_string with _ -> 0 in
+					let plugged = Hotplug.device_is_online ~xs d in
+					{
+						Vif.plugged = plugged;
+						media_present = plugged;
+						kthread_pid = kthread_pid
+					}
+				with
+					| Exception Does_not_exist
+					| Exception Device_not_connected ->
+						unplugged_vif
+			)
+
 end

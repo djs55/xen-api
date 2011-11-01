@@ -124,3 +124,15 @@ let halted_vm = {
 	uncooperative_balloon_driver = false;
 	guest_agent = []
 }
+
+let unplugged_vbd = {
+	Vbd.plugged = false;
+	kthread_pid = 0;
+	media_present = false;
+}
+
+let unplugged_vif = {
+	Vif.plugged = false;
+	kthread_pid = 0;
+	media_present = false;
+}

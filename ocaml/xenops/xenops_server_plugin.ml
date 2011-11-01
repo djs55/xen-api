@@ -32,12 +32,12 @@ module type S = sig
 		val plug: Vm.id -> Vbd.t -> unit
 		val unplug: Vm.id -> Vbd.t -> unit
 
-		val get_currently_attached: Vm.id -> Vbd.t -> bool
+		val get_state: Vm.id -> Vbd.t -> Vbd.state
 	end
 	module VIF : sig
 		val plug: Vm.id -> Vif.t -> unit
 		val unplug: Vm.id -> Vif.t -> unit
 
-		val get_currently_attached: Vm.id -> Vif.t -> bool
+		val get_state: Vm.id -> Vif.t -> Vif.state
 	end
 end

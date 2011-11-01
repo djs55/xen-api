@@ -223,7 +223,7 @@ module VBD = struct
 	external add: Vbd.t -> (Vbd.id option) * (error option) = ""
 	external plug: Vbd.id -> (unit option) * (error option) = ""
 	external unplug: Vbd.id -> (unit option) * (error option) = ""
-	external list: Vm.id -> (Vbd.t list option) * (error option) = ""
+	external list: Vm.id -> ((Vbd.t * Vbd.state) list option) * (error option) = ""
 	external remove: Vbd.id -> (unit option) * (error option) = ""
 end
 
@@ -231,6 +231,6 @@ module VIF = struct
 	external add: Vif.t -> (Vif.id option) * (error option) = ""
 	external plug: Vif.id -> (unit option) * (error option) = ""
 	external unplug: Vif.id -> (unit option) * (error option) = ""
-	external list: Vm.id -> (Vif.t list option) * (error option) = ""
+	external list: Vm.id -> ((Vif.t * Vif.state) list option) * (error option) = ""
 	external remove: Vif.id -> (unit option) * (error option) = ""
 end

@@ -69,13 +69,16 @@ module VBD = struct
 	let remove _ id =
 		debug "VBD.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		if B.VBD.get_currently_attached (vm_of id) (id |> key_of |> DB.read |> unbox)
+		if (B.VBD.get_state (vm_of id) (id |> key_of |> DB.read |> unbox)).Vbd.plugged
 		then raise (Exception Device_is_connected)
 		else return (DB.remove (key_of id))
 	let list _ vm =
 		debug "VBD.list";
 		let key_of' id = [ vm; "vbd." ^ id ] in
-		DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of')) |> dropnone |> return
+		let vbds = DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of')) |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.VBD.get_state vm) vbds in
+		return (List.combine vbds states)
 end
 
 module VIF = struct
@@ -109,12 +112,15 @@ module VIF = struct
 	let remove _ id =
 		debug "VIF.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		if B.VIF.get_currently_attached (vm_of id) (id |> key_of |> DB.read |> unbox)
+		if (B.VIF.get_state (vm_of id) (id |> key_of |> DB.read |> unbox)).Vif.plugged
 		then raise (Exception Device_is_connected)
 		else return (DB.remove (key_of id))
 	let list _ vm =
 		let key_of' id = [ vm; "vif." ^ id ] in
-		DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone |> return
+		let vifs = DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.VIF.get_state vm) vifs in
+		return (List.combine vifs states)
 end
 
 module VM = struct
@@ -157,8 +163,8 @@ module VM = struct
 	let build c id =
 		debug "VM.build %s" id;
 		let module B = (val get_backend () : S) in
-		let vbds : Vbd.t list = VBD.list c id |> unwrap in
-		let vifs : Vif.t list = VIF.list c id |> unwrap in
+		let vbds : Vbd.t list = VBD.list c id |> unwrap |> List.map fst in
+		let vifs : Vif.t list = VIF.list c id |> unwrap |> List.map fst in
 		B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs |> return
 
 	let create_device_model c id =
@@ -185,8 +191,8 @@ module VM = struct
 		debug "VM.start %s" id;
 		create c id |> unwrap;
 		build c id |> unwrap;
-		List.iter (fun vbd -> VBD.plug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap);
-		List.iter (fun vif -> VIF.plug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap);
+		List.iter (fun vbd -> VBD.plug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap |> List.map fst);
+		List.iter (fun vif -> VIF.plug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap |> List.map fst);
 		(* Unfortunately this has to be done after the devices have been created since
 		   qemu reads xenstore keys in preference to its own commandline. After this is
 		   fixed we can consider creating qemu as a part of the 'build' *)
@@ -195,8 +201,8 @@ module VM = struct
 	let shutdown c id =
 		debug "VM.shutdown %s" id;
 		destroy c id |> unwrap;
-		List.iter (fun vbd -> VBD.unplug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap);
-		List.iter (fun vif -> VIF.unplug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap);
+		List.iter (fun vbd -> VBD.unplug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap |> List.map fst);
+		List.iter (fun vif -> VIF.unplug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap |> List.map fst);
 		return ()
 
 	let suspend _ id disk =

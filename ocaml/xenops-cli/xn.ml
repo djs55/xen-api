@@ -204,12 +204,12 @@ let remove x =
 	let vm, _ = find_by_name x in
 	let vbds = success (Client.VBD.list rpc vm.id) in
 	List.iter
-		(fun vbd ->
+		(fun (vbd, _) ->
 			success (Client.VBD.remove rpc vbd.Vbd.id)
 		) vbds;
 	let vifs = success (Client.VIF.list rpc vm.id) in
 	List.iter
-		(fun vif ->
+		(fun (vif, _) ->
 			success (Client.VIF.remove rpc vif.Vif.id)
 		) vifs;
 	success (Client.VM.remove rpc vm.id)
