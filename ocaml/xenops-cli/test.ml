@@ -243,12 +243,15 @@ let vm_test_start_shutdown _ =
 		)
 
 let vm_test_consoles _ =
+	()
+(*
 	with_vm example_uuid
 		(fun id ->
 			success (Client.VM.start rpc id);
 			let (_: Console.t list) = success (Client.CONSOLE.list rpc id) in
 			success (Client.VM.shutdown rpc id);
 		)
+*)
 
 let vm_test_suspend _ =
 	with_vm example_uuid

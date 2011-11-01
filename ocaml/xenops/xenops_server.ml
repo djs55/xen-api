@@ -43,11 +43,6 @@ let filter_prefix prefix xs =
 			then Some (String.sub x (String.length prefix) (String.length x - (String.length prefix)))
 			else None) xs
 
-module CONSOLE = struct
-	let list _ id =
-		return []
-end
-
 module VBD = struct
 	open Vbd
 

@@ -133,6 +133,24 @@ module Vm = struct
 		vcpus: int;
 	}
 
+	type console_protocol =
+		| Rfb
+		| Vt100
+
+	type console = {
+		protocol: console_protocol;
+		port: int;
+	}
+
+	type state = {
+		power_state: power_state;
+		consoles: console list;
+		memory_target: int64;
+		rtc_timeoffset: string;
+		uncooperative_balloon_driver: bool;
+		guest_agent: (string * string) list;
+	}
+
 end
 
 module Vbd = struct
@@ -156,6 +174,12 @@ module Vbd = struct
 		extra_private_keys: (string * string) list;
 	}
 
+	type state = {
+		plugged: bool;
+		kthread_pid: int;
+		media_present: bool;
+	}
+
 end
 
 module Vif = struct
@@ -173,15 +197,11 @@ module Vif = struct
 		other_config: (string * string) list;
 		extra_private_keys: (string * string) list;
 	}
-end
 
-module Console = struct
-	type protocol =
-		| Rfb
-		| Vt100
-	type t = {
-		protocol: protocol;
-		port: int;
+	type state = {
+		plugged: bool;
+		kthread_pid: int;
+		media_present: bool;
 	}
 end
 
@@ -216,8 +236,4 @@ module VIF = struct
 	external unplug: Vif.id -> (unit option) * (error option) = ""
 	external list: Vm.id -> (Vif.t list option) * (error option) = ""
 	external remove: Vif.id -> (unit option) * (error option) = ""
-end
-
-module CONSOLE = struct
-	external list: Vm.id -> (Console.t list option) * (error option) = ""
 end
