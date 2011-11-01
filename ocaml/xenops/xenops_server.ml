@@ -216,3 +216,8 @@ module VM = struct
 		B.VM.resume (id |> key_of |> DB.read |> unbox) disk |> return
 end
 
+module DEBUG = struct
+	let trigger _ cmd args =
+		let module B = (val get_backend () : S) in
+		B.DEBUG.trigger cmd args |> return
+end

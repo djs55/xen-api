@@ -38,6 +38,7 @@ type error =
 	| Bootloader_error of string * (string list)
 	| Ballooning_error of string * string
 	| No_ballooning_service
+	| Not_supported
 
 type error_response = unit option * error option
 
@@ -202,6 +203,13 @@ module Vif = struct
 	}
 end
 
+module Dynamic = struct
+	type id =
+		| Vm of Vm.id
+		| Vbd of Vbd.id
+		| Vif of Vif.id
+end
+
 module VM = struct
 	external add: Vm.t -> (Vm.id option) * (error option) = ""
 	external remove: Vm.id -> (unit option) * (error option) = ""
@@ -234,3 +242,8 @@ module VIF = struct
 	external list: Vm.id -> ((Vif.t * Vif.state) list option) * (error option) = ""
 	external remove: Vif.id -> (unit option) * (error option) = ""
 end
+
+module DEBUG = struct
+	external trigger: string -> string list -> (unit option) * (error option) = ""
+end
+

@@ -628,3 +628,15 @@ module VIF = struct
 			)
 
 end
+
+module UPDATES = struct
+	let get () =
+		while true do
+			Thread.delay 60.
+		done;
+		DynamicIdSet.empty
+end
+
+module DEBUG = struct
+	let trigger _ _ = raise (Exception Not_supported)
+end

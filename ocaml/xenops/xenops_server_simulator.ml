@@ -228,3 +228,24 @@ module VIF = struct
 
 	let get_state vm vif = Mutex.execute m (vif_state vm vif)
 end
+
+let dirty = ref DynamicIdSet.empty
+let dirty_m = Mutex.create ()
+let dirty_c = Condition.create ()
+
+module UPDATES = struct
+	let get () =
+		Mutex.execute dirty_m
+			(fun () ->
+				while DynamicIdSet.is_empty !dirty do
+					Condition.wait dirty_c dirty_m
+				done;
+				let result = !dirty in
+				dirty := DynamicIdSet.empty;
+				result
+			)
+end
+
+module DEBUG = struct
+	let trigger _ _ = raise (Exception Not_supported)
+end

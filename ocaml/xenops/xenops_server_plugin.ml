@@ -40,4 +40,10 @@ module type S = sig
 
 		val get_state: Vm.id -> Vif.t -> Vif.state
 	end
+	module UPDATES : sig
+		val get: unit -> Xenops_utils.DynamicIdSet.t
+	end
+	module DEBUG : sig
+		val trigger: string -> string list -> unit
+	end
 end

@@ -136,3 +136,8 @@ let unplugged_vif = {
 	kthread_pid = 0;
 	media_present = false;
 }
+
+module DynamicIdSet = Set.Make(struct
+	type t = Xenops_interface.Dynamic.id
+	let compare = compare
+end)
