@@ -244,8 +244,21 @@ module UPDATES = struct
 				dirty := DynamicIdSet.empty;
 				result
 			)
+	let put x =
+		Mutex.execute dirty_m
+			(fun () ->
+				dirty := DynamicIdSet.add x !dirty;
+				Condition.signal dirty_c
+			)
 end
 
 module DEBUG = struct
-	let trigger _ _ = raise (Exception Not_supported)
+	let trigger cmd args = match cmd, args with
+		| "reboot", k ->
+			let d = read k in
+			DB.write k { d with Domain.shutdown_reason = Some "reboot" };
+			UPDATES.put (Dynamic.Vm (List.hd k))
+		| _ ->
+			debug "DEBUG.trigger cmd=%s Not_supported" cmd;
+			raise (Exception Not_supported)
 end

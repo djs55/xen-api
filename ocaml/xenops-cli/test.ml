@@ -253,6 +253,17 @@ let vm_test_consoles _ =
 		)
 *)
 
+let vm_test_reboot _ =
+	with_vm example_uuid
+		(fun id ->
+			success (Client.VM.create rpc id);
+			success (Client.VM.build rpc id);
+			success (Client.VM.create_device_model rpc id);
+			success (Client.VM.unpause rpc id);
+			success (Client.DEBUG.trigger rpc "reboot" [ id ]);
+			(* ... need to wait for the event to be processed *)
+		)
+
 let vm_test_suspend _ =
 	with_vm example_uuid
 		(fun id ->
@@ -474,6 +485,7 @@ let _ =
 			"vm_remove_running" >:: vm_remove_running;
 			"vm_test_start_shutdown" >:: vm_test_start_shutdown;
 			"vm_test_consoles" >:: vm_test_consoles;
+			"vm_test_reboot" >:: vm_test_reboot;
 			"vbd_test_add_remove" >:: VbdDeviceTests.add_remove;
 			"vbd_test_add_list_remove" >:: VbdDeviceTests.add_list_remove;
 			"vbd_test_add_vm_remove" >:: VbdDeviceTests.add_vm_remove;
