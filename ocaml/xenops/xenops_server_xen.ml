@@ -14,6 +14,7 @@
 
 open Xenops_interface
 open Xenops_utils
+open Xenops_server_plugin
 open Xenops_helpers
 open Xenstore
 open Pervasiveext
@@ -629,12 +630,10 @@ module VIF = struct
 
 end
 
+let updates = Updates.empty ()
+
 module UPDATES = struct
-	let get () =
-		while true do
-			Thread.delay 60.
-		done;
-		DynamicIdSet.empty
+	let get last = Updates.get last updates
 end
 
 module DEBUG = struct

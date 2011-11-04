@@ -14,6 +14,7 @@
 open Threadext
 open Listext
 open Xenops_interface
+open Xenops_server_plugin
 open Xenops_utils
 
 module Domain = struct
@@ -229,27 +230,10 @@ module VIF = struct
 	let get_state vm vif = Mutex.execute m (vif_state vm vif)
 end
 
-let dirty = ref DynamicIdSet.empty
-let dirty_m = Mutex.create ()
-let dirty_c = Condition.create ()
+let updates = Updates.empty ()
 
 module UPDATES = struct
-	let get () =
-		Mutex.execute dirty_m
-			(fun () ->
-				while DynamicIdSet.is_empty !dirty do
-					Condition.wait dirty_c dirty_m
-				done;
-				let result = !dirty in
-				dirty := DynamicIdSet.empty;
-				result
-			)
-	let put x =
-		Mutex.execute dirty_m
-			(fun () ->
-				dirty := DynamicIdSet.add x !dirty;
-				Condition.signal dirty_c
-			)
+	let get last = Updates.get last updates
 end
 
 module DEBUG = struct
@@ -257,7 +241,8 @@ module DEBUG = struct
 		| "reboot", k ->
 			let d = read k in
 			DB.write k { d with Domain.shutdown_reason = Some "reboot" };
-			UPDATES.put (Dynamic.Vm (List.hd k))
+			let (_: Updates.id) = Updates.add (Dynamic.Vm (List.hd k)) updates in
+			()
 		| _ ->
 			debug "DEBUG.trigger cmd=%s Not_supported" cmd;
 			raise (Exception Not_supported)
