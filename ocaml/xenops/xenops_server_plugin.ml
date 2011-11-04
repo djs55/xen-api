@@ -32,9 +32,11 @@ module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 		next: id
 	}
 
+	let initial = 0
+
 	let empty = {
 		map = M.empty;
-		next = 0;
+		next = initial + 1;
 	}
 
 	let add x t = {
@@ -50,7 +52,8 @@ module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 	let get from t =
 		(* XXX: events for deleted things *)
 		let before, after = M.partition (fun _ time -> time < from) t.map in
-		M.fold (fun key v (acc, m) -> Modify key :: acc, max m v) after ([], from)
+		let xs, last = M.fold (fun key v (acc, m) -> Modify key :: acc, max m v) after ([], from) in
+		xs, last + 1
 end
 
 module Updates = struct
@@ -73,6 +76,7 @@ module Updates = struct
 	}
 
 	let get from t =
+		let from = Opt.default U.initial from in
 		Mutex.execute t.m
 			(fun () ->
 				let current = ref ([], from) in
@@ -80,7 +84,7 @@ module Updates = struct
 					current := U.get from t.u;
 					if fst !current = [] then Condition.wait t.c t.m;
 				done;
-				!current
+				fst !current, Some (snd !current)
 			)
 
 	let add x t =
@@ -129,7 +133,7 @@ module type S = sig
 		val get_state: Vm.id -> Vif.t -> Vif.state
 	end
 	module UPDATES : sig
-		val get: Updates.id -> Dynamic.id update list * Updates.id
+		val get: Updates.id option -> Dynamic.id update list * Updates.id option
 	end
 	module DEBUG : sig
 		val trigger: string -> string list -> unit

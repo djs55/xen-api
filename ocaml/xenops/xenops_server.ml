@@ -31,7 +31,6 @@ let query _ _ = Some {
 }, None
 
 let backend = ref None
-let set_backend m = backend := m
 let get_backend () = match !backend with
   | Some x -> x 
   | None -> failwith "No backend implementation set"
@@ -221,3 +220,30 @@ module DEBUG = struct
 		let module B = (val get_backend () : S) in
 		B.DEBUG.trigger cmd args |> return
 end
+
+let internal_event_thread = ref None
+
+let internal_event_thread_body () =
+	debug "Starting internal event thread";
+	let module B = (val get_backend () : S) in
+	let id = ref None in
+	while true do
+		debug "About to call get with id = %s" (Opt.default "None" (Opt.map string_of_int !id));
+		let updates, next_id = B.UPDATES.get !id in
+		debug "returned id = %s" (Opt.default "None" (Opt.map string_of_int next_id));
+		assert (updates <> []);
+		List.iter
+			(function
+				| Modify x ->
+					debug "Ignoring Modify %s" (Jsonrpc.to_string (Dynamic.rpc_of_id x))
+				| Delete x ->
+					debug "Ignoring Delete %s" (Jsonrpc.to_string (Dynamic.rpc_of_id x))
+			) updates;
+		id := next_id
+	done;
+	debug "Shutting down internal event thread"
+
+let set_backend m =
+	backend := m;
+	(* start the internal event thread *)
+	internal_event_thread := Some (Thread.create internal_event_thread_body ())
