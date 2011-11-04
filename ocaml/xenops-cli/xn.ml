@@ -102,7 +102,10 @@ let add filename =
 				memory_static_max = bytes;
 				memory_dynamic_max = bytes;
 				memory_dynamic_min = bytes;
-				vcpus = vcpus
+				vcpus = vcpus;
+				on_crash = [ Vm.Shutdown ];
+				on_shutdown = [ Vm.Shutdown ];
+				on_reboot = [ Vm.Start ];
 			} in
 			let (id: Vm.id) = success (Client.VM.add rpc vm) in
 			let disks = if mem _disk then find _disk |> list string else [] in

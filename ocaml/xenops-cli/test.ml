@@ -115,6 +115,9 @@ let create_vm id =
 		memory_dynamic_max = 128L ** 1024L ** 1024L;
 		memory_dynamic_min = 128L ** 1024L ** 1024L;
 		vcpus = 2;
+		on_crash = [ Vm.Shutdown ];
+		on_shutdown = [ Vm.Shutdown ];
+		on_reboot = [ Vm.Start ];
 	}
 
 let sl x = Printf.sprintf "[ %s ]" (String.concat "; " (List.map (fun (k, v) -> k ^ ":" ^ v) x))
@@ -133,6 +136,9 @@ let vm_assert_equal vm vm' =
 	assert_equal ~msg:"memory_dynamic_max" ~printer:Int64.to_string vm.memory_dynamic_max vm'.memory_dynamic_max;
 	assert_equal ~msg:"memory_dynamic_min" ~printer:Int64.to_string vm.memory_dynamic_min vm'.memory_dynamic_min;
 	assert_equal ~msg:"vcpus" ~printer:string_of_int vm.vcpus vm'.vcpus;
+	assert_equal ~msg:"on_crash" ~printer:(fun x -> String.concat ", " (List.map (fun x -> x |> Vm.rpc_of_action |> Jsonrpc.to_string) x)) vm.on_crash vm'.on_crash;
+	assert_equal ~msg:"on_shutdown" ~printer:(fun x -> String.concat ", " (List.map (fun x -> x |> Vm.rpc_of_action |> Jsonrpc.to_string) x)) vm.on_shutdown vm'.on_shutdown;
+	assert_equal ~msg:"on_reboot" ~printer:(fun x -> String.concat ", " (List.map (fun x -> x |> Vm.rpc_of_action |> Jsonrpc.to_string) x)) vm.on_reboot vm'.on_reboot;
 	let is_hvm vm = match vm.ty with
 		| HVM _ -> true | PV _ -> false in
 	assert_equal ~msg:"HVM-ness" ~printer:string_of_bool (is_hvm vm) (is_hvm vm');

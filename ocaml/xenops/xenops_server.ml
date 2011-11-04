@@ -226,6 +226,7 @@ module VM = struct
 		destroy c id |> unwrap;
 		List.iter (fun vbd -> VBD.unplug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap |> List.map fst);
 		List.iter (fun vif -> VIF.unplug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap |> List.map fst);
+		Updates.add (Dynamic.Vm id) updates;
 		return ()
 
 	let suspend _ id disk =
@@ -273,15 +274,25 @@ let internal_event_thread_body () =
 			(function
 				| Dynamic.Vm_t (vm, state) ->
 					debug "Received an event on VM %s" vm.Vm.id;
-					begin match B.VM.get_domain_action_request vm with
-						| Some Needs_reboot ->
-							VM.shutdown () vm.Vm.id |> unwrap;
-							VM.start () vm.Vm.id |> unwrap
-						| Some Needs_poweroff ->
-							VM.shutdown () vm.Vm.id |> unwrap
+					let actions = match B.VM.get_domain_action_request vm with
+						| Some Needs_reboot -> vm.Vm.on_reboot
+						| Some Needs_poweroff -> vm.Vm.on_shutdown
 						| _ ->
-							debug "Ignoring event on VM %s" vm.Vm.id
-					end
+							debug "Ignoring event on VM %s" vm.Vm.id;
+							[] in
+					(* There's an opportunity to schedule the actions *)
+					List.iter
+						(function
+							| Vm.Coredump ->
+								debug "Vm.Coredump unimplemented"
+							| Vm.Shutdown ->
+								VM.shutdown () vm.Vm.id |> unwrap
+							| Vm.Start ->
+								VM.shutdown () vm.Vm.id |> unwrap;
+								VM.start () vm.Vm.id |> unwrap
+							| Vm.Delay ->
+								debug "Vm.Delay unimplemented"
+						) actions
 				| x ->
 					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_t x))
 			) (List.map UPDATES.lookup updates);

@@ -114,6 +114,12 @@ module Vm = struct
 
 	type id = string
 
+	type action =
+		| Coredump
+		| Shutdown
+		| Start
+		| Delay
+
 	type t = {
 		id: id;
 		name: string;
@@ -128,6 +134,9 @@ module Vm = struct
 		memory_dynamic_max: int64;
 		memory_dynamic_min: int64;
 		vcpus: int;
+		on_crash: action list;
+		on_shutdown: action list;
+		on_reboot: action list;
 	}
 
 	type console_protocol =
