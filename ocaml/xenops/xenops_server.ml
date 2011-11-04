@@ -277,6 +277,8 @@ let internal_event_thread_body () =
 						| Some Needs_reboot ->
 							VM.shutdown () vm.Vm.id |> unwrap;
 							VM.start () vm.Vm.id |> unwrap
+						| Some Needs_poweroff ->
+							VM.shutdown () vm.Vm.id |> unwrap
 						| _ ->
 							debug "Ignoring event on VM %s" vm.Vm.id
 					end

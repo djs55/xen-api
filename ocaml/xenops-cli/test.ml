@@ -253,6 +253,15 @@ let vm_test_consoles _ =
 		)
 *)
 
+let event_wait rpc p =
+	let finished = ref false in
+	let event_id = ref None in
+	while not !finished do
+		let deltas, next_id = Client.UPDATES.get rpc !event_id |> success in
+		event_id := next_id;
+		List.iter (fun d -> if p d then finished := true) deltas;
+	done
+
 let vm_test_reboot _ =
 	with_vm example_uuid
 		(fun id ->
@@ -263,19 +272,28 @@ let vm_test_reboot _ =
 			let state : Vm.state = Client.VM.stat rpc id |> success |> snd in
 			success (Client.DEBUG.trigger rpc "reboot" [ id ]);
 			(* ... need to wait for the domain id to change *)
-			let finished = ref false in
-			let event_id = ref None in
-			while not !finished do
-				let deltas, next_id = Client.UPDATES.get rpc !event_id |> success in
-				event_id := next_id;
-				List.iter
-					(function
-						| Dynamic.Vm_t (vm_t, vm_state) ->
-							if vm_t.Vm.id = id && vm_state.Vm.domids <> state.Vm.domids
-							then finished := true
-						| _ -> ()
-					) deltas;
-			done;
+			event_wait rpc
+				(function
+					| Dynamic.Vm_t (vm_t, vm_state) ->
+						vm_t.Vm.id = id && vm_state.Vm.domids <> state.Vm.domids
+					| _ -> false);
+			success (Client.VM.shutdown rpc id)
+		)
+
+let vm_test_halt _ =
+	with_vm example_uuid
+		(fun id ->
+			success (Client.VM.create rpc id);
+			success (Client.VM.build rpc id);
+			success (Client.VM.create_device_model rpc id);
+			success (Client.VM.unpause rpc id);
+			success (Client.DEBUG.trigger rpc "halt" [ id ]);
+			(* ... need to wait for the domain ids to disappear *)
+			event_wait rpc
+				(function
+					| Dynamic.Vm_t (vm_t, vm_state) ->
+						vm_t.Vm.id = id && vm_state.Vm.domids = []
+					| _ -> false);
 			success (Client.VM.shutdown rpc id)
 		)
 
@@ -501,6 +519,7 @@ let _ =
 			"vm_test_start_shutdown" >:: vm_test_start_shutdown;
 			"vm_test_consoles" >:: vm_test_consoles;
 			"vm_test_reboot" >:: vm_test_reboot;
+			"vm_test_halt" >:: vm_test_halt;
 			"vbd_test_add_remove" >:: VbdDeviceTests.add_remove;
 			"vbd_test_add_list_remove" >:: VbdDeviceTests.add_list_remove;
 			"vbd_test_add_vm_remove" >:: VbdDeviceTests.add_vm_remove;

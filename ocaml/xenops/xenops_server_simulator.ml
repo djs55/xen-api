@@ -106,9 +106,8 @@ let get_domain_action_request_nolock vm () =
 
 let destroy_nolock vm () =
 	let k = key_of vm in
-	if not(DB.exists k)
-	then raise (Exception Does_not_exist)
-	else DB.delete k
+	(* Idempotent *)
+	if DB.exists k then DB.delete k
 
 let build_nolock vm vbds vifs () =
 	let k = key_of vm in
@@ -249,6 +248,10 @@ module DEBUG = struct
 		| "reboot", k ->
 			let d = read k in
 			DB.write k { d with Domain.domain_action_request = Some Needs_reboot };
+			Updates.add (Dynamic.Vm (List.hd k)) updates
+		| "halt", k ->
+			let d = read k in
+			DB.write k { d with Domain.domain_action_request = Some Needs_poweroff };
 			Updates.add (Dynamic.Vm (List.hd k)) updates
 		| _ ->
 			debug "DEBUG.trigger cmd=%s Not_supported" cmd;
