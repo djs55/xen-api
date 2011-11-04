@@ -260,8 +260,23 @@ let vm_test_reboot _ =
 			success (Client.VM.build rpc id);
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
+			let state : Vm.state = Client.VM.stat rpc id |> success |> snd in
 			success (Client.DEBUG.trigger rpc "reboot" [ id ]);
-			(* ... need to wait for the event to be processed *)
+			(* ... need to wait for the domain id to change *)
+			let finished = ref false in
+			let event_id = ref None in
+			while not !finished do
+				let deltas, next_id = Client.UPDATES.get rpc !event_id |> success in
+				event_id := next_id;
+				List.iter
+					(function
+						| Dynamic.Vm_t (vm_t, vm_state) ->
+							if vm_t.Vm.id = id && vm_state.Vm.domids <> state.Vm.domids
+							then finished := true
+						| _ -> ()
+					) deltas;
+			done;
+			success (Client.VM.shutdown rpc id)
 		)
 
 let vm_test_suspend _ =

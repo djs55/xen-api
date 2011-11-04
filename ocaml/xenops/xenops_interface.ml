@@ -208,6 +208,10 @@ module Dynamic = struct
 		| Vm of Vm.id
 		| Vbd of Vbd.id
 		| Vif of Vif.id
+	type t =
+		| Vm_t of Vm.t * Vm.state
+		| Vbd_t of Vbd.t * Vbd.state
+		| Vif_t of Vif.t * Vif.state
 end
 
 module VM = struct
@@ -219,6 +223,7 @@ module VM = struct
 	external destroy: Vm.id -> (unit option) * (error option) = ""
 	external pause: Vm.id -> (unit option) * (error option) = ""
 	external unpause: Vm.id -> (unit option) * (error option) = ""
+	external stat: Vm.id -> ((Vm.t * Vm.state) option) * (error option) = ""
 	external list: unit -> ((Vm.t * Vm.state) list option) * (error option) = ""
 
 	external start: Vm.id -> (unit option) * (error option) = ""
@@ -231,6 +236,7 @@ module VBD = struct
 	external add: Vbd.t -> (Vbd.id option) * (error option) = ""
 	external plug: Vbd.id -> (unit option) * (error option) = ""
 	external unplug: Vbd.id -> (unit option) * (error option) = ""
+	external stat: Vbd.id -> ((Vbd.t * Vbd.state) option) * (error option) = ""
 	external list: Vm.id -> ((Vbd.t * Vbd.state) list option) * (error option) = ""
 	external remove: Vbd.id -> (unit option) * (error option) = ""
 end
@@ -239,8 +245,13 @@ module VIF = struct
 	external add: Vif.t -> (Vif.id option) * (error option) = ""
 	external plug: Vif.id -> (unit option) * (error option) = ""
 	external unplug: Vif.id -> (unit option) * (error option) = ""
+	external stat: Vif.id -> ((Vif.t * Vif.state) option) * (error option) = ""
 	external list: Vm.id -> ((Vif.t * Vif.state) list option) * (error option) = ""
 	external remove: Vif.id -> (unit option) * (error option) = ""
+end
+
+module UPDATES = struct
+	external get: int option -> (Dynamic.t list * int option) option * (error option) = "" 
 end
 
 module DEBUG = struct

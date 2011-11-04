@@ -42,6 +42,8 @@ let filter_prefix prefix xs =
 			then Some (String.sub x (String.length prefix) (String.length x - (String.length prefix)))
 			else None) xs
 
+let updates = Updates.empty ()
+
 module VBD = struct
 	open Vbd
 
@@ -71,6 +73,14 @@ module VBD = struct
 		if (B.VBD.get_state (vm_of id) (id |> key_of |> DB.read |> unbox)).Vbd.plugged
 		then raise (Exception Device_is_connected)
 		else return (DB.remove (key_of id))
+
+	let stat' id =
+		let module B = (val get_backend () : S) in
+		let vbd_t = id |> key_of |> DB.read |> unbox in
+		let state = B.VBD.get_state (vm_of id) vbd_t in
+		vbd_t, state
+	let stat _ id = return (stat' id)
+
 	let list _ vm =
 		debug "VBD.list";
 		let key_of' id = [ vm; "vbd." ^ id ] in
@@ -114,6 +124,14 @@ module VIF = struct
 		if (B.VIF.get_state (vm_of id) (id |> key_of |> DB.read |> unbox)).Vif.plugged
 		then raise (Exception Device_is_connected)
 		else return (DB.remove (key_of id))
+
+	let stat' id =
+		let module B = (val get_backend () : S) in
+		let vif_t = id |> key_of |> DB.read |> unbox in
+		let state = B.VIF.get_state (vm_of id) vif_t in
+		vif_t, state
+	let stat _ id = return (stat' id)
+
 	let list _ vm =
 		let key_of' id = [ vm; "vif." ^ id ] in
 		let vifs = DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone in
@@ -144,14 +162,18 @@ module VM = struct
 			| Halted ->
 				DB.remove [ id ];
 				return ()
+
+	let stat' x =
+		let module B = (val get_backend () : S) in
+		let vm_t = x |> key_of |> DB.read |> unbox in
+		let state = B.VM.get_state vm_t in
+		vm_t, state
+	let stat _ id = return (stat' id)
+
 	let list _ () =
 		debug "VM.list";
 		let module B = (val get_backend () : S) in
-		let ls = List.fold_left (fun acc x ->
-			let vm_t = x |> key_of |> DB.read |> unbox in
-			let state = B.VM.get_state vm_t in
-			(vm_t, state) :: acc
-		) [] (DB.list []) in
+		let ls = List.fold_left (fun acc x -> stat' x :: acc) [] (DB.list []) in
 		return ls
 
 	let create _ id =
@@ -195,7 +217,9 @@ module VM = struct
 		(* Unfortunately this has to be done after the devices have been created since
 		   qemu reads xenstore keys in preference to its own commandline. After this is
 		   fixed we can consider creating qemu as a part of the 'build' *)
-		create_device_model c id |> unwrap |> return
+		create_device_model c id |> unwrap;
+		Updates.add (Dynamic.Vm id) updates;
+		return ()
 
 	let shutdown c id =
 		debug "VM.shutdown %s" id;
@@ -221,6 +245,19 @@ module DEBUG = struct
 		B.DEBUG.trigger cmd args |> return
 end
 
+module UPDATES = struct
+	let lookup x =
+		let module B = (val get_backend () : S) in match x with
+			| Dynamic.Vm id -> let a, b = VM.stat' id in Dynamic.Vm_t (a, b)
+			| Dynamic.Vbd id -> let a, b = VBD.stat' id in Dynamic.Vbd_t (a, b)
+			| Dynamic.Vif id -> let a, b = VIF.stat' id in Dynamic.Vif_t (a, b)
+
+	let get _ last =
+		let ids, next = Updates.get last updates in
+		let ts = List.map lookup ids in
+		return (ts, next)
+end
+
 let internal_event_thread = ref None
 
 let internal_event_thread_body () =
@@ -234,11 +271,18 @@ let internal_event_thread_body () =
 		assert (updates <> []);
 		List.iter
 			(function
-				| Modify x ->
-					debug "Ignoring Modify %s" (Jsonrpc.to_string (Dynamic.rpc_of_id x))
-				| Delete x ->
-					debug "Ignoring Delete %s" (Jsonrpc.to_string (Dynamic.rpc_of_id x))
-			) updates;
+				| Dynamic.Vm_t (vm, state) ->
+					debug "Received an event on VM %s" vm.Vm.id;
+					begin match B.VM.get_domain_action_request vm with
+						| Some Needs_reboot ->
+							VM.shutdown () vm.Vm.id |> unwrap;
+							VM.start () vm.Vm.id |> unwrap
+						| _ ->
+							debug "Ignoring event on VM %s" vm.Vm.id
+					end
+				| x ->
+					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_t x))
+			) (List.map UPDATES.lookup updates);
 		id := next_id
 	done;
 	debug "Shutting down internal event thread"

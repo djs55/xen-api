@@ -22,7 +22,7 @@ module Domain = struct
 		domid: int;
 		uuid: string;
 		hvm: bool;
-		shutdown_reason: string option;
+		domain_action_request: domain_action_request option;
 		paused: bool;
 		built: bool;
 		qemu_created: bool;
@@ -76,7 +76,7 @@ let create_nolock vm () =
 			domid = next_domid ();
 			uuid = vm.Vm.id;
 			hvm = (match vm.Vm.ty with Vm.HVM _ -> true | _ -> false);
-			shutdown_reason = None;
+			domain_action_request = None;
 			paused = true;
 			built = false;
 			qemu_created = false;
@@ -96,6 +96,13 @@ let get_state_nolock vm () =
 			domids = [ d.Domain.domid ];
 		}
 	end else halted_vm
+
+let get_domain_action_request_nolock vm () =
+	let k = key_of vm in
+	if DB.exists k then begin
+		let d = read k in
+		d.Domain.domain_action_request
+	end else Some Needs_poweroff
 
 let destroy_nolock vm () =
 	let k = key_of vm in
@@ -214,6 +221,7 @@ module VM = struct
 	let resume vm disk = Mutex.execute m (resume_nolock vm disk)
 
 	let get_state vm = Mutex.execute m (get_state_nolock vm)
+	let get_domain_action_request vm = Mutex.execute m (get_domain_action_request_nolock vm)
 end
 
 module VBD = struct
@@ -240,9 +248,8 @@ module DEBUG = struct
 	let trigger cmd args = match cmd, args with
 		| "reboot", k ->
 			let d = read k in
-			DB.write k { d with Domain.shutdown_reason = Some "reboot" };
-			let (_: Updates.id) = Updates.add (Dynamic.Vm (List.hd k)) updates in
-			()
+			DB.write k { d with Domain.domain_action_request = Some Needs_reboot };
+			Updates.add (Dynamic.Vm (List.hd k)) updates
 		| _ ->
 			debug "DEBUG.trigger cmd=%s Not_supported" cmd;
 			raise (Exception Not_supported)

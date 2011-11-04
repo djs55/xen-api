@@ -446,6 +446,24 @@ module VM = struct
 						domids = [ d ];
 					}
 			)
+
+	let get_domain_action_request vm =
+		let uuid = uuid_of_vm vm in
+		with_xc_and_xs
+			(fun xc xs ->
+				match di_of_uuid ~xc ~xs uuid with
+					| None -> Some Needs_poweroff
+					| Some d ->
+						if d.Xenctrl.shutdown
+						then Some (match d.Xenctrl.shutdown_code with
+							| 0 -> Needs_poweroff
+							| 1 -> Needs_reboot
+							| 2 -> Needs_suspend
+							| 3 -> Needs_crashdump
+							| _ -> Needs_poweroff) (* unexpected *)
+						else None
+			)
+
 end
 
 let on_frontend f frontend =

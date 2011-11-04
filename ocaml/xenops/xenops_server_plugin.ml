@@ -14,10 +14,6 @@
 
 open Xenops_interface
 
-type 'a update =
-	| Modify of 'a
-	| Delete of 'a
-
 module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 	(* Map of thing -> last update counter *)
 	module M = Map.Make(struct
@@ -52,7 +48,7 @@ module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 	let get from t =
 		(* XXX: events for deleted things *)
 		let before, after = M.partition (fun _ time -> time < from) t.map in
-		let xs, last = M.fold (fun key v (acc, m) -> Modify key :: acc, max m v) after ([], from) in
+		let xs, last = M.fold (fun key v (acc, m) -> key :: acc, max m v) after ([], from) in
 		xs, last + 1
 end
 
@@ -92,8 +88,7 @@ module Updates = struct
 			(fun () ->
 				let result, id = U.add x t.u in
 				t.u <- result;
-				Condition.signal t.c;
-				id
+				Condition.signal t.c
 			)
 
 	let remove x t =
@@ -101,10 +96,16 @@ module Updates = struct
 			(fun () ->
 				let result, id = U.remove x t.u in
 				t.u <- result;
-				Condition.signal t.c;
-				id
+				Condition.signal t.c
 			)
 end
+
+type domain_action_request =
+	| Needs_poweroff
+	| Needs_reboot
+	| Needs_suspend
+	| Needs_crashdump	
+with rpc
 
 module type S = sig
 	module VM : sig
@@ -119,6 +120,8 @@ module type S = sig
 		val resume: Vm.t -> disk -> unit
 
 		val get_state: Vm.t -> Vm.state
+
+		val get_domain_action_request: Vm.t -> domain_action_request option
 	end
 	module VBD : sig
 		val plug: Vm.id -> Vbd.t -> unit
@@ -133,7 +136,7 @@ module type S = sig
 		val get_state: Vm.id -> Vif.t -> Vif.state
 	end
 	module UPDATES : sig
-		val get: Updates.id option -> Dynamic.id update list * Updates.id option
+		val get: Updates.id option -> Dynamic.id list * Updates.id option
 	end
 	module DEBUG : sig
 		val trigger: string -> string list -> unit
