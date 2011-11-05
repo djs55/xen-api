@@ -237,6 +237,11 @@ let unpause x =
 	let vm, _ = find_by_name x in
 	success (Client.VM.unpause rpc vm.id)
 
+let reboot x =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	success (Client.VM.reboot rpc vm.id)
+
 let _ =
 	match List.tl (Array.to_list Sys.argv) with
 		| [ "help" ] | [] ->
@@ -256,6 +261,8 @@ let _ =
 			unpause id
 		| [ "shutdown"; id ] ->
 			shutdown id
+		| [ "reboot"; id ] ->
+			reboot id
 		| cmd :: _ ->
 			Printf.fprintf stderr "Unrecognised command: %s\n" cmd;
 			usage ();

@@ -255,6 +255,15 @@ module VM = struct
 		Updates.add (Dynamic.Vm id) updates;
 		return ()
 
+	let reboot' id =
+		shutdown' id;
+		start' id
+
+	let reboot _ id =
+		reboot' id;
+		Updates.add (Dynamic.Vm id) updates;
+		return ()
+
 	let suspend _ id disk =
 		debug "VM.suspend %s" id;
 		let module B = (val get_backend () : S) in
@@ -314,8 +323,7 @@ let internal_event_thread_body () =
 							| Vm.Shutdown ->
 								VM.shutdown () vm.Vm.id |> unwrap
 							| Vm.Start ->
-								VM.shutdown () vm.Vm.id |> unwrap;
-								VM.start () vm.Vm.id |> unwrap
+								VM.reboot () vm.Vm.id |> unwrap;
 							| Vm.Delay ->
 								debug "Vm.Delay unimplemented"
 						) actions

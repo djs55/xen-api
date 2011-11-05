@@ -237,6 +237,7 @@ module VM = struct
 
 	external start: Vm.id -> (unit option) * (error option) = ""
 	external shutdown: Vm.id -> (unit option) * (error option) = ""
+	external reboot: Vm.id -> (unit option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (unit option) * (error option) = ""
 	external resume: Vm.id -> disk -> (unit option) * (error option) = ""
 end
