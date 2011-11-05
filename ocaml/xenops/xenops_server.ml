@@ -59,14 +59,16 @@ module VBD = struct
 		debug "VBD.add %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
 		DB.add (key_of x.id) x;
 		return x.id
-	let plug _ id =
+	let plug' id =
 		debug "VBD.plug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		B.VBD.plug (vm_of id) (id |> key_of |> DB.read |> unbox) |> return
-	let unplug _ id =
+		B.VBD.plug (vm_of id) (id |> key_of |> DB.read |> unbox)
+	let plug _ id = plug' id |> return
+	let unplug' id =
 		debug "VBD.unplug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		B.VBD.unplug (vm_of id) (id |> key_of |> DB.read |> unbox) |> return
+		B.VBD.unplug (vm_of id) (id |> key_of |> DB.read |> unbox)
+	let unplug _ id = unplug' id |> return
 	let remove _ id =
 		debug "VBD.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
@@ -81,13 +83,15 @@ module VBD = struct
 		vbd_t, state
 	let stat _ id = return (stat' id)
 
-	let list _ vm =
+	let list' vm =
 		debug "VBD.list";
 		let key_of' id = [ vm; "vbd." ^ id ] in
 		let vbds = DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of')) |> dropnone in
 		let module B = (val get_backend () : S) in
 		let states = List.map (B.VBD.get_state vm) vbds in
-		return (List.combine vbds states)
+		List.combine vbds states
+
+	let list _ vm = list' vm |> return
 end
 
 module VIF = struct
@@ -110,14 +114,16 @@ module VIF = struct
 			| mac -> mac in
 		DB.add (key_of x.id) { x with mac = mac };
 		return x.id
-	let plug _ id =
+	let plug' id =
 		debug "VIF.plug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		B.VIF.plug (vm_of id) (id |> key_of |> DB.read |> unbox) |> return
-	let unplug _ id =
+		B.VIF.plug (vm_of id) (id |> key_of |> DB.read |> unbox)
+	let plug _ id = plug' id |> return
+	let unplug' id =
 		debug "VIF.unplug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		B.VIF.unplug (vm_of id) (id |> key_of |> DB.read |> unbox) |> return
+		B.VIF.unplug (vm_of id) (id |> key_of |> DB.read |> unbox)
+	let unplug _ id = unplug' id |> return
 	let remove _ id =
 		debug "VIF.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
@@ -132,12 +138,14 @@ module VIF = struct
 		vif_t, state
 	let stat _ id = return (stat' id)
 
-	let list _ vm =
+	let list' vm =
 		let key_of' id = [ vm; "vif." ^ id ] in
 		let vifs = DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone in
 		let module B = (val get_backend () : S) in
 		let states = List.map (B.VIF.get_state vm) vifs in
-		return (List.combine vifs states)
+		List.combine vifs states
+
+	let list _ vm = list' vm |> return
 end
 
 module VM = struct
@@ -176,56 +184,74 @@ module VM = struct
 		let ls = List.fold_left (fun acc x -> stat' x :: acc) [] (DB.list []) in
 		return ls
 
-	let create _ id =
+	let create' id =
 		debug "VM.create %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.create (id |> key_of |> DB.read |> unbox) |> return
+		B.VM.create (id |> key_of |> DB.read |> unbox)
 
-	let build c id =
+	let create _ id = create' id |> return
+
+	let build' id =
 		debug "VM.build %s" id;
 		let module B = (val get_backend () : S) in
-		let vbds : Vbd.t list = VBD.list c id |> unwrap |> List.map fst in
-		let vifs : Vif.t list = VIF.list c id |> unwrap |> List.map fst in
-		B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs |> return
+		let vbds : Vbd.t list = VBD.list' id |> List.map fst in
+		let vifs : Vif.t list = VIF.list' id |> List.map fst in
+		B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs
 
-	let create_device_model c id =
+	let build _ id = build' id |> return
+
+	let create_device_model' id =
 		debug "VM.create_device_model %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.create_device_model (id |> key_of |> DB.read |> unbox) |> return
+		B.VM.create_device_model (id |> key_of |> DB.read |> unbox)
 
-	let destroy _ id =
+	let create_device_model _ id = create_device_model' id |> return
+
+	let destroy' id =
 		debug "VM.destroy %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.destroy (id |> key_of |> DB.read |> unbox) |> return
+		B.VM.destroy (id |> key_of |> DB.read |> unbox)
 
-	let pause _ id =
+	let destroy _ id = destroy' id |> return
+
+	let pause' id =
 		debug "VM.pause %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.pause (id |> key_of |> DB.read |> unbox) |> return
+		B.VM.pause (id |> key_of |> DB.read |> unbox)
 
-	let unpause _ id =
+	let pause _ id = pause' id |> return
+
+	let unpause' id =
 		debug "VM.unpause %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.unpause (id |> key_of |> DB.read |> unbox) |> return
+		B.VM.unpause (id |> key_of |> DB.read |> unbox)
 
-	let start c id =
+	let unpause _ id = unpause' id |> return
+
+	let start' id =
 		debug "VM.start %s" id;
-		create c id |> unwrap;
-		build c id |> unwrap;
-		List.iter (fun vbd -> VBD.plug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap |> List.map fst);
-		List.iter (fun vif -> VIF.plug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap |> List.map fst);
+		create' id;
+		build' id;
+		List.iter (fun vbd -> VBD.plug' vbd.Vbd.id) (VBD.list' id |> List.map fst);
+		List.iter (fun vif -> VIF.plug' vif.Vif.id) (VIF.list' id |> List.map fst);
 		(* Unfortunately this has to be done after the devices have been created since
 		   qemu reads xenstore keys in preference to its own commandline. After this is
 		   fixed we can consider creating qemu as a part of the 'build' *)
-		create_device_model c id |> unwrap;
+		create_device_model' id
+
+	let start _ id =
+		start' id;
 		Updates.add (Dynamic.Vm id) updates;
 		return ()
 
-	let shutdown c id =
+	let shutdown' id =
 		debug "VM.shutdown %s" id;
-		destroy c id |> unwrap;
-		List.iter (fun vbd -> VBD.unplug c vbd.Vbd.id |> unwrap) (VBD.list c id |> unwrap |> List.map fst);
-		List.iter (fun vif -> VIF.unplug c vif.Vif.id |> unwrap) (VIF.list c id |> unwrap |> List.map fst);
+		destroy' id;
+		List.iter (fun vbd -> VBD.unplug' vbd.Vbd.id) (VBD.list' id |> List.map fst);
+		List.iter (fun vif -> VIF.unplug' vif.Vif.id) (VIF.list' id |> List.map fst)
+
+	let shutdown _ id =
+		shutdown' id;
 		Updates.add (Dynamic.Vm id) updates;
 		return ()
 
