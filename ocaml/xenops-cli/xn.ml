@@ -94,7 +94,15 @@ let add filename =
 				name = name;
 				ssidref = 0l;
 				xsdata = [];
-				platformdata = [];
+				platformdata = [ (* HVM defaults *)
+					"nx", "false";
+					"acpi", "true";
+					"apic", "true";
+					"pae", "true";
+					"viridian", "true";
+					"vcpu/number", "1";
+					"vcpu/current", "1";
+				];
 				bios_strings = [];
 				ty = builder_info;
 				suppress_spurious_page_faults = false;
