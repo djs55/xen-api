@@ -432,7 +432,25 @@ module VM = struct
 
 	let create_device_model vm = on_domain (create_device_model_exn vm) vm
 
-	let suspend vm disk = raise (Exception Unimplemented)
+	let suspend vm disk =
+		on_domain
+			(fun xc xs vm di ->
+				let hvm = di.Xenctrl.hvm_guest in
+				let domid = di.Xenctrl.domid in
+				with_disk ~xc ~xs disk
+					(fun path ->
+						(* Make a filesystem on the disk later *)
+						(* Do we really want to balloon the guest down? *)
+						Unixext.with_file path [ Unix.O_WRONLY ] 0o644
+							(fun fd ->
+								Domain.suspend ~xc ~xs ~hvm domid fd []
+									(fun () ->
+										raise (Exception Unimplemented)
+										(* clean_shutdown *)
+									)
+							)
+					)
+			) vm
 	let resume vm disk = raise (Exception Unimplemented)
 
 	let get_state vm =
