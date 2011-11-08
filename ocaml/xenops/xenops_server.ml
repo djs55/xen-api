@@ -279,7 +279,8 @@ module VM = struct
 
 	let reboot' id =
 		shutdown' id;
-		start' id
+		start' id;
+		unpause' id
 
 	let reboot _ id =
 		reboot' id;
@@ -305,14 +306,18 @@ end
 
 module UPDATES = struct
 	let lookup x =
-		let module B = (val get_backend () : S) in match x with
-			| Dynamic.Vm id -> let a, b = VM.stat' id in Dynamic.Vm_t (a, b)
-			| Dynamic.Vbd id -> let a, b = VBD.stat' id in Dynamic.Vbd_t (a, b)
-			| Dynamic.Vif id -> let a, b = VIF.stat' id in Dynamic.Vif_t (a, b)
+		let module B = (val get_backend () : S) in
+		try
+			Some (match x with
+				| Dynamic.Vm id -> let a, b = VM.stat' id in Dynamic.Vm_t (a, b)
+				| Dynamic.Vbd id -> let a, b = VBD.stat' id in Dynamic.Vbd_t (a, b)
+				| Dynamic.Vif id -> let a, b = VIF.stat' id in Dynamic.Vif_t (a, b)
+			)
+		with Exception Does_not_exist -> None
 
 	let get _ last =
 		let ids, next = Updates.get last updates in
-		let ts = List.map lookup ids in
+		let ts = List.filter_map lookup ids in
 		return (ts, next)
 end
 
@@ -329,8 +334,10 @@ let internal_event_thread_body () =
 		assert (updates <> []);
 		List.iter
 			(function
-				| Dynamic.Vm_t (vm, state) ->
-					debug "Received an event on VM %s" vm.Vm.id;
+				| Dynamic.Vm id, None ->
+					debug "Ignoring event on unmanaged VM: %s" id
+				| Dynamic.Vm id, Some (Dynamic.Vm_t (vm, state)) ->
+					debug "Received an event on managed VM %s" vm.Vm.id;
 					let actions = match B.VM.get_domain_action_request vm with
 						| Some Needs_reboot -> vm.Vm.on_reboot
 						| Some Needs_poweroff -> vm.Vm.on_shutdown
@@ -349,9 +356,9 @@ let internal_event_thread_body () =
 							| Vm.Delay ->
 								debug "Vm.Delay unimplemented"
 						) actions
-				| x ->
-					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_t x))
-			) (List.map UPDATES.lookup updates);
+				| id, _ ->
+					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_id id))
+			) (List.combine updates (List.map UPDATES.lookup updates));
 		id := next_id
 	done;
 	debug "Shutting down internal event thread"
@@ -359,4 +366,6 @@ let internal_event_thread_body () =
 let set_backend m =
 	backend := m;
 	(* start the internal event thread *)
-	internal_event_thread := Some (Thread.create internal_event_thread_body ())
+	internal_event_thread := Some (Thread.create internal_event_thread_body ());
+	let module B = (val get_backend () : S) in
+	B.init ()

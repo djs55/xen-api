@@ -261,3 +261,5 @@ module DEBUG = struct
 			debug "DEBUG.trigger cmd=%s Not_supported" cmd;
 			raise (Exception Not_supported)
 end
+
+let init () = ()

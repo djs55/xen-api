@@ -108,6 +108,7 @@ type domain_action_request =
 with rpc
 
 module type S = sig
+	val init: unit -> unit
 	module VM : sig
 		val create: Vm.t -> unit
 		val build: Vm.t -> Vbd.t list -> Vif.t list -> unit

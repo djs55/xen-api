@@ -675,6 +675,66 @@ module UPDATES = struct
 	let get last = Updates.get last updates
 end
 
+let _introduceDomain = "@introduceDomain"
+let _releaseDomain = "@releaseDomain"
+
+module StringMap = Map.Make(struct type t = string let compare = compare end)
+
+let list_domains xc =
+	let dis = Xenctrl.domain_getinfolist xc 0 in
+	let ids = List.map (fun x -> Uuid.uuid_of_int_array x.Xenctrl.handle |> Uuid.string_of_uuid) dis in
+	List.fold_left (fun map (k, v) -> StringMap.add k v map) StringMap.empty (List.combine ids dis)
+
+let domain_looks_different a b = match a, b with
+	| None, Some _ -> true
+	| Some _, None -> true
+	| None, None -> false
+	| Some a', Some b' ->
+		a'.Xenctrl.shutdown <> b'.Xenctrl.shutdown
+		|| (a'.Xenctrl.shutdown && b'.Xenctrl.shutdown && (a'.Xenctrl.shutdown_code <> b'.Xenctrl.shutdown_code))
+
+let list_different_domains a b =
+	let c = StringMap.merge (fun _ a b -> if domain_looks_different a b then Some () else None) a b in
+	List.map fst (StringMap.bindings c)
+
+let watch_xenstore () =
+	with_xc_and_xs
+		(fun xc xs ->
+
+			let domains = ref StringMap.empty in
+			let look_for_different_domains () =
+				let domains' = list_domains xc in
+				let different = list_different_domains !domains domains' in
+				if different <> []
+				then debug "The following domains have changed state: %s" (String.concat "; " different);
+				List.iter (fun id -> Updates.add (Dynamic.Vm id) updates) different;
+				domains := domains' in
+
+			xs.Xs.watch _introduceDomain "";
+			xs.Xs.watch _releaseDomain "";
+			look_for_different_domains ();
+
+			while true do
+				let path, _ =
+					if Xs.has_watchevents xs
+					then Xs.get_watchevent xs
+					else Xs.read_watchevent xs in
+				if path = _introduceDomain || path = _releaseDomain
+				then look_for_different_domains ()
+			done
+		)
+
+let init () =
+	let (_: Thread.t) = Thread.create
+		(fun () ->
+			try
+				watch_xenstore ();
+				debug "watch_xenstore thread exitted"
+			with e ->
+				debug "watch_xenstore thread raised: %s" (Printexc.to_string e)
+		) () in
+	()
+
 module DEBUG = struct
 	let trigger cmd args = match cmd, args with
 		| "reboot", [ k ] ->
