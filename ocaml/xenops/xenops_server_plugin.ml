@@ -126,6 +126,8 @@ module type S = sig
 	module VBD : sig
 		val plug: Vm.id -> Vbd.t -> unit
 		val unplug: Vm.id -> Vbd.t -> unit
+		val insert: Vm.id -> Vbd.t -> disk -> unit
+		val eject: Vm.id -> Vbd.t -> unit
 
 		val get_state: Vm.id -> Vbd.t -> Vbd.state
 	end

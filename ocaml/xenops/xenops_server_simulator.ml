@@ -167,10 +167,11 @@ let vbd_state vm vbd () =
 		let d = read k in
 		let this_one x = x.Vbd.id = vbd.Vbd.id in
 		match List.filter this_one d.Domain.vbds with
-			| [ domain ] ->
+			| [ vbd ] ->
 				{
 					unplugged_vbd with
 						Vbd.plugged = true;
+						media_present = vbd.Vbd.backend <> None
 				}
 			| [] -> unplugged_vbd
 			| _ -> assert false (* at most one *)
@@ -226,6 +227,9 @@ end
 module VBD = struct
 	let plug (vm: Vm.id) (vbd: Vbd.t) = Mutex.execute m (add_vbd vm vbd)
 	let unplug vm vbd = Mutex.execute m (remove_vbd vm vbd)
+
+	let insert vm vbd disk = ()
+	let eject vm vbd = ()
 
 	let get_state vm vbd = Mutex.execute m (vbd_state vm vbd)
 end

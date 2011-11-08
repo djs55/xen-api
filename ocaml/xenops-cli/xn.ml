@@ -111,9 +111,9 @@ let add filename =
 			let disks = if mem _disk then find _disk |> list string else [] in
 			let parse_disk x = match String.split ',' x with
 				| [ source; device_number; rw ] ->
-					let ty, device_number' = match String.split ':' device_number with
-						| [ x ] -> Vbd.Disk, Device_number.of_string false x
-						| [ x; "cdrom" ] -> Vbd.CDROM, Device_number.of_string false x
+					let ty, device_number, device_number' = match String.split ':' device_number with
+						| [ x ] -> Vbd.Disk, x, Device_number.of_string false x
+						| [ x; "cdrom" ] -> Vbd.CDROM, x, Device_number.of_string false x
 						| _ ->
 							Printf.fprintf stderr "Failed to understand disk name '%s'. It should be 'xvda' or 'hda:cdrom'\n" device_number;
 							exit 2 in
@@ -146,7 +146,7 @@ let add filename =
 					exit 2 in
 			let one x = x |> parse_disk |> Client.VBD.add rpc |> success in
 			let (_: Vbd.id list) = List.map one disks in
-			let vifs = if mem _disk then find _vif |> list string else [] in
+			let vifs = if mem _vif then find _vif |> list string else [] in
 			let vifs = List.combine vifs (Range.to_list (Range.make 0 (List.length vifs))) in
 			let parse_vif (x, idx) =
 				let xs = List.filter (fun x -> x <> "") (List.map (String.strip String.isspace) (String.split ',' x)) in
@@ -242,6 +242,54 @@ let reboot x =
 	let vm, _ = find_by_name x in
 	success (Client.VM.reboot rpc vm.id)
 
+let trim limit str =
+	let l = String.length str in
+	if l < limit then str
+	else
+		"..." ^ (String.sub str (l - limit + 3) (limit - 3))
+
+let vbd_list x =
+	let vm, _ = find_by_name x in
+	let vbds = success (Client.VBD.list rpc vm.Vm.id) in
+	let line id position mode ty plugged disk =
+		Printf.sprintf "%-10s %-8s %-4s %-5s %-7s %s" id position mode ty plugged disk in
+	let header = line "id" "position" "mode" "type" "plugged" "disk" in
+	let lines = List.map
+		(fun (vbd, state) ->
+			let id = snd vbd.Vbd.id in
+			let position = Opt.default "None" (Opt.map Device_number.to_linux_device vbd.Vbd.position) in
+			let mode = if vbd.Vbd.mode = Vbd.ReadOnly then "RO" else "RW" in
+			let ty = match vbd.Vbd.ty with Vbd.CDROM -> "CDROM" | Vbd.Disk -> "HDD" in
+			let plugged = if state.Vbd.plugged then "X" else " " in
+			let disk = Opt.default "" (Opt.map (function Local x -> x | Blkback(domid, params) -> Printf.sprintf "%s:%s" domid params) vbd.Vbd.backend) |> trim 32 in
+			line id position mode ty plugged disk
+		) vbds in
+	List.iter print_endline (header :: lines)
+
+let find_vbd id =
+	let vbd_id : Vbd.id = match String.split ~limit:2 '.' id with
+		| [ a; b ] -> a, b
+		| _ ->
+			Printf.fprintf stderr "Failed to parse VBD id: %s (expected VM.device)\n" id;
+			exit 1 in
+	let vm_id = fst vbd_id in
+	let vm, _ = find_by_name vm_id in
+	let vbds = success (Client.VBD.list rpc vm.Vm.id) in
+	let this_one (y, _) = snd y.Vbd.id = snd vbd_id in
+	try
+		List.find this_one vbds
+	with Not_found ->
+		Printf.fprintf stderr "Failed to find VBD: %s\n" id;
+		exit 1
+
+let cd_eject id =
+	let vbd, _ = find_vbd id in
+	success (Client.VBD.eject rpc vbd.Vbd.id)
+
+let cd_insert id disk =
+	let vbd, _ = find_vbd id in
+	success (Client.VBD.insert rpc vbd.Vbd.id (Local disk))
+
 let _ =
 	match List.tl (Array.to_list Sys.argv) with
 		| [ "help" ] | [] ->
@@ -263,6 +311,12 @@ let _ =
 			shutdown id
 		| [ "reboot"; id ] ->
 			reboot id
+		| [ "vbd-list"; id ] ->
+			vbd_list id
+		| [ "cd-insert"; id; disk ] ->
+			cd_insert id disk
+		| [ "cd-eject"; id ] ->
+			cd_eject id
 		| cmd :: _ ->
 			Printf.fprintf stderr "Unrecognised command: %s\n" cmd;
 			usage ();

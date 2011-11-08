@@ -34,6 +34,8 @@ type error =
 	| Bad_power_state of power_state * power_state
 	| Device_is_connected
 	| Device_not_connected
+	| Media_present
+	| Media_not_present
 	| No_bootable_device
 	| Bootloader_error of string * (string list)
 	| Ballooning_error of string * string
@@ -246,6 +248,8 @@ module VBD = struct
 	external add: Vbd.t -> (Vbd.id option) * (error option) = ""
 	external plug: Vbd.id -> (unit option) * (error option) = ""
 	external unplug: Vbd.id -> (unit option) * (error option) = ""
+	external eject: Vbd.id -> (unit option) * (error option) = ""
+	external insert: Vbd.id -> disk -> (unit option) * (error option) = ""
 	external stat: Vbd.id -> ((Vbd.t * Vbd.state) option) * (error option) = ""
 	external list: Vm.id -> ((Vbd.t * Vbd.state) list option) * (error option) = ""
 	external remove: Vbd.id -> (unit option) * (error option) = ""

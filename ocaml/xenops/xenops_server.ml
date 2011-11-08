@@ -61,14 +61,36 @@ module VBD = struct
 		return x.id
 	let plug' id =
 		debug "VBD.plug %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		B.VBD.plug (vm_of id) (id |> key_of |> DB.read |> unbox)
+		let module B = (val get_backend () : S) in	
+	B.VBD.plug (vm_of id) (id |> key_of |> DB.read |> unbox)
 	let plug _ id = plug' id |> return
 	let unplug' id =
 		debug "VBD.unplug %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
 		B.VBD.unplug (vm_of id) (id |> key_of |> DB.read |> unbox)
 	let unplug _ id = unplug' id |> return
+	let insert' id disk =
+		debug "VBD.insert %s" (string_of_id id);
+		let module B = (val get_backend () : S) in
+		let vbd_t = id |> key_of |> DB.read |> unbox in
+		let state = B.VBD.get_state (vm_of id) vbd_t in
+		if state.Vbd.media_present
+		then raise (Exception Media_present)
+		else begin
+			B.VBD.insert (vm_of id) vbd_t disk;
+			DB.write (key_of id) { vbd_t with Vbd.backend = Some disk };
+		end
+	let insert _ id disk = insert' id disk |> return
+	let eject' id =
+		debug "VBD.eject %s" (string_of_id id);
+		let module B = (val get_backend () : S) in
+		let vbd_t = id |> key_of |> DB.read |> unbox in
+		let state = B.VBD.get_state (vm_of id) vbd_t in
+		if state.Vbd.media_present then begin
+			B.VBD.eject (vm_of id) vbd_t;
+			DB.write (key_of id) { vbd_t with Vbd.backend = None }
+		end else raise (Exception Media_not_present)
+	let eject _ id = eject' id |> return
 	let remove _ id =
 		debug "VBD.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in

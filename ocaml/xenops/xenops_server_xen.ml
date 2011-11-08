@@ -506,17 +506,19 @@ module VBD = struct
 			| Some (Local _) -> this_domid ~xs
 			| Some (Blkback (vm, _)) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
 
-	let params_of xc xs vbd =
-		match vbd.backend with
-			| None -> ""
-			| Some (Local path) -> path
-			| Some (Blkback (_, params)) -> params
+	let params_of = function
+		| None -> ""
+		| Some (Local path) -> path
+		| Some (Blkback (_, params)) -> params
 
-	let plug_exn vm vbd =
+	let device_number_of_device d =
+		Device_number.of_xenstore_key d.Device_common.frontend.Device_common.devid
+
+	let plug vm vbd =
 		on_frontend
 			(fun xc xs frontend_domid hvm ->
 				let backend_domid = backend_domid_of xc xs vbd in
-				let params = params_of xc xs vbd in
+				let params = params_of vbd.backend in
 				(* Remember the VBD id with the device *)
 				let id = _device_id Device_common.Vbd, id_of vbd in
 				let x = {
@@ -542,9 +544,7 @@ module VBD = struct
 				()
 			) vm
 
-	let plug vm = plug_exn vm
-
-	let unplug_exn vm vbd =
+	let unplug vm vbd =
 		with_xc_and_xs
 			(fun xc xs ->
 				try
@@ -556,7 +556,25 @@ module VBD = struct
 					debug "Ignoring missing device: %s" (id_of vbd)
 			)
 
-	let unplug vm = unplug_exn vm
+	let insert vm vbd disk =
+		with_xc_and_xs
+			(fun xc xs ->
+				let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+				let device_number = device_number_of_device d in
+				let params = params_of (Some disk) in
+				let phystype = Device.Vbd.Phys in
+				let domid = d.Device_common.frontend.Device_common.domid in
+				Device.Vbd.media_insert ~xs ~device_number ~params ~phystype domid
+			)
+
+	let eject vm vbd =
+		with_xc_and_xs
+			(fun xc xs ->
+				let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+				let device_number = device_number_of_device d in
+				let domid = d.Device_common.frontend.Device_common.domid in
+				Device.Vbd.media_eject ~xs ~device_number domid
+			)
 
 	let get_state vm vbd =
 		with_xc_and_xs
@@ -566,9 +584,12 @@ module VBD = struct
 					let path = Device_common.kthread_pid_path_of_device ~xs d in
 					let kthread_pid = try xs.Xs.read path |> int_of_string with _ -> 0 in
 					let plugged = Hotplug.device_is_online ~xs d in
+					let device_number = device_number_of_device d in
+					let domid = d.Device_common.frontend.Device_common.domid in
+					let ejected = Device.Vbd.media_is_ejected ~xs ~device_number domid in
 					{
 						Vbd.plugged = plugged;
-						media_present = plugged;
+						media_present = not ejected;
 						kthread_pid = kthread_pid
 					}
 				with
