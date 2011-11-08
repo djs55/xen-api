@@ -676,5 +676,26 @@ module UPDATES = struct
 end
 
 module DEBUG = struct
-	let trigger _ _ = raise (Exception Not_supported)
+	let trigger cmd args = match cmd, args with
+		| "reboot", [ k ] ->
+			let uuid = Uuid.uuid_of_string k in
+			with_xc_and_xs
+				(fun xc xs ->
+					match di_of_uuid ~xc ~xs uuid with
+						| None -> raise (Exception Does_not_exist)			
+						| Some di ->
+							Xenctrl.domain_shutdown xc di.Xenctrl.domid Xenctrl.Reboot
+				)
+		| "halt", [ k ] ->
+			let uuid = Uuid.uuid_of_string k in
+			with_xc_and_xs
+				(fun xc xs ->
+					match di_of_uuid ~xc ~xs uuid with
+						| None -> raise (Exception Does_not_exist)			
+						| Some di ->
+							Xenctrl.domain_shutdown xc di.Xenctrl.domid Xenctrl.Halt
+				)
+		| _ ->
+			debug "DEBUG.trigger cmd=%s Not_supported" cmd;
+			raise (Exception Not_supported)
 end
