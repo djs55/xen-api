@@ -40,6 +40,28 @@ module DB = TypedTable(struct
 	let namespace = "extra"
 end)
 
+(* Used to signal when work needs to be done on a VM *)
+let updates = Updates.empty ()
+
+(* When a VM is being operated on by a thread (e.g. VM.suspend) we
+   record this here to prevent the event thread interfering. When
+   the active thread terminates it should re-signal so the event
+   thread performs any cleanup required. *)
+module Current_vm_operations = struct
+	let t = Hashtbl.create 10
+	let m = Mutex.create ()
+
+	let exclude_event_thread vm message f =
+		Mutex.execute m (fun () -> Hashtbl.replace t vm message);
+		finally f
+			(fun () ->
+				Mutex.execute m (fun () -> Hashtbl.remove t vm);
+				Updates.add (Dynamic.Vm vm) updates
+			)
+	let excluded_reason vm =
+		Mutex.execute m (fun () -> if Hashtbl.mem t vm then Some (Hashtbl.find t vm) else None)
+end
+
 let this_domid ~xs = int_of_string (xs.Xs.read "domid")
 
 let uuid_of_vm vm = Uuid.uuid_of_string vm.Vm.id
@@ -433,24 +455,27 @@ module VM = struct
 	let create_device_model vm = on_domain (create_device_model_exn vm) vm
 
 	let suspend vm disk =
-		on_domain
-			(fun xc xs vm di ->
-				let hvm = di.Xenctrl.hvm_guest in
-				let domid = di.Xenctrl.domid in
-				with_disk ~xc ~xs disk
-					(fun path ->
-						(* Make a filesystem on the disk later *)
-						(* Do we really want to balloon the guest down? *)
-						Unixext.with_file path [ Unix.O_WRONLY ] 0o644
-							(fun fd ->
-								Domain.suspend ~xc ~xs ~hvm domid fd []
-									(fun () ->
-										raise (Exception Unimplemented)
-										(* clean_shutdown *)
+		Current_vm_operations.exclude_event_thread vm.Vm.id "suspend"
+			(fun () ->
+				on_domain
+					(fun xc xs vm di ->
+						let hvm = di.Xenctrl.hvm_guest in
+						let domid = di.Xenctrl.domid in
+						with_disk ~xc ~xs disk
+							(fun path ->
+								(* Make a filesystem on the disk later *)
+								(* Do we really want to balloon the guest down? *)
+								Unixext.with_file path [ Unix.O_WRONLY ] 0o644
+									(fun fd ->
+										Domain.suspend ~xc ~xs ~hvm domid fd []
+											(fun () ->
+												raise (Exception Unimplemented)
+													(* clean_shutdown *)
+											)
 									)
 							)
-					)
-			) vm
+					) vm
+			)
 	let resume vm disk = raise (Exception Unimplemented)
 
 	let get_state vm =
@@ -687,8 +712,6 @@ module VIF = struct
 
 end
 
-let updates = Updates.empty ()
-
 module UPDATES = struct
 	let get last = Updates.get last updates
 end
@@ -723,9 +746,13 @@ let watch_xenstore () =
 			let look_for_different_domains () =
 				let domains' = list_domains xc in
 				let different = list_different_domains !domains domains' in
-				if different <> []
-				then debug "The following domains have changed state: %s" (String.concat "; " different);
-				List.iter (fun id -> Updates.add (Dynamic.Vm id) updates) different;
+				List.iter
+					(fun id ->
+						let excluded = Current_vm_operations.excluded_reason id in
+						debug "Domain %s has changed state%s" id (Opt.default "" (Opt.map (fun x -> "but this is being handled by another operation: " ^ x) excluded));
+						if excluded = None
+						then Updates.add (Dynamic.Vm id) updates
+					) different;
 				domains := domains' in
 
 			xs.Xs.watch _introduceDomain "";
