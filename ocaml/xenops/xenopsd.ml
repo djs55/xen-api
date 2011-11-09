@@ -93,6 +93,7 @@ let _ =
 	  else (module Xenops_server_xen: Xenops_server_plugin.S)));
 
   start path Server.process;
+  Xenops_server_plugin.Scheduler.start ();
   while true do
 	  Thread.delay 60.
   done

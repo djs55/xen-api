@@ -263,7 +263,7 @@ let event_wait rpc p =
 	let finished = ref false in
 	let event_id = ref None in
 	while not !finished do
-		let deltas, next_id = Client.UPDATES.get rpc !event_id |> success in
+		let deltas, next_id = Client.UPDATES.get rpc !event_id (Some 30) |> success in
 		event_id := next_id;
 		List.iter (fun d -> if p d then finished := true) deltas;
 	done

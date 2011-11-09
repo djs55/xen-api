@@ -37,6 +37,8 @@ module DB = TypedTable(struct
 	let namespace = "domain"
 end)
 
+let updates = Updates.empty ()
+
 let next_domid =
 	let next = ref None in (* unknown *)
 	let get_next =
@@ -117,6 +119,17 @@ let build_nolock vm vbds vifs () =
 let create_device_model_nolock vm () =
 	let k = key_of vm in
 	DB.write k { read k with Domain.qemu_created = true }
+
+let request_shutdown_nolock vm reason () =
+	let k = key_of vm in
+	DB.write k { read k with Domain.domain_action_request =
+			Some (match reason with
+				| Halt | PowerOff -> Needs_poweroff
+				| Reboot -> Needs_reboot
+				| Suspend | S3Suspend -> Needs_suspend)
+	};
+	Updates.add (Dynamic.Vm vm.Vm.id) updates;
+	true
 
 let suspend_nolock vm disk () =
 	let k = key_of vm in
@@ -216,6 +229,8 @@ module VM = struct
 	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
 	let build vm vbds vifs = Mutex.execute m (build_nolock vm vbds vifs)
 	let create_device_model vm = Mutex.execute m (create_device_model_nolock vm)
+	let request_shutdown vm reason ack_delay = Mutex.execute m (request_shutdown_nolock vm reason)
+	let wait_shutdown vm reason timeout = true
 
 	let suspend vm disk = Mutex.execute m (suspend_nolock vm disk)
 	let resume vm disk = Mutex.execute m (resume_nolock vm disk)
@@ -241,10 +256,8 @@ module VIF = struct
 	let get_state vm vif = Mutex.execute m (vif_state vm vif)
 end
 
-let updates = Updates.empty ()
-
 module UPDATES = struct
-	let get last = Updates.get last updates
+	let get last timeout = Updates.get last timeout updates
 end
 
 module DEBUG = struct

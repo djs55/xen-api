@@ -245,10 +245,10 @@ let unpause x =
 	let vm, _ = find_by_name x in
 	success (Client.VM.unpause rpc vm.id)
 
-let reboot x =
+let reboot x timeout =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.reboot rpc vm.id)
+	success (Client.VM.reboot rpc vm.id timeout)
 
 let trim limit str =
 	let l = String.length str in
@@ -318,7 +318,9 @@ let _ =
 		| [ "shutdown"; id ] ->
 			shutdown id
 		| [ "reboot"; id ] ->
-			reboot id
+			reboot id None
+		| [ "reboot"; id; timeout ] ->
+			reboot id (Some (float_of_string timeout))
 		| [ "vbd-list"; id ] ->
 			vbd_list id
 		| [ "cd-insert"; id; disk ] ->

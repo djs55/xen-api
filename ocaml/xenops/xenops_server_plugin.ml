@@ -13,6 +13,69 @@
  *)
 
 open Xenops_interface
+open Xenops_utils
+open Fun
+
+module IntMap = Map.Make(struct type t = int let compare = compare end)
+
+module Scheduler = struct
+	open Threadext
+	let schedule = ref IntMap.empty
+	let delay = Delay.make ()
+	let m = Mutex.create ()
+
+	type time =
+		| Absolute of int
+		| Delta of int
+
+	let now () = Unix.gettimeofday () |> ceil |> int_of_float
+
+	let one_shot time f =
+		let time = match time with
+			| Absolute x -> x
+			| Delta x -> now () + x in
+		Mutex.execute m
+			(fun () ->
+				let existing = 
+					if IntMap.mem time !schedule
+					then IntMap.find time !schedule
+					else [] in
+				schedule := IntMap.add time (f :: existing) !schedule;
+				Delay.signal delay
+			)
+
+	let process_expired () =
+		let t = now () in
+		let expired =
+			Mutex.execute m
+				(fun () ->
+					let expired, unexpired = IntMap.partition (fun t' _ -> t' < t) !schedule in
+					schedule := unexpired;
+					IntMap.fold (fun _ stuff acc -> acc @ stuff) expired [] |> List.rev) in
+		(* This might take a while *)
+		List.iter
+			(fun f ->
+				try
+					f ()
+				with e ->
+					debug "Scheduler ignoring exception: %s" (Printexc.to_string e)
+			) expired;
+		expired <> [] (* true if work was done *)
+
+	let rec main_loop () =
+		while process_expired () do () done;
+		let sleep_until =
+			Mutex.execute m
+				(fun () -> IntMap.min_binding !schedule |> fst) in
+		let seconds = now () - sleep_until in
+		debug "Scheduler sleep until %d (another %d seconds)" sleep_until seconds;
+		let (_: bool) = Delay.wait delay (float_of_int seconds) in
+		main_loop ()
+
+	let start () =
+		let (_: Thread.t) = Thread.create main_loop () in
+		()
+end
 
 module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 	(* Map of thing -> last update counter *)
@@ -71,12 +134,23 @@ module Updates = struct
 		m = Mutex.create ();
 	}
 
-	let get from t =
+	let get from timeout t =
 		let from = Opt.default U.initial from in
+		let cancel = ref false in
+		Opt.iter (fun timeout ->
+			Scheduler.one_shot (Scheduler.Delta timeout)
+				(fun () ->
+					Mutex.execute t.m
+						(fun () ->
+							cancel := true;
+							Condition.signal t.c
+						)
+				)
+		) timeout;
 		Mutex.execute t.m
 			(fun () ->
 				let current = ref ([], from) in
-				while fst !current = [] do
+				while fst !current = [] && not(!cancel) do
 					current := U.get from t.u;
 					if fst !current = [] then Condition.wait t.c t.m;
 				done;
@@ -107,6 +181,14 @@ type domain_action_request =
 	| Needs_crashdump	
 with rpc
 
+type shutdown_request =
+	| Halt
+	| Reboot
+	| PowerOff
+	| S3Suspend
+	| Suspend
+with rpc
+
 module type S = sig
 	val init: unit -> unit
 	module VM : sig
@@ -116,6 +198,8 @@ module type S = sig
 		val destroy: Vm.t -> unit
 		val pause: Vm.t -> unit
 		val unpause: Vm.t -> unit
+		val request_shutdown: Vm.t -> shutdown_request -> float -> bool
+		val wait_shutdown: Vm.t -> shutdown_request -> float -> bool
 
 		val suspend: Vm.t -> disk -> unit
 		val resume: Vm.t -> disk -> unit
@@ -139,7 +223,7 @@ module type S = sig
 		val get_state: Vm.id -> Vif.t -> Vif.state
 	end
 	module UPDATES : sig
-		val get: Updates.id option -> Dynamic.id list * Updates.id option
+		val get: Updates.id option -> int option -> Dynamic.id list * Updates.id option
 	end
 	module DEBUG : sig
 		val trigger: string -> string list -> unit

@@ -32,6 +32,8 @@ type error =
 	| Unimplemented
 	| Domain_not_built
 	| Bad_power_state of power_state * power_state
+	| Failed_to_acknowledge_shutdown_request
+	| Failed_to_shutdown
 	| Device_is_connected
 	| Device_not_connected
 	| Media_present
@@ -239,7 +241,7 @@ module VM = struct
 
 	external start: Vm.id -> (unit option) * (error option) = ""
 	external shutdown: Vm.id -> (unit option) * (error option) = ""
-	external reboot: Vm.id -> (unit option) * (error option) = ""
+	external reboot: Vm.id -> float option -> (unit option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (unit option) * (error option) = ""
 	external resume: Vm.id -> disk -> (unit option) * (error option) = ""
 end
@@ -265,7 +267,7 @@ module VIF = struct
 end
 
 module UPDATES = struct
-	external get: int option -> (Dynamic.t list * int option) option * (error option) = "" 
+	external get: int option -> int option -> (Dynamic.t list * int option) option * (error option) = "" 
 end
 
 module DEBUG = struct

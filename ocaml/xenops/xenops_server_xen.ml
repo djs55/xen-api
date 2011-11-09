@@ -43,6 +43,18 @@ end)
 (* Used to signal when work needs to be done on a VM *)
 let updates = Updates.empty ()
 
+let event_wait timeout p =
+	let finished = ref false in
+	let success = ref false in
+	let event_id = ref None in
+	while not !finished do
+		let deltas, next_id = Updates.get !event_id timeout updates in
+		if deltas = [] then finished := true;
+		List.iter (fun d -> if p d then (success := true; finished := true)) deltas;
+		event_id := next_id;
+	done;
+	!success
+
 (* When a VM is being operated on by a thread (e.g. VM.suspend) we
    record this here to prevent the event thread interfering. When
    the active thread terminates it should re-signal so the event
@@ -454,6 +466,31 @@ module VM = struct
 
 	let create_device_model vm = on_domain (create_device_model_exn vm) vm
 
+	let shutdown_reason = function
+		| Reboot -> Domain.Reboot
+		| PowerOff -> Domain.PowerOff
+		| Suspend -> Domain.Suspend
+		| Halt -> Domain.Halt
+		| S3Suspend -> Domain.S3Suspend
+
+	let request_shutdown vm reason ack_delay =
+		on_domain
+			(fun xc xs vm di ->
+				let domid = di.Xenctrl.domid in
+				try
+					Domain.shutdown_wait_for_ack ~timeout:ack_delay ~xc ~xs domid (shutdown_reason reason);
+					true
+				with Watch.Timeout _ ->
+					false
+			) vm
+
+	let wait_shutdown vm reason timeout =
+		event_wait (Some (timeout |> ceil |> int_of_float))
+			(function
+				| Dynamic.Vm id when id = vm.Vm.id ->
+					on_domain (fun xc xs vm di -> di.Xenctrl.shutdown) vm
+				| _ -> false)
+
 	let suspend vm disk =
 		Current_vm_operations.exclude_event_thread vm.Vm.id "suspend"
 			(fun () ->
@@ -713,7 +750,7 @@ module VIF = struct
 end
 
 module UPDATES = struct
-	let get last = Updates.get last updates
+	let get last timeout = Updates.get last timeout updates
 end
 
 let _introduceDomain = "@introduceDomain"

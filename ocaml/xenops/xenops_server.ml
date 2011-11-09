@@ -282,7 +282,20 @@ module VM = struct
 		start' id;
 		unpause' id
 
-	let reboot _ id =
+	let shutdown_domain' id reason timeout =
+		let module B = (val get_backend () : S) in
+		let start = Unix.gettimeofday () in
+		let vm = id |> key_of |> DB.read |> unbox in
+		(* Spend at most the first minute waiting for a clean shutdown ack. This allows
+		   us to abort early. *)
+		if not (B.VM.request_shutdown vm reason (max 60. timeout))
+		then raise (Exception Failed_to_acknowledge_shutdown_request);		
+		let remaining_timeout = max 0. (timeout -. (Unix.gettimeofday () -. start)) in
+		if not (B.VM.wait_shutdown vm reason remaining_timeout)
+		then raise (Exception Failed_to_shutdown)
+
+	let reboot _ id timeout =
+		Opt.iter (shutdown_domain' id Reboot) timeout;				
 		reboot' id;
 		Updates.add (Dynamic.Vm id) updates;
 		return ()
@@ -315,8 +328,8 @@ module UPDATES = struct
 			)
 		with Exception Does_not_exist -> None
 
-	let get _ last =
-		let ids, next = Updates.get last updates in
+	let get _ last timeout =
+		let ids, next = Updates.get last timeout updates in
 		let ts = List.filter_map lookup ids in
 		return (ts, next)
 end
@@ -329,7 +342,7 @@ let internal_event_thread_body () =
 	let id = ref None in
 	while true do
 		debug "About to call get with id = %s" (Opt.default "None" (Opt.map string_of_int !id));
-		let updates, next_id = B.UPDATES.get !id in
+		let updates, next_id = B.UPDATES.get !id None in
 		debug "returned id = %s" (Opt.default "None" (Opt.map string_of_int next_id));
 		assert (updates <> []);
 		List.iter
@@ -352,7 +365,7 @@ let internal_event_thread_body () =
 							| Vm.Shutdown ->
 								VM.shutdown () vm.Vm.id |> unwrap
 							| Vm.Start ->
-								VM.reboot () vm.Vm.id |> unwrap;
+								VM.reboot () vm.Vm.id None |> unwrap;
 							| Vm.Delay ->
 								debug "Vm.Delay unimplemented"
 						) actions
