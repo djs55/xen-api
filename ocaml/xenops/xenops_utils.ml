@@ -85,11 +85,13 @@ module TypedTable = functor(RW: READWRITE) -> struct
 	let filename_of_key k = Printf.sprintf "%s/%s/%s" root RW.namespace (String.concat "/" k)
 	let read (k: key) =
 		let filename = filename_of_key k in
+		debug "DB.read %s" filename;
 		try
 			Some (t_of_rpc (Jsonrpc.of_string (Unixext.string_of_file filename)))
 		with _ -> None
 	let write (k: key) (x: t) =
 		let filename = filename_of_key k in
+		debug "DB.write %s" filename;
 		Unixext.mkdir_rec (Filename.dirname filename) 0o755;
 		let json = Jsonrpc.to_string (rpc_of_t x) in
 		debug "%s <- %s" filename json;
@@ -97,6 +99,7 @@ module TypedTable = functor(RW: READWRITE) -> struct
 	let exists (k: key) = Sys.file_exists (filename_of_key k)
 	let delete (k: key) =
 		let filename = filename_of_key k in
+		debug "DB.delete %s" filename;
 		rm_rf filename
 	let list (k: key) =
 		if exists k

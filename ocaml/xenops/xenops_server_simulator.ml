@@ -68,6 +68,7 @@ let read x = match DB.read x with
 	| Some y -> y
 
 let create_nolock vm () =
+	debug "Domain.create vm=%s" vm.Vm.id;
 	let k = key_of vm in
 	if DB.exists k then begin
 		debug "VM.create_nolock %s: Already_exists" vm.Vm.id;
@@ -107,16 +108,19 @@ let get_domain_action_request_nolock vm () =
 	end else Some Needs_poweroff
 
 let destroy_nolock vm () =
+	debug "Domain.destroy vm=%s" vm.Vm.id;
 	let k = key_of vm in
 	(* Idempotent *)
 	if DB.exists k then DB.delete k
 
 let build_nolock vm vbds vifs () =
+	debug "Domain.build vm=%s" vm.Vm.id;
 	let k = key_of vm in
 	debug "setting built <- true";
 	DB.write k { read k with Domain.built = true }
 
 let create_device_model_nolock vm () =
+	debug "Domain.create_device_model vm=%s" vm.Vm.id;
 	let k = key_of vm in
 	DB.write k { read k with Domain.qemu_created = true }
 

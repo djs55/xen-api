@@ -283,6 +283,7 @@ let vm_test_reboot _ =
 					| Dynamic.Vm_t (vm_t, vm_state) ->
 						vm_t.Vm.id = id && vm_state.Vm.domids <> state.Vm.domids
 					| _ -> false);
+			Thread.delay 1.; (* FIXME: there's a race with the following fn *)
 			success (Client.VM.shutdown rpc id)
 		)
 
@@ -300,6 +301,7 @@ let vm_test_halt _ =
 					| Dynamic.Vm_t (vm_t, vm_state) ->
 						vm_t.Vm.id = id && vm_state.Vm.domids = []
 					| _ -> false);
+			Thread.delay 1.; (* FIXME: there's a race with the following fn *)
 			success (Client.VM.shutdown rpc id)
 		)
 
