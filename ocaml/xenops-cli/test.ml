@@ -246,7 +246,7 @@ let vm_test_build_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.build rpc id);
+			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			fail_not_built (Client.VM.unpause rpc id);
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
@@ -267,7 +267,7 @@ let vm_remove_running _ =
 	with_vm example_uuid
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.build rpc id);
+			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
 			fail_running (Client.VM.remove rpc id);
@@ -297,7 +297,7 @@ let vm_test_reboot _ =
 	with_vm example_uuid
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.build rpc id);
+			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
 			let state : Vm.state = Client.VM.stat rpc id |> success |> snd in
@@ -316,7 +316,7 @@ let vm_test_halt _ =
 	with_vm example_uuid
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.build rpc id);
+			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
 			success (Client.DEBUG.trigger rpc "halt" [ id ]);
@@ -334,7 +334,7 @@ let vm_test_suspend _ =
 	with_vm example_uuid
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.build rpc id);
+			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.suspend rpc id (Local "disk"));
 			success (Client.VM.destroy rpc id)

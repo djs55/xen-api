@@ -284,12 +284,19 @@ module VM = struct
 
 	type operation =
 		| VM_create of Vm.id
+		| VM_build of Vm.id
 
 	let perform = function
 		| VM_create id ->
 			debug "VM.create %s" id;
 			let module B = (val get_backend () : S) in
 			B.VM.create (id |> key_of |> DB.read |> unbox)
+		| VM_build id ->
+			debug "VM.build %s" id;
+			let module B = (val get_backend () : S) in
+			let vbds : Vbd.t list = VBD.list' id |> List.map fst in
+			let vifs : Vif.t list = VIF.list' id |> List.map fst in
+			B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs
 
 	let queue_operation id op =
 		let task = TASK.add (fun () -> perform op) in
@@ -326,14 +333,7 @@ module VM = struct
 
 	let create _ id = queue_operation id (VM_create id) |> return
 
-	let build' id =
-		debug "VM.build %s" id;
-		let module B = (val get_backend () : S) in
-		let vbds : Vbd.t list = VBD.list' id |> List.map fst in
-		let vifs : Vif.t list = VIF.list' id |> List.map fst in
-		B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs
-
-	let build _ id = build' id |> return
+	let build _ id = queue_operation id (VM_build id) |> return
 
 	let create_device_model' id =
 		debug "VM.create_device_model %s" id;
@@ -366,7 +366,7 @@ module VM = struct
 	let start' id =
 		debug "VM.start %s" id;
 		perform (VM_create id);
-		build' id;
+		perform (VM_build id);
 		List.iter (fun vbd -> VBD.plug' vbd.Vbd.id) (VBD.list' id |> List.map fst);
 		List.iter (fun vif -> VIF.plug' vif.Vif.id) (VIF.list' id |> List.map fst);
 		(* Unfortunately this has to be done after the devices have been created since
