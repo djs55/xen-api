@@ -341,7 +341,7 @@ let vm_test_suspend _ =
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.unpause rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.suspend rpc id (Local "disk"));
+			Client.VM.suspend rpc id (Local "disk") |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.destroy rpc id |> success |> wait_for_task rpc |> success_task rpc;
 		)
 
@@ -349,7 +349,7 @@ let vm_test_resume _ =
 	with_vm example_uuid
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.resume rpc id (Local "disk"));
+			Client.VM.resume rpc id (Local "disk") |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.unpause rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.destroy rpc id |> success |> wait_for_task rpc |> success_task rpc;
 		)

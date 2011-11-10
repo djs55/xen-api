@@ -199,6 +199,8 @@ type operation =
 	| VM_start of Vm.id
 	| VM_shutdown of Vm.id
 	| VM_reboot of (Vm.id * float option)
+	| VM_suspend of (Vm.id * disk)
+	| VM_resume of (Vm.id * disk)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
 	| VM_create of Vm.id
@@ -239,6 +241,14 @@ let rec perform op =
 			perform (VM_shutdown id);
 			perform (VM_start id);
 			perform (VM_unpause id);
+			Updates.add (Dynamic.Vm id) updates
+		| VM_suspend (id, disk) ->
+			debug "VM.suspend %s" id;
+			B.VM.suspend (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
+			Updates.add (Dynamic.Vm id) updates
+		| VM_resume (id, disk) ->
+			debug "VM.resume %s" id;
+			B.VM.resume (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
@@ -422,15 +432,10 @@ module VM = struct
 
 	let reboot _ id timeout = queue_operation id (VM_reboot (id, timeout)) |> return
 
-	let suspend _ id disk =
-		debug "VM.suspend %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.suspend (id |> DB.key_of |> DB.read |> unbox) disk |> return
+	let suspend _ id disk = queue_operation id (VM_suspend (id, disk)) |> return
 
-	let resume _ id disk =
-		debug "VM.resume %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.resume (id |> DB.key_of |> DB.read |> unbox) disk |> return
+	let resume _ id disk = queue_operation id (VM_resume (id, disk)) |> return
+
 end
 
 module DEBUG = struct
