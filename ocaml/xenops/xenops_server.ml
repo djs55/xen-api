@@ -201,6 +201,7 @@ type operation =
 	| VM_reboot of (Vm.id * float option)
 	| VM_suspend of (Vm.id * disk)
 	| VM_resume of (Vm.id * disk)
+	| VM_restore of (Vm.id * disk)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
 	| VM_create of Vm.id
@@ -246,9 +247,20 @@ let rec perform op =
 			debug "VM.suspend %s" id;
 			B.VM.suspend (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
 			Updates.add (Dynamic.Vm id) updates
+		| VM_restore (id, disk) ->
+			debug "VM.restore %s" id;
+			B.VM.restore (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk
 		| VM_resume (id, disk) ->
 			debug "VM.resume %s" id;
-			B.VM.resume (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
+			perform (VM_create id);
+			perform (VM_restore (id, disk));
+			List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform (VIF_plug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+			(* Unfortunately this has to be done after the devices have been created since
+			   qemu reads xenstore keys in preference to its own commandline. After this is
+			   fixed we can consider creating qemu as a part of the 'build' *)
+			perform (VM_create_device_model id);
+			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in

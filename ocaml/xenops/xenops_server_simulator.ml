@@ -139,7 +139,7 @@ let suspend_nolock vm disk () =
 	let k = key_of vm in
 	DB.write k { read k with Domain.suspended = true }
 
-let resume_nolock vm disk () =
+let restore_nolock vm disk () =
 	let k = key_of vm in
 	DB.write k { read k with Domain.built = true }
 
@@ -237,7 +237,7 @@ module VM = struct
 	let wait_shutdown vm reason timeout = true
 
 	let suspend vm disk = Mutex.execute m (suspend_nolock vm disk)
-	let resume vm disk = Mutex.execute m (resume_nolock vm disk)
+	let restore vm disk = Mutex.execute m (restore_nolock vm disk)
 
 	let get_state vm = Mutex.execute m (get_state_nolock vm)
 	let get_domain_action_request vm = Mutex.execute m (get_domain_action_request_nolock vm)

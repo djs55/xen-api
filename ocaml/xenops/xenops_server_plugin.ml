@@ -202,7 +202,7 @@ module type S = sig
 		val wait_shutdown: Vm.t -> shutdown_request -> float -> bool
 
 		val suspend: Vm.t -> disk -> unit
-		val resume: Vm.t -> disk -> unit
+		val restore: Vm.t -> disk -> unit
 
 		val get_state: Vm.t -> Vm.state
 

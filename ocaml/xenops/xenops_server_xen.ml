@@ -515,7 +515,19 @@ module VM = struct
 							)
 					) vm
 			)
-	let resume vm disk = raise (Exception Unimplemented)
+	let restore vm disk =
+		let build_info = vm |> key_of |> DB.read |> Opt.unbox |> (fun x -> x.VmExtra.build_info) |> Opt.unbox in
+		on_domain
+			(fun xc xs vm di ->
+				let domid = di.Xenctrl.domid in
+				with_disk ~xc ~xs disk
+					(fun path ->
+						Unixext.with_file path [ Unix.O_WRONLY ] 0o644
+							(fun fd ->
+								Domain.restore ~xc ~xs build_info domid fd
+							)
+					)
+			) vm
 
 	let get_state vm =
 		let uuid = uuid_of_vm vm in
