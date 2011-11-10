@@ -254,7 +254,7 @@ module VM = struct
 
 	external create: Vm.id -> (Task.id option) * (error option) = ""
 	external build: Vm.id -> (Task.id option) * (error option) = ""
-	external create_device_model: Vm.id -> (unit option) * (error option) = ""
+	external create_device_model: Vm.id -> (Task.id option) * (error option) = ""
 	external destroy: Vm.id -> (unit option) * (error option) = ""
 	external pause: Vm.id -> (unit option) * (error option) = ""
 	external unpause: Vm.id -> (unit option) * (error option) = ""

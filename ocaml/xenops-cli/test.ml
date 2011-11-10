@@ -248,7 +248,7 @@ let vm_test_build_pause_unpause _ =
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			fail_not_built (Client.VM.unpause rpc id);
-			success (Client.VM.create_device_model rpc id);
+			Client.VM.create_device_model rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.pause rpc id);
 			success (Client.VM.destroy rpc id);
@@ -268,7 +268,7 @@ let vm_remove_running _ =
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.create_device_model rpc id);
+			Client.VM.create_device_model rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.unpause rpc id);
 			fail_running (Client.VM.remove rpc id);
 			success (Client.VM.destroy rpc id)
@@ -298,7 +298,7 @@ let vm_test_reboot _ =
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.create_device_model rpc id);
+			Client.VM.create_device_model rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.unpause rpc id);
 			let state : Vm.state = Client.VM.stat rpc id |> success |> snd in
 			success (Client.DEBUG.trigger rpc "reboot" [ id ]);
@@ -317,7 +317,7 @@ let vm_test_halt _ =
 		(fun id ->
 			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			Client.VM.build rpc id |> success |> wait_for_task rpc |> success_task rpc;
-			success (Client.VM.create_device_model rpc id);
+			Client.VM.create_device_model rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.unpause rpc id);
 			success (Client.DEBUG.trigger rpc "halt" [ id ]);
 			(* ... need to wait for the domain ids to disappear *)

@@ -285,6 +285,7 @@ module VM = struct
 	type operation =
 		| VM_create of Vm.id
 		| VM_build of Vm.id
+		| VM_create_device_model of Vm.id
 
 	let perform = function
 		| VM_create id ->
@@ -297,6 +298,10 @@ module VM = struct
 			let vbds : Vbd.t list = VBD.list' id |> List.map fst in
 			let vifs : Vif.t list = VIF.list' id |> List.map fst in
 			B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs
+		| VM_create_device_model id ->
+			debug "VM.create_device_model %s" id;
+			let module B = (val get_backend () : S) in
+			B.VM.create_device_model (id |> key_of |> DB.read |> unbox)
 
 	let queue_operation id op =
 		let task = TASK.add (fun () -> perform op) in
@@ -335,12 +340,7 @@ module VM = struct
 
 	let build _ id = queue_operation id (VM_build id) |> return
 
-	let create_device_model' id =
-		debug "VM.create_device_model %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.create_device_model (id |> key_of |> DB.read |> unbox)
-
-	let create_device_model _ id = create_device_model' id |> return
+	let create_device_model _ id = queue_operation id (VM_create_device_model id) |> return
 
 	let destroy' id =
 		debug "VM.destroy %s" id;
@@ -372,7 +372,7 @@ module VM = struct
 		(* Unfortunately this has to be done after the devices have been created since
 		   qemu reads xenstore keys in preference to its own commandline. After this is
 		   fixed we can consider creating qemu as a part of the 'build' *)
-		create_device_model' id
+		perform (VM_create_device_model id)
 
 	let start _ id =
 		start' id;
