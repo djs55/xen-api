@@ -506,8 +506,10 @@ module VM = struct
 									(fun fd ->
 										Domain.suspend ~xc ~xs ~hvm domid fd []
 											(fun () ->
-												raise (Exception Unimplemented)
-													(* clean_shutdown *)
+												if not(request_shutdown vm Suspend 30.)
+												then raise (Exception Failed_to_acknowledge_shutdown_request);
+												if not(wait_shutdown vm Suspend 1200.)
+												then raise (Exception Failed_to_shutdown);
 											)
 									)
 							)
