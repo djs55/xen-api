@@ -145,163 +145,235 @@ module Per_VM_queues = struct
 		()
 end
 
+module VM_DB = struct
+	include TypedTable(struct
+		include Vm
+		let namespace = "VM"
+	end)
+	let key_of id = [ id; "config" ]
 
-module VBD = struct
-	open Vbd
+	let list () =
+		debug "VM.list";
+		let module B = (val get_backend () : S) in
+		let vms = List.map (fun x -> x |> key_of |> read |> unbox) (list []) in
+		let states = List.map B.VM.get_state vms in
+		List.combine vms states
+end
 
-	module DB = TypedTable(struct
+module VBD_DB = struct
+	include TypedTable(struct
 		include Vbd
 		let namespace = "VM"
 	end)
-
-	let vm_of = fst
 	let key_of k = [ fst k; "vbd." ^ (snd k) ]
+	let vm_of = fst
 	let string_of_id (a, b) = a ^ "." ^ b
-	let add _ x =
-		debug "VBD.add %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
-		DB.add (key_of x.id) x;
-		return x.id
-	let plug' id =
-		debug "VBD.plug %s" (string_of_id id);
-		let module B = (val get_backend () : S) in	
-	B.VBD.plug (vm_of id) (id |> key_of |> DB.read |> unbox)
-	let plug _ id = plug' id |> return
-	let unplug' id =
-		debug "VBD.unplug %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		B.VBD.unplug (vm_of id) (id |> key_of |> DB.read |> unbox)
-	let unplug _ id = unplug' id |> return
-	let insert' id disk =
-		debug "VBD.insert %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		let vbd_t = id |> key_of |> DB.read |> unbox in
-		let state = B.VBD.get_state (vm_of id) vbd_t in
-		if state.Vbd.media_present
-		then raise (Exception Media_present)
-		else begin
-			B.VBD.insert (vm_of id) vbd_t disk;
-			DB.write (key_of id) { vbd_t with Vbd.backend = Some disk };
-		end
-	let insert _ id disk = insert' id disk |> return
-	let eject' id =
-		debug "VBD.eject %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		let vbd_t = id |> key_of |> DB.read |> unbox in
-		let state = B.VBD.get_state (vm_of id) vbd_t in
-		if state.Vbd.media_present then begin
-			B.VBD.eject (vm_of id) vbd_t;
-			DB.write (key_of id) { vbd_t with Vbd.backend = None }
-		end else raise (Exception Media_not_present)
-	let eject _ id = eject' id |> return
-	let remove _ id =
-		debug "VBD.remove %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		if (B.VBD.get_state (vm_of id) (id |> key_of |> DB.read |> unbox)).Vbd.plugged
-		then raise (Exception Device_is_connected)
-		else return (DB.remove (key_of id))
 
-	let stat' id =
-		let module B = (val get_backend () : S) in
-		let vbd_t = id |> key_of |> DB.read |> unbox in
-		let state = B.VBD.get_state (vm_of id) vbd_t in
-		vbd_t, state
-	let stat _ id = return (stat' id)
-
-	let list' vm =
+	let list vm =
 		debug "VBD.list";
 		let key_of' id = [ vm; "vbd." ^ id ] in
-		let vbds = DB.list [ vm ] |> (filter_prefix "vbd.") |> (List.map (DB.read ++ key_of')) |> dropnone in
+		let vbds = list [ vm ] |> (filter_prefix "vbd.") |> (List.map (read ++ key_of')) |> dropnone in
 		let module B = (val get_backend () : S) in
 		let states = List.map (B.VBD.get_state vm) vbds in
 		List.combine vbds states
+end
 
-	let list _ vm = list' vm |> return
+module VIF_DB = struct
+	include TypedTable(struct
+		include Vif
+		let namespace = "VM"
+	end)
+	let key_of k = [ fst k; "vif." ^ (snd k) ]
+	let vm_of = fst
+	let string_of_id (a, b) = a ^ "." ^ b
+
+	let list vm =
+		let key_of' id = [ vm; "vif." ^ id ] in
+		let vifs = list [ vm ] |> (filter_prefix "vif.") |> (List.map (read ++ key_of')) |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.VIF.get_state vm) vifs in
+		List.combine vifs states
+end
+
+type operation =
+	| VM_start of Vm.id
+	| VM_shutdown of Vm.id
+	| VM_reboot of (Vm.id * float option)
+	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
+	| VM_destroy of Vm.id
+	| VM_create of Vm.id
+	| VM_build of Vm.id
+	| VM_create_device_model of Vm.id
+	| VM_pause of Vm.id
+	| VM_unpause of Vm.id
+	| VBD_plug of Vbd.id
+	| VBD_unplug of Vbd.id
+	| VBD_insert of Vbd.id * disk
+	| VBD_eject of Vbd.id
+	| VIF_plug of Vif.id
+	| VIF_unplug of Vif.id
+
+let rec perform op =
+	let module B = (val get_backend () : S) in
+	match op with
+		| VM_start id ->
+			debug "VM.start %s" id;
+			perform (VM_create id);
+			perform (VM_build id);
+			List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform (VIF_plug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+			(* Unfortunately this has to be done after the devices have been created since
+			   qemu reads xenstore keys in preference to its own commandline. After this is
+			   fixed we can consider creating qemu as a part of the 'build' *)
+			perform (VM_create_device_model id);
+			Updates.add (Dynamic.Vm id) updates
+		| VM_shutdown id ->
+			debug "VM.shutdown %s" id;
+			perform (VM_destroy id);
+			List.iter (fun vbd -> perform (VBD_unplug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform (VIF_unplug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+			Updates.add (Dynamic.Vm id) updates
+		| VM_reboot (id, timeout) ->
+			debug "VM.reboot %s" id;
+			Opt.iter (fun t -> perform (VM_shutdown_domain(id, Reboot, t))) timeout;
+			perform (VM_shutdown id);
+			perform (VM_start id);
+			perform (VM_unpause id);
+			Updates.add (Dynamic.Vm id) updates
+		| VM_shutdown_domain (id, reason, timeout) ->
+			let start = Unix.gettimeofday () in
+			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
+			(* Spend at most the first minute waiting for a clean shutdown ack. This allows
+			   us to abort early. *)
+			if not (B.VM.request_shutdown vm reason (max 60. timeout))
+			then raise (Exception Failed_to_acknowledge_shutdown_request);		
+			let remaining_timeout = max 0. (timeout -. (Unix.gettimeofday () -. start)) in
+			if not (B.VM.wait_shutdown vm reason remaining_timeout)
+			then raise (Exception Failed_to_shutdown)
+		| VM_destroy id ->
+			debug "VM.destroy %s" id;
+			B.VM.destroy (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+		| VM_create id ->
+			debug "VM.create %s" id;
+			B.VM.create (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+		| VM_build id ->
+			debug "VM.build %s" id;
+			let vbds : Vbd.t list = VBD_DB.list id |> List.map fst in
+			let vifs : Vif.t list = VIF_DB.list id |> List.map fst in
+			B.VM.build (id |> VM_DB.key_of |> VM_DB.read |> unbox) vbds vifs
+		| VM_create_device_model id ->
+			debug "VM.create_device_model %s" id;
+			B.VM.create_device_model (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+		| VM_pause id ->
+			debug "VM.pause %s" id;
+			B.VM.pause (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+		| VM_unpause id ->
+			debug "VM.unpause %s" id;
+			B.VM.unpause (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+		| VBD_plug id ->
+			debug "VBD.plug %s" (VBD_DB.string_of_id id);
+			B.VBD.plug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
+		| VBD_unplug id ->
+			debug "VBD.unplug %s" (VBD_DB.string_of_id id);
+			B.VBD.unplug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
+		| VBD_insert (id, disk) ->
+			debug "VBD.insert %s" (VBD_DB.string_of_id id);
+			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
+			let state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
+			if state.Vbd.media_present
+			then raise (Exception Media_present)
+			else begin
+				B.VBD.insert (VBD_DB.vm_of id) vbd_t disk;
+				VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = Some disk };
+			end
+		| VBD_eject id ->
+			debug "VBD.eject %s" (VBD_DB.string_of_id id);
+			let module B = (val get_backend () : S) in
+			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
+			let state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
+			if state.Vbd.media_present then begin
+				B.VBD.eject (VBD_DB.vm_of id) vbd_t;
+				VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = None }
+			end else raise (Exception Media_not_present)
+		| VIF_plug id ->
+			debug "VIF.plug %s" (VIF_DB.string_of_id id);
+			B.VIF.plug (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+		| VIF_unplug id ->
+			debug "VIF.unplug %s" (VIF_DB.string_of_id id);
+			B.VIF.unplug (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+
+module VBD = struct
+	open Vbd
+	module DB = VBD_DB
+
+	let string_of_id (a, b) = a ^ "." ^ b
+	let add _ x =
+		debug "VBD.add %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
+		DB.add (DB.key_of x.id) x;
+		return x.id
+
+	let plug _ id = perform (VBD_plug id) |> return
+	let unplug _ id = perform (VBD_unplug id) |> return
+
+	let insert _ id disk = perform (VBD_insert(id, disk)) |> return
+	let eject _ id = perform (VBD_eject id) |> return
+	let remove _ id =
+		debug "VBD.remove %s" (string_of_id id);
+		let module B = (val get_backend () : S) in
+		if (B.VBD.get_state (DB.vm_of id) (id |> DB.key_of |> DB.read |> unbox)).Vbd.plugged
+		then raise (Exception Device_is_connected)
+		else return (DB.remove (DB.key_of id))
+
+	let stat' id =
+		let module B = (val get_backend () : S) in
+		let vbd_t = id |> DB.key_of |> DB.read |> unbox in
+		let state = B.VBD.get_state (DB.vm_of id) vbd_t in
+		vbd_t, state
+	let stat _ id = return (stat' id)
+
+	let list _ vm = DB.list vm |> return
 end
 
 module VIF = struct
 	open Vif
 
-	module DB = TypedTable(struct
-		include Vif
-		let namespace = "VM"
-	end)
+	module DB = VIF_DB
 
-	let vm_of = fst
-	let key_of k = [ fst k; "vif." ^ (snd k) ]
 	let string_of_id (a, b) = a ^ "." ^ b
 	let add _ x =
 		debug "VIF.add %s" (Jsonrpc.to_string (rpc_of_t x));
 		(* Generate MAC if necessary *)
 		let mac = match x.mac with
 			| "random" -> Device.Vif.random_local_mac ()
-			| "" -> Device.Vif.hashchain_local_mac x.position (vm_of x.id)
+			| "" -> Device.Vif.hashchain_local_mac x.position (DB.vm_of x.id)
 			| mac -> mac in
-		DB.add (key_of x.id) { x with mac = mac };
+		DB.add (DB.key_of x.id) { x with mac = mac };
 		return x.id
-	let plug' id =
-		debug "VIF.plug %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		B.VIF.plug (vm_of id) (id |> key_of |> DB.read |> unbox)
-	let plug _ id = plug' id |> return
-	let unplug' id =
-		debug "VIF.unplug %s" (string_of_id id);
-		let module B = (val get_backend () : S) in
-		B.VIF.unplug (vm_of id) (id |> key_of |> DB.read |> unbox)
-	let unplug _ id = unplug' id |> return
+
+	let plug _ id = perform (VIF_plug id) |> return
+	let unplug _ id = perform (VIF_unplug id) |> return
+
 	let remove _ id =
 		debug "VIF.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
-		if (B.VIF.get_state (vm_of id) (id |> key_of |> DB.read |> unbox)).Vif.plugged
+		if (B.VIF.get_state (DB.vm_of id) (id |> DB.key_of |> DB.read |> unbox)).Vif.plugged
 		then raise (Exception Device_is_connected)
-		else return (DB.remove (key_of id))
+		else return (DB.remove (DB.key_of id))
 
 	let stat' id =
 		let module B = (val get_backend () : S) in
-		let vif_t = id |> key_of |> DB.read |> unbox in
-		let state = B.VIF.get_state (vm_of id) vif_t in
+		let vif_t = id |> DB.key_of |> DB.read |> unbox in
+		let state = B.VIF.get_state (DB.vm_of id) vif_t in
 		vif_t, state
 	let stat _ id = return (stat' id)
 
-	let list' vm =
-		let key_of' id = [ vm; "vif." ^ id ] in
-		let vifs = DB.list [ vm ] |> (filter_prefix "vif.") |> (List.map (DB.read ++ key_of')) |> dropnone in
-		let module B = (val get_backend () : S) in
-		let states = List.map (B.VIF.get_state vm) vifs in
-		List.combine vifs states
-
-	let list _ vm = list' vm |> return
+	let list _ vm = DB.list vm |> return
 end
 
 module VM = struct
 	open Vm
 
-	module DB = TypedTable(struct
-		include Vm
-		let namespace = "VM"
-	end)
-
-	let key_of id = [ id; "config" ]
-
-	type operation =
-		| VM_create of Vm.id
-		| VM_build of Vm.id
-		| VM_create_device_model of Vm.id
-
-	let perform = function
-		| VM_create id ->
-			debug "VM.create %s" id;
-			let module B = (val get_backend () : S) in
-			B.VM.create (id |> key_of |> DB.read |> unbox)
-		| VM_build id ->
-			debug "VM.build %s" id;
-			let module B = (val get_backend () : S) in
-			let vbds : Vbd.t list = VBD.list' id |> List.map fst in
-			let vifs : Vif.t list = VIF.list' id |> List.map fst in
-			B.VM.build (id |> key_of |> DB.read |> unbox) vbds vifs
-		| VM_create_device_model id ->
-			debug "VM.create_device_model %s" id;
-			let module B = (val get_backend () : S) in
-			B.VM.create_device_model (id |> key_of |> DB.read |> unbox)
+	module DB = VM_DB
 
 	let queue_operation id op =
 		let task = TASK.add (fun () -> perform op) in
@@ -311,12 +383,12 @@ module VM = struct
 
 	let add _ x =
 		debug "VM.add %s" (Jsonrpc.to_string (rpc_of_t x));
-		DB.add (key_of x.id) x;
+		DB.add (DB.key_of x.id) x;
 		return x.id
 	let remove _ id =
 		debug "VM.remove %s" id;
 		let module B = (val get_backend () : S) in
-		let power = (B.VM.get_state (id |> key_of |> DB.read |> unbox)).Vm.power_state in
+		let power = (B.VM.get_state (id |> DB.key_of |> DB.read |> unbox)).Vm.power_state in
 		match power with
 			| Running _ | Suspended | Paused -> raise (Exception (Bad_power_state(power, Halted)))
 			| Halted ->
@@ -325,16 +397,12 @@ module VM = struct
 
 	let stat' x =
 		let module B = (val get_backend () : S) in
-		let vm_t = x |> key_of |> DB.read |> unbox in
+		let vm_t = x |> DB.key_of |> DB.read |> unbox in
 		let state = B.VM.get_state vm_t in
 		vm_t, state
 	let stat _ id = return (stat' id)
 
-	let list _ () =
-		debug "VM.list";
-		let module B = (val get_backend () : S) in
-		let ls = List.fold_left (fun acc x -> stat' x :: acc) [] (DB.list []) in
-		return ls
+	let list _ () = DB.list () |> return
 
 	let create _ id = queue_operation id (VM_create id) |> return
 
@@ -342,86 +410,27 @@ module VM = struct
 
 	let create_device_model _ id = queue_operation id (VM_create_device_model id) |> return
 
-	let destroy' id =
-		debug "VM.destroy %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.destroy (id |> key_of |> DB.read |> unbox)
+	let destroy _ id = queue_operation id (VM_destroy id) |> return
 
-	let destroy _ id = destroy' id |> return
+	let pause _ id = queue_operation id (VM_pause id) |> return
 
-	let pause' id =
-		debug "VM.pause %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.pause (id |> key_of |> DB.read |> unbox)
+	let unpause _ id = queue_operation id (VM_unpause id) |> return
 
-	let pause _ id = pause' id |> return
+	let start _ id = queue_operation id (VM_start id) |> return
 
-	let unpause' id =
-		debug "VM.unpause %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.unpause (id |> key_of |> DB.read |> unbox)
+	let shutdown _ id = queue_operation id (VM_shutdown id) |> return
 
-	let unpause _ id = unpause' id |> return
-
-	let start' id =
-		debug "VM.start %s" id;
-		perform (VM_create id);
-		perform (VM_build id);
-		List.iter (fun vbd -> VBD.plug' vbd.Vbd.id) (VBD.list' id |> List.map fst);
-		List.iter (fun vif -> VIF.plug' vif.Vif.id) (VIF.list' id |> List.map fst);
-		(* Unfortunately this has to be done after the devices have been created since
-		   qemu reads xenstore keys in preference to its own commandline. After this is
-		   fixed we can consider creating qemu as a part of the 'build' *)
-		perform (VM_create_device_model id)
-
-	let start _ id =
-		start' id;
-		Updates.add (Dynamic.Vm id) updates;
-		return ()
-
-	let shutdown' id =
-		debug "VM.shutdown %s" id;
-		destroy' id;
-		List.iter (fun vbd -> VBD.unplug' vbd.Vbd.id) (VBD.list' id |> List.map fst);
-		List.iter (fun vif -> VIF.unplug' vif.Vif.id) (VIF.list' id |> List.map fst)
-
-	let shutdown _ id =
-		shutdown' id;
-		Updates.add (Dynamic.Vm id) updates;
-		return ()
-
-	let reboot' id =
-		shutdown' id;
-		start' id;
-		unpause' id
-
-	let shutdown_domain' id reason timeout =
-		let module B = (val get_backend () : S) in
-		let start = Unix.gettimeofday () in
-		let vm = id |> key_of |> DB.read |> unbox in
-		(* Spend at most the first minute waiting for a clean shutdown ack. This allows
-		   us to abort early. *)
-		if not (B.VM.request_shutdown vm reason (max 60. timeout))
-		then raise (Exception Failed_to_acknowledge_shutdown_request);		
-		let remaining_timeout = max 0. (timeout -. (Unix.gettimeofday () -. start)) in
-		if not (B.VM.wait_shutdown vm reason remaining_timeout)
-		then raise (Exception Failed_to_shutdown)
-
-	let reboot _ id timeout =
-		Opt.iter (shutdown_domain' id Reboot) timeout;				
-		reboot' id;
-		Updates.add (Dynamic.Vm id) updates;
-		return ()
+	let reboot _ id timeout = queue_operation id (VM_reboot (id, timeout)) |> return
 
 	let suspend _ id disk =
 		debug "VM.suspend %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.suspend (id |> key_of |> DB.read |> unbox) disk |> return
+		B.VM.suspend (id |> DB.key_of |> DB.read |> unbox) disk |> return
 
 	let resume _ id disk =
 		debug "VM.resume %s" id;
 		let module B = (val get_backend () : S) in
-		B.VM.resume (id |> key_of |> DB.read |> unbox) disk |> return
+		B.VM.resume (id |> DB.key_of |> DB.read |> unbox) disk |> return
 end
 
 module DEBUG = struct
@@ -477,9 +486,11 @@ let internal_event_thread_body () =
 							| Vm.Coredump ->
 								debug "Vm.Coredump unimplemented"
 							| Vm.Shutdown ->
-								VM.shutdown () vm.Vm.id |> unwrap
+								let (_: Task.id) = VM.queue_operation vm.Vm.id (VM_shutdown vm.Vm.id) in
+								()
 							| Vm.Start ->
-								VM.reboot () vm.Vm.id None |> unwrap;
+								let (_: Task.id) = VM.queue_operation vm.Vm.id (VM_reboot(vm.Vm.id, None)) in
+								()
 							| Vm.Delay ->
 								debug "Vm.Delay unimplemented"
 						) actions

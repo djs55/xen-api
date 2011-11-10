@@ -33,6 +33,39 @@ let success = function
 	| (Some x, _) -> x
 	| None, None -> failwith "protocol error"
 
+let event_wait rpc p =
+	let finished = ref false in
+	let event_id = ref None in
+	while not !finished do
+		let deltas, next_id = Client.UPDATES.get rpc !event_id (Some 30) |> success in
+		event_id := next_id;
+		List.iter (fun d -> if p d then finished := true) deltas;
+	done
+
+let wait_for_task rpc id =
+	Printf.fprintf stderr "wait_for id = %s\n%!" id;
+	let finished = function
+		| Dynamic.Task_t t ->
+			Printf.fprintf stderr "got event for id %s\n%!" id;
+			if t.Task.id = id then begin
+				match t.Task.result with
+				| Task.Pending _ -> false
+				| Task.Completed -> true
+				| Task.Failed _ -> true
+			end else false
+		| x ->
+			Printf.fprintf stderr "ignore event on %s\n%!" (x |> Dynamic.rpc_of_t |> Jsonrpc.to_string);
+			false in 
+	event_wait rpc finished;
+	id
+
+let success_task rpc id =
+	let t = Client.TASK.stat rpc id |> success in
+	match t.Task.result with
+	| Task.Completed -> ()
+	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| Task.Pending _ -> failwith "task pending"
+
 let add filename =
 	Unixext.with_input_channel filename
 		(fun ic ->
@@ -228,27 +261,27 @@ let remove x =
 let start x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.start rpc vm.id)
+	Client.VM.start rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
 
 let shutdown x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.shutdown rpc vm.id)
+	Client.VM.shutdown rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
 
 let pause x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.pause rpc vm.id)
+	Client.VM.pause rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
 
 let unpause x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.unpause rpc vm.id)
+	Client.VM.unpause rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
 
 let reboot x timeout =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	success (Client.VM.reboot rpc vm.id timeout)
+	Client.VM.reboot rpc vm.id timeout |> success |> wait_for_task rpc |> success_task rpc
 
 let trim limit str =
 	let l = String.length str in
