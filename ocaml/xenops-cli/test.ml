@@ -61,6 +61,40 @@ let fail_connected = function
 	| (Some x, _) -> failwith "expected failure, got success"
 	| None, None -> failwith "protocol error"
 
+let event_wait rpc p =
+	let finished = ref false in
+	let event_id = ref None in
+	while not !finished do
+		let deltas, next_id = Client.UPDATES.get rpc !event_id (Some 30) |> success in
+		event_id := next_id;
+		List.iter (fun d -> if p d then finished := true) deltas;
+	done
+
+let wait_for_task rpc id =
+	Printf.fprintf stderr "wait_for id = %s\n%!" id;
+	let finished = function
+		| Dynamic.Task_t t ->
+			Printf.fprintf stderr "got event for id %s\n%!" id;
+			if t.Task.id = id then begin
+				match t.Task.result with
+				| Task.Pending _ -> false
+				| Task.Completed -> true
+				| Task.Failed _ -> true
+			end else false
+		| x ->
+			Printf.fprintf stderr "ignore event on %s\n%!" (x |> Dynamic.rpc_of_t |> Jsonrpc.to_string);
+			false in 
+	event_wait rpc finished;
+	id
+
+let success_task rpc id =
+	let t = Client.TASK.stat rpc id |> success in
+	match t.Task.result with
+	| Task.Completed -> ()
+	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| Task.Pending _ -> failwith "task pending"
+
+
 let test_query _ = let (_: Query.t) = success (Client.query rpc ()) in ()
 
 let missing_vm = "missing"
@@ -195,14 +229,14 @@ let vm_test_add_remove _ =
 let vm_test_create_destroy _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.destroy rpc id)
 		)
 
 let vm_test_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			fail_not_built (Client.VM.unpause rpc id);
 			fail_not_built (Client.VM.pause rpc id);
 			success (Client.VM.destroy rpc id)
@@ -211,7 +245,7 @@ let vm_test_pause_unpause _ =
 let vm_test_build_pause_unpause _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.build rpc id);
 			fail_not_built (Client.VM.unpause rpc id);
 			success (Client.VM.create_device_model rpc id);
@@ -232,7 +266,7 @@ let vm_test_add_list_remove _ =
 let vm_remove_running _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.build rpc id);
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
@@ -259,19 +293,10 @@ let vm_test_consoles _ =
 		)
 *)
 
-let event_wait rpc p =
-	let finished = ref false in
-	let event_id = ref None in
-	while not !finished do
-		let deltas, next_id = Client.UPDATES.get rpc !event_id (Some 30) |> success in
-		event_id := next_id;
-		List.iter (fun d -> if p d then finished := true) deltas;
-	done
-
 let vm_test_reboot _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.build rpc id);
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
@@ -290,7 +315,7 @@ let vm_test_reboot _ =
 let vm_test_halt _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.build rpc id);
 			success (Client.VM.create_device_model rpc id);
 			success (Client.VM.unpause rpc id);
@@ -308,7 +333,7 @@ let vm_test_halt _ =
 let vm_test_suspend _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.build rpc id);
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.suspend rpc id (Local "disk"));
@@ -318,7 +343,7 @@ let vm_test_suspend _ =
 let vm_test_resume _ =
 	with_vm example_uuid
 		(fun id ->
-			success (Client.VM.create rpc id);
+			Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 			success (Client.VM.resume rpc id (Local "disk"));
 			success (Client.VM.unpause rpc id);
 			success (Client.VM.destroy rpc id)
@@ -355,7 +380,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 	let with_added_vm id f =
 		with_vm id
 			(fun id ->
-				success (Client.VM.create rpc id);
+				Client.VM.create rpc id |> success |> wait_for_task rpc |> success_task rpc;
 				finally
 					(fun () -> f id)
 					(fun () -> success (Client.VM.destroy rpc id))

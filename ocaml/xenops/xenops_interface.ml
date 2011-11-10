@@ -216,21 +216,43 @@ module Vif = struct
 	}
 end
 
+module Task = struct
+	type id = string
+
+	type result =
+		| Pending of float
+		| Completed
+		| Failed of error
+
+	type t = {
+		id: id;
+		result: result;
+	}
+end
+
 module Dynamic = struct
 	type id =
 		| Vm of Vm.id
 		| Vbd of Vbd.id
 		| Vif of Vif.id
+		| Task of Task.id
 	type t =
 		| Vm_t of Vm.t * Vm.state
 		| Vbd_t of Vbd.t * Vbd.state
 		| Vif_t of Vif.t * Vif.state
+		| Task_t of Task.t
+end
+
+module TASK = struct
+	external stat: Task.id -> (Task.t option) * (error option) = ""
+	external cancel: Task.id -> (unit option) * (error option) = ""
 end
 
 module VM = struct
 	external add: Vm.t -> (Vm.id option) * (error option) = ""
 	external remove: Vm.id -> (unit option) * (error option) = ""
-	external create: Vm.id -> (unit option) * (error option) = ""
+
+	external create: Vm.id -> (Task.id option) * (error option) = ""
 	external build: Vm.id -> (unit option) * (error option) = ""
 	external create_device_model: Vm.id -> (unit option) * (error option) = ""
 	external destroy: Vm.id -> (unit option) * (error option) = ""

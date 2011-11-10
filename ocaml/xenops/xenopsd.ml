@@ -94,6 +94,7 @@ let _ =
 
   start path Server.process;
   Xenops_server_plugin.Scheduler.start ();
+  Xenops_server.Per_VM_queues.start ();
   while true do
 	  Thread.delay 60.
   done

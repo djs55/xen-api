@@ -14,6 +14,7 @@
 
 open Listext
 open Stringext
+open Threadext
 open Fun
 open Xenops_interface
 open Xenops_server_plugin
@@ -43,6 +44,107 @@ let filter_prefix prefix xs =
 			else None) xs
 
 let updates = Updates.empty ()
+
+module TASK = struct
+	type t = {
+		id: string;
+		mutable result: Task.result;
+		f: unit -> unit;
+		cancel: unit -> unit;
+	}
+
+	module SMap = Map.Make(struct type t = string let compare = compare end)
+
+	let tasks = ref SMap.empty
+	let m = Mutex.create ()
+	let c = Condition.create ()
+
+	let next_task_id =
+		let counter = ref 0 in
+		fun () ->
+			let result = string_of_int !counter in
+			incr counter;
+			result
+
+	let add f =
+		let t = {
+			id = next_task_id ();
+			result = Task.Pending 0.;
+			f = f;
+			cancel = (fun () -> ())
+		} in
+		Mutex.execute m
+			(fun () ->
+				tasks := SMap.add t.id t !tasks
+			);
+		t
+
+	let cancel _ id =
+		Mutex.execute m
+			(fun () ->
+				if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);
+				let x = SMap.find id !tasks in
+				x.cancel ()
+			) |> return
+	let stat' id =
+		Mutex.execute m
+			(fun () ->
+				if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);
+				let x = SMap.find id !tasks in
+				{
+					Task.id = x.id;
+					Task.result = x.result;
+				}
+			)
+	let stat _ id = stat' id |> return
+end
+
+module Per_VM_queues = struct
+	(* Single queue for now, one per Vm later *)
+	let queue = Queue.create ()
+	let m = Mutex.create ()
+	let c = Condition.create ()
+
+	let add vm f =
+		Mutex.execute m
+			(fun () ->
+				Queue.push f queue;
+				Condition.signal c)
+
+	let rec process_queue q =
+		let item =
+			Mutex.execute m
+				(fun () ->
+					while Queue.is_empty q do
+						Condition.wait c m
+					done;
+					Queue.pop q
+				) in
+		begin
+			try
+				item.TASK.f ();
+				item.TASK.result <- Task.Completed;
+				debug "Triggering event on task id %s" item.TASK.id;
+				Updates.add (Dynamic.Task item.TASK.id) updates;
+			with
+				| Exception e ->
+					debug "Caught exception while processing queue: %s" (e |> rpc_of_error |> Jsonrpc.to_string);
+					item.TASK.result <- Task.Failed e;
+					debug "Triggering event on task id %s" item.TASK.id;
+					Updates.add (Dynamic.Task item.TASK.id) updates;
+				| e ->
+					debug "Caught exception while processing queue: %s" (Printexc.to_string e);
+					item.TASK.result <- Task.Failed (Internal_error (Printexc.to_string e));
+					debug "Triggering event on task id %s" item.TASK.id;
+					Updates.add (Dynamic.Task item.TASK.id) updates;
+		end;
+		process_queue q
+
+	let start () =
+		let (_: Thread.t) = Thread.create process_queue queue in
+		()
+end
+
 
 module VBD = struct
 	open Vbd
@@ -179,6 +281,22 @@ module VM = struct
 	end)
 
 	let key_of id = [ id; "config" ]
+
+	type operation =
+		| VM_create of Vm.id
+
+	let perform = function
+		| VM_create id ->
+			debug "VM.create %s" id;
+			let module B = (val get_backend () : S) in
+			B.VM.create (id |> key_of |> DB.read |> unbox)
+
+	let queue_operation id op =
+		let task = TASK.add (fun () -> perform op) in
+		Per_VM_queues.add id task;
+		debug "Pushed task with id %s" task.TASK.id;
+		task.TASK.id
+
 	let add _ x =
 		debug "VM.add %s" (Jsonrpc.to_string (rpc_of_t x));
 		DB.add (key_of x.id) x;
@@ -206,12 +324,7 @@ module VM = struct
 		let ls = List.fold_left (fun acc x -> stat' x :: acc) [] (DB.list []) in
 		return ls
 
-	let create' id =
-		debug "VM.create %s" id;
-		let module B = (val get_backend () : S) in
-		B.VM.create (id |> key_of |> DB.read |> unbox)
-
-	let create _ id = create' id |> return
+	let create _ id = queue_operation id (VM_create id) |> return
 
 	let build' id =
 		debug "VM.build %s" id;
@@ -252,7 +365,7 @@ module VM = struct
 
 	let start' id =
 		debug "VM.start %s" id;
-		create' id;
+		perform (VM_create id);
 		build' id;
 		List.iter (fun vbd -> VBD.plug' vbd.Vbd.id) (VBD.list' id |> List.map fst);
 		List.iter (fun vif -> VIF.plug' vif.Vif.id) (VIF.list' id |> List.map fst);
@@ -325,6 +438,7 @@ module UPDATES = struct
 				| Dynamic.Vm id -> let a, b = VM.stat' id in Dynamic.Vm_t (a, b)
 				| Dynamic.Vbd id -> let a, b = VBD.stat' id in Dynamic.Vbd_t (a, b)
 				| Dynamic.Vif id -> let a, b = VIF.stat' id in Dynamic.Vif_t (a, b)
+				| Dynamic.Task id -> Dynamic.Task_t (TASK.stat' id)
 			)
 		with Exception Does_not_exist -> None
 
