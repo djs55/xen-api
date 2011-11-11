@@ -24,12 +24,19 @@ open Fun
 let dmpath = "/opt/xensource/libexec/qemu-dm-wrapper"
 
 module VmExtra = struct
-	(** Extra data we store per VM *)
+	(** Extra data we store per VM. This is preserved when the domain is
+		suspended so it can be re-used in the following 'create' which is
+		part of 'resume'. When a VM is shutdown for other reasons (eg reboot)
+		we throw this information away and generate fresh data on the
+		following 'create' *)
 	type t = {
 		domid: int;
 		create_info: Domain.create_info;
 		build_info: Domain.build_info option;
-		suspend_memory_pages: int64;
+		vcpus: int;
+		shadow_multiplier: float;
+		memory_static_max: int64;
+		suspend_memory_bytes: int64;
 		ty: Vm.builder_info option;
 		vbds: Vbd.t list; (* needed to regenerate qemu IDE config *)
 		vifs: Vif.t list;
@@ -216,13 +223,19 @@ module VM = struct
 
 	let will_be_hvm vm = match vm.ty with HVM _ -> true | _ -> false
 
-	let compute_overhead vm =
-		let static_max_mib = Memory.mib_of_bytes_used vm.memory_static_max in
-		let multiplier = match vm.ty with HVM hvm_info -> hvm_info.shadow_multiplier | _ -> 1. in
+	let compute_overhead domain =
+		let static_max_mib = Memory.mib_of_bytes_used domain.VmExtra.memory_static_max in
 		let memory_overhead_mib =
-			(if will_be_hvm vm then Memory.HVM.overhead_mib else Memory.Linux.overhead_mib)
-			static_max_mib vm.vcpus multiplier in
+			(if domain.VmExtra.create_info.Domain.hvm then Memory.HVM.overhead_mib else Memory.Linux.overhead_mib)
+			static_max_mib domain.VmExtra.vcpus domain.VmExtra.shadow_multiplier in
 		Memory.bytes_of_mib memory_overhead_mib
+
+	let shutdown_reason = function
+		| Reboot -> Domain.Reboot
+		| PowerOff -> Domain.PowerOff
+		| Suspend -> Domain.Suspend
+		| Halt -> Domain.Halt
+		| S3Suspend -> Domain.S3Suspend
 
 	(* We compute our initial target at memory reservation time, done before the domain
 	   is created. We consume this information later when the domain is built. *)
@@ -233,33 +246,49 @@ module VM = struct
 		Int64.of_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/initial-target" domid))
 
 	let create_exn vm =
-		let hvm = match vm.ty with HVM _ -> true | _ -> false in
-		let create_info = {
-			Domain.ssidref = vm.ssidref;
-			hvm = hvm;
-			hap = hvm;
-			name = vm.name;
-			xsdata = vm.xsdata;
-			platformdata = vm.platformdata;
-			bios_strings = vm.bios_strings;
-		} in
+		let k = key_of vm in
+		let vmextra =
+			if DB.exists k then begin
+				debug "VM %s: reloading stored domain-level configuration" vm.Vm.id;
+				DB.read k |> unbox
+			end else begin
+				debug "VM %s: has no stored domain-level configuration, regenerating" vm.Vm.id;
+				let hvm = match vm.ty with HVM _ -> true | _ -> false in
+				let create_info = {
+					Domain.ssidref = vm.ssidref;
+					hvm = hvm;
+					hap = hvm;
+					name = vm.name;
+					xsdata = vm.xsdata;
+					platformdata = vm.platformdata;
+					bios_strings = vm.bios_strings;
+				} in {
+					VmExtra.domid = 0;
+					create_info = create_info;
+					build_info = None;
+					vcpus = vm.vcpus;
+					shadow_multiplier = (match vm.Vm.ty with Vm.HVM { Vm.shadow_multiplier = sm } -> sm | _ -> 1.);
+					memory_static_max = vm.memory_static_max;
+					suspend_memory_bytes = 0L;
+					ty = None;
+					vbds = [];
+					vifs = [];
+				}
+			end in
 		with_xc_and_xs
 			(fun xc xs ->
 				let open Memory in
-				let overhead_bytes = compute_overhead vm in
-				let min_kib = kib_of_bytes_used (vm.memory_dynamic_min +++ overhead_bytes) in
-				let max_kib = kib_of_bytes_used (vm.memory_dynamic_max +++ overhead_bytes) in
+				let overhead_bytes = compute_overhead vmextra in
+				(* If we are resuming then we know exactly how much memory is needed *)
+				let resuming = vmextra.VmExtra.suspend_memory_bytes <> 0L in
+				let min_kib = kib_of_bytes_used (if resuming then vmextra.VmExtra.suspend_memory_bytes else (vm.memory_dynamic_min +++ overhead_bytes)) in
+				let max_kib = kib_of_bytes_used (if resuming then vmextra.VmExtra.suspend_memory_bytes else (vm.memory_dynamic_max +++ overhead_bytes)) in
 				Mem.with_reservation ~xc ~xs ~min:min_kib ~max:max_kib
 					(fun target_plus_overhead_kib reservation_id ->
-						let domid = Domain.make ~xc ~xs create_info (uuid_of_vm vm) in
-						DB.write (key_of vm) {
+						let domid = Domain.make ~xc ~xs vmextra.VmExtra.create_info (uuid_of_vm vm) in
+						DB.write k {
+							vmextra with
 							VmExtra.domid = domid;
-							create_info = create_info;
-							build_info = None;
-							suspend_memory_pages = 0L;
-							ty = None;
-							vbds = [];
-							vifs = [];
 						};
 						Mem.transfer_reservation_to_domain ~xs ~reservation_id ~domid;
 						let initial_target =
@@ -285,7 +314,14 @@ module VM = struct
 
 	let destroy = on_domain (fun xc xs vm di ->
 		let domid = di.Xenctrl.domid in
-		if DB.exists (key_of vm) then DB.remove (key_of vm);
+		(* Normally we throw-away our domain-level information. If the domain
+		   has suspended then we preserve it. *)
+		if di.Xenctrl.shutdown && (Domain.shutdown_reason_of_int di.Xenctrl.shutdown_code = Domain.Suspend)
+		then debug "VM %s (domid: %d) has suspended; preserving domain-level information" vm.Vm.id di.Xenctrl.domid
+		else begin
+			debug "VM %s (domid: %d) will not have domain-level information preserved" vm.Vm.id di.Xenctrl.domid;
+			if DB.exists (key_of vm) then DB.remove (key_of vm);
+		end;
 		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid
 	)
 
@@ -444,17 +480,12 @@ module VM = struct
 	let build vm vbds vifs = on_domain (build_domain vm vbds vifs) vm
 
 	let create_device_model_exn vm xc xs _ di =
-		let info = vm |> key_of |> DB.read |> Opt.unbox |> create_device_model_config in
-		Opt.iter (fun info -> Device.Dm.start ~xs ~dmpath info di.Xenctrl.domid) info
+		let vmextra = vm |> key_of |> DB.read |> Opt.unbox in
+		Opt.iter (fun info ->
+			(if vmextra.VmExtra.suspend_memory_bytes = 0L then Device.Dm.start else Device.Dm.restore)
+			~xs ~dmpath info di.Xenctrl.domid) (vmextra |> create_device_model_config)
 
 	let create_device_model vm = on_domain (create_device_model_exn vm) vm
-
-	let shutdown_reason = function
-		| Reboot -> Domain.Reboot
-		| PowerOff -> Domain.PowerOff
-		| Suspend -> Domain.Suspend
-		| Halt -> Domain.Halt
-		| S3Suspend -> Domain.S3Suspend
 
 	let request_shutdown vm reason ack_delay =
 		let reason = shutdown_reason reason in
@@ -518,7 +549,7 @@ module VM = struct
 								let k = key_of vm in
 								let d = Opt.unbox (DB.read k) in
 								DB.write k { d with
-									VmExtra.suspend_memory_pages = pages;
+									VmExtra.suspend_memory_bytes = Memory.bytes_of_pages pages;
 								}
 							)
 					)
@@ -531,7 +562,7 @@ module VM = struct
 				let domid = di.Xenctrl.domid in
 				with_disk ~xc ~xs disk
 					(fun path ->
-						Unixext.with_file path [ Unix.O_WRONLY ] 0o644
+						Unixext.with_file path [ Unix.O_RDONLY ] 0o644
 							(fun fd ->
 								Domain.restore ~xc ~xs build_info domid fd
 							)
