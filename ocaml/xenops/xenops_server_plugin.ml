@@ -143,7 +143,7 @@ module Updates = struct
 					Mutex.execute t.m
 						(fun () ->
 							cancel := true;
-							Condition.signal t.c
+							Condition.broadcast t.c
 						)
 				)
 		) timeout;
@@ -162,7 +162,7 @@ module Updates = struct
 			(fun () ->
 				let result, id = U.add x t.u in
 				t.u <- result;
-				Condition.signal t.c
+				Condition.broadcast t.c
 			)
 
 	let remove x t =

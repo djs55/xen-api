@@ -43,6 +43,7 @@ type error =
 	| Ballooning_error of string * string
 	| No_ballooning_service
 	| Not_supported
+	| IO_error
 
 type error_response = unit option * error option
 

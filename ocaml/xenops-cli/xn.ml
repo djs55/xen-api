@@ -283,6 +283,16 @@ let reboot x timeout =
 	let vm, _ = find_by_name x in
 	Client.VM.reboot rpc vm.id timeout |> success |> wait_for_task rpc |> success_task rpc
 
+let suspend x disk =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	Client.VM.suspend rpc vm.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
+
+let resume x disk =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	Client.VM.resume rpc vm.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
+
 let trim limit str =
 	let l = String.length str in
 	if l < limit then str
@@ -354,6 +364,10 @@ let _ =
 			reboot id None
 		| [ "reboot"; id; timeout ] ->
 			reboot id (Some (float_of_string timeout))
+		| [ "suspend"; id; disk ] ->
+			suspend id disk
+		| [ "resume"; id; disk ] ->
+			resume id disk
 		| [ "vbd-list"; id ] ->
 			vbd_list id
 		| [ "cd-insert"; id; disk ] ->

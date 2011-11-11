@@ -209,6 +209,7 @@ type operation =
 	| VM_create_device_model of Vm.id
 	| VM_pause of Vm.id
 	| VM_unpause of Vm.id
+	| VM_check_state of Vm.id
 	| VBD_plug of Vbd.id
 	| VBD_unplug of Vbd.id
 	| VBD_insert of Vbd.id * disk
@@ -246,6 +247,7 @@ let rec perform op =
 		| VM_suspend (id, disk) ->
 			debug "VM.suspend %s" id;
 			B.VM.suspend (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
+			perform (VM_shutdown id);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_restore (id, disk) ->
 			debug "VM.restore %s" id;
@@ -292,6 +294,25 @@ let rec perform op =
 		| VM_unpause id ->
 			debug "VM.unpause %s" id;
 			B.VM.unpause (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+		| VM_check_state id ->
+			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
+			let actions = match B.VM.get_domain_action_request vm with
+				| Some Needs_reboot -> vm.Vm.on_reboot
+				| Some Needs_poweroff -> vm.Vm.on_shutdown
+				| Some Needs_crashdump -> vm.Vm.on_crash
+				| Some Needs_suspend ->
+					debug "VM %s has unexpectedly suspended" id;
+					[]
+				| None ->
+					debug "VM %s is not requesting any attention" id;
+					[] in
+			let operations_of_action = function
+				| Vm.Coredump -> []
+				| Vm.Shutdown -> [ VM_shutdown id ]
+				| Vm.Start    -> [ VM_shutdown id; VM_start id; VM_unpause id ]
+				| Vm.Delay    -> [] in
+			let operations = List.concat (List.map operations_of_action actions) in
+			List.iter perform operations
 		| VBD_plug id ->
 			debug "VBD.plug %s" (VBD_DB.string_of_id id);
 			B.VBD.plug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
@@ -491,26 +512,8 @@ let internal_event_thread_body () =
 					debug "Ignoring event on unmanaged VM: %s" id
 				| Dynamic.Vm id, Some (Dynamic.Vm_t (vm, state)) ->
 					debug "Received an event on managed VM %s" vm.Vm.id;
-					let actions = match B.VM.get_domain_action_request vm with
-						| Some Needs_reboot -> vm.Vm.on_reboot
-						| Some Needs_poweroff -> vm.Vm.on_shutdown
-						| _ ->
-							debug "Ignoring event on VM %s" vm.Vm.id;
-							[] in
-					(* There's an opportunity to schedule the actions *)
-					List.iter
-						(function
-							| Vm.Coredump ->
-								debug "Vm.Coredump unimplemented"
-							| Vm.Shutdown ->
-								let (_: Task.id) = VM.queue_operation vm.Vm.id (VM_shutdown vm.Vm.id) in
-								()
-							| Vm.Start ->
-								let (_: Task.id) = VM.queue_operation vm.Vm.id (VM_reboot(vm.Vm.id, None)) in
-								()
-							| Vm.Delay ->
-								debug "Vm.Delay unimplemented"
-						) actions
+					let (_: Task.id) = VM.queue_operation vm.Vm.id (VM_check_state vm.Vm.id) in
+					()
 				| id, _ ->
 					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_id id))
 			) (List.combine updates (List.map UPDATES.lookup updates));

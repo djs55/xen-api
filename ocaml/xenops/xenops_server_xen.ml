@@ -29,6 +29,7 @@ module VmExtra = struct
 		domid: int;
 		create_info: Domain.create_info;
 		build_info: Domain.build_info option;
+		suspend_memory_pages: int64;
 		ty: Vm.builder_info option;
 		vbds: Vbd.t list; (* needed to regenerate qemu IDE config *)
 		vifs: Vif.t list;
@@ -54,25 +55,6 @@ let event_wait timeout p =
 		event_id := next_id;
 	done;
 	!success
-
-(* When a VM is being operated on by a thread (e.g. VM.suspend) we
-   record this here to prevent the event thread interfering. When
-   the active thread terminates it should re-signal so the event
-   thread performs any cleanup required. *)
-module Current_vm_operations = struct
-	let t = Hashtbl.create 10
-	let m = Mutex.create ()
-
-	let exclude_event_thread vm message f =
-		Mutex.execute m (fun () -> Hashtbl.replace t vm message);
-		finally f
-			(fun () ->
-				Mutex.execute m (fun () -> Hashtbl.remove t vm);
-				Updates.add (Dynamic.Vm vm) updates
-			)
-	let excluded_reason vm =
-		Mutex.execute m (fun () -> if Hashtbl.mem t vm then Some (Hashtbl.find t vm) else None)
-end
 
 let this_domid ~xs = int_of_string (xs.Xs.read "domid")
 
@@ -270,10 +252,11 @@ module VM = struct
 				Mem.with_reservation ~xc ~xs ~min:min_kib ~max:max_kib
 					(fun target_plus_overhead_kib reservation_id ->
 						let domid = Domain.make ~xc ~xs create_info (uuid_of_vm vm) in
-						DB.add (key_of vm) {
+						DB.write (key_of vm) {
 							VmExtra.domid = domid;
 							create_info = create_info;
 							build_info = None;
+							suspend_memory_pages = 0L;
 							ty = None;
 							vbds = [];
 							vifs = [];
@@ -474,11 +457,14 @@ module VM = struct
 		| S3Suspend -> Domain.S3Suspend
 
 	let request_shutdown vm reason ack_delay =
+		let reason = shutdown_reason reason in
 		on_domain
 			(fun xc xs vm di ->
 				let domid = di.Xenctrl.domid in
 				try
-					Domain.shutdown_wait_for_ack ~timeout:ack_delay ~xc ~xs domid (shutdown_reason reason);
+					Domain.shutdown ~xs domid reason;
+					debug "Calling shutdown_wait_for_ack";
+					Domain.shutdown_wait_for_ack ~timeout:ack_delay ~xc ~xs domid reason;
 					true
 				with Watch.Timeout _ ->
 					false
@@ -488,33 +474,56 @@ module VM = struct
 		event_wait (Some (timeout |> ceil |> int_of_float))
 			(function
 				| Dynamic.Vm id when id = vm.Vm.id ->
+					debug "EVENT on our VM: %s" id;
 					on_domain (fun xc xs vm di -> di.Xenctrl.shutdown) vm
-				| _ -> false)
+				| Dynamic.Vm id ->
+					debug "EVENT on other VM: %s" id;
+					false
+				| _ ->
+					debug "OTHER EVENT";
+					false)
 
 	let suspend vm disk =
-		Current_vm_operations.exclude_event_thread vm.Vm.id "suspend"
-			(fun () ->
-				on_domain
-					(fun xc xs vm di ->
-						let hvm = di.Xenctrl.hvm_guest in
-						let domid = di.Xenctrl.domid in
-						with_disk ~xc ~xs disk
-							(fun path ->
-								(* Make a filesystem on the disk later *)
-								(* Do we really want to balloon the guest down? *)
-								Unixext.with_file path [ Unix.O_WRONLY ] 0o644
-									(fun fd ->
-										Domain.suspend ~xc ~xs ~hvm domid fd []
-											(fun () ->
-												if not(request_shutdown vm Suspend 30.)
-												then raise (Exception Failed_to_acknowledge_shutdown_request);
-												if not(wait_shutdown vm Suspend 1200.)
-												then raise (Exception Failed_to_shutdown);
-											)
-									)
+		on_domain
+			(fun xc xs vm di ->
+				let hvm = di.Xenctrl.hvm_guest in
+				let domid = di.Xenctrl.domid in
+				with_disk ~xc ~xs disk
+					(fun path ->
+						(* Make a filesystem on the disk later *)
+						(* Do we really want to balloon the guest down? *)
+						Unixext.with_file path [ Unix.O_WRONLY ] 0o644
+							(fun fd ->
+								debug "Invoking Domain.suspend";
+								Domain.suspend ~xc ~xs ~hvm domid fd []
+									(fun () ->
+										debug "In callback";
+										if not(request_shutdown vm Suspend 30.)
+										then raise (Exception Failed_to_acknowledge_shutdown_request);
+										debug "Waiting for shutdown";
+										if not(wait_shutdown vm Suspend 1200.)
+										then raise (Exception Failed_to_shutdown);
+									);
+								begin try
+									Unixext.fsync fd;
+								with Unix.Unix_error(Unix.EIO, _, _) ->
+									debug "Caught EIO in fsync after suspend; suspend image may be corrupt";
+									raise (Exception IO_error)
+								end;
+								(* Record the final memory usage of the domain so we know how
+								   much to allocate for the resume *)
+								let di = Xenctrl.domain_getinfo xc domid in
+								let pages = Int64.of_nativeint di.Xenctrl.total_memory_pages in
+								debug "Final memory usage of the domain = %Ld pages" pages;
+								let k = key_of vm in
+								let d = Opt.unbox (DB.read k) in
+								DB.write k { d with
+									VmExtra.suspend_memory_pages = pages;
+								}
 							)
-					) vm
-			)
+					)
+			) vm
+
 	let restore vm disk =
 		let build_info = vm |> key_of |> DB.read |> Opt.unbox |> (fun x -> x.VmExtra.build_info) |> Opt.unbox in
 		on_domain
@@ -799,10 +808,8 @@ let watch_xenstore () =
 				let different = list_different_domains !domains domains' in
 				List.iter
 					(fun id ->
-						let excluded = Current_vm_operations.excluded_reason id in
-						debug "Domain %s has changed state%s" id (Opt.default "" (Opt.map (fun x -> "but this is being handled by another operation: " ^ x) excluded));
-						if excluded = None
-						then Updates.add (Dynamic.Vm id) updates
+						debug "Domain %s has changed state" id;
+						Updates.add (Dynamic.Vm id) updates
 					) different;
 				domains := domains' in
 
