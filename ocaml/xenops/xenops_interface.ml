@@ -44,6 +44,7 @@ type error =
 	| No_ballooning_service
 	| Not_supported
 	| IO_error
+	| VDI_not_found of string
 
 type error_response = unit option * error option
 
@@ -59,7 +60,8 @@ external query: unit -> (Query.t option * error option) = ""
 
 type disk =
 	| Local of string (** path to a local block device *)
-	| Blkback of string * string (** vm.id * params *)
+	| VDI of string   (** typically "SR/VDI" *)
+
 type disk_list = disk list
 
 (** XXX: this code shouldn't care about the vswitch/bridge difference *)

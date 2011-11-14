@@ -19,6 +19,7 @@ open Xenops_helpers
 open Xenstore
 open Pervasiveext
 open Threadext
+open Stringext
 open Fun
 
 let dmpath = "/opt/xensource/libexec/qemu-dm-wrapper"
@@ -66,44 +67,98 @@ let event_wait timeout p =
 let this_domid ~xs = int_of_string (xs.Xs.read "domid")
 
 let uuid_of_vm vm = Uuid.uuid_of_string vm.Vm.id
+let uuid_of_di di = Uuid.uuid_of_int_array di.Xenctrl.handle
 let di_of_uuid ~xc ~xs uuid =
 	let all = Xenctrl.domain_getinfolist xc 0 in
 	try
-		let di = List.find (fun x -> Uuid.uuid_of_int_array x.Xenctrl.handle = uuid) all in
+		let di = List.find (fun x -> uuid_of_di x = uuid) all in
 		Some di
 	with Not_found -> None
 let domid_of_uuid ~xc ~xs uuid = Opt.map (fun di -> di.Xenctrl.domid) (di_of_uuid ~xc ~xs uuid)
 
+module Storage = struct
+	open Storage_interface
+
+	let rpc call =
+		let open Xmlrpc_client in
+		XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/storage") ~http:(xmlrpc ~version:"1.0" "/") call
+
+	let success = function
+		| Success x -> x
+		| x -> failwith (Printf.sprintf "Storage operation returned: %s" (x |> rpc_of_result |> Jsonrpc.to_string))
+
+	let params = function
+		| Params p -> p
+		| x -> failwith (Printf.sprintf "Storage operation returned bad type. Expected Params; returned: %s" (x |> rpc_of_success_t |> Jsonrpc.to_string))
+
+	let unit = function
+		| Unit -> ()
+		| x -> failwith (Printf.sprintf "Storage operation returned bad type. Expected Unit; returned: %s" (x |> rpc_of_success_t |> Jsonrpc.to_string))			
+
+	(* Used to identify this VBD to the storage layer *)
+	let id_of frontend_domid vbd = Printf.sprintf "vbd/%d/%s" frontend_domid (snd vbd)
+
+	type attached_vdi = {
+		domid: int;
+		params: string;
+	}
+
+	let attach_and_activate dp sr vdi read_write =
+		let result = Client.VDI.attach rpc "attach_and_activate" dp sr vdi read_write |> success |> params in
+		Client.VDI.activate rpc "attach_and_activate" dp sr vdi |> success |> unit;
+		(* XXX: we need to find out the backend domid *)
+		{ domid = 0; params = result }
+
+	let deactivate_and_detach dp =
+		Client.DP.destroy rpc "deactivate_and_detach" dp false |> success |> unit
+
+	let get_disk_by_name path = match List.filter (fun x -> x <> "") (String.split '/' path) with
+		| [ sr; vdi ] -> sr, vdi
+		| _ -> raise (Exception (VDI_not_found path))
+
+end
+
 let with_disk ~xc ~xs disk f = match disk with
 	| Local path -> f path
-	| Blkback (backend_vm_id, params) ->		
-		let frontend_domid = this_domid ~xs in
-		begin match domid_of_uuid ~xc ~xs (Uuid.uuid_of_string backend_vm_id) with
-			| None ->
-				debug "Failed to determine my own domain id!";
-				raise (Exception Does_not_exist)
-			| Some backend_domid ->
-				let t = {
-					Device.Vbd.mode = Device.Vbd.ReadOnly;
-					device_number = None; (* we don't mind *)
-					phystype = Device.Vbd.Phys;
-					params = params;
-					dev_type = Device.Vbd.Disk;
-					unpluggable = true;
-					protocol = None;
-					extra_backend_keys = [];
-					extra_private_keys = [];
-					backend_domid = backend_domid;
-				} in
-				let device = Device.Vbd.add ~xs ~hvm:false t frontend_domid in
-				let open Device_common in
-				finally
-					(fun () ->
-						device.frontend.devid 
-					|> Device_number.of_xenstore_key |> Device_number.to_linux_device 
-					|> f)
-					(fun () -> Device.clean_shutdown ~xs device)
-		end
+	| VDI path ->
+		let open Storage in
+		let open Storage_interface in
+		let sr, vdi = get_disk_by_name path in
+		let dp = Client.DP.create rpc "with_disk" "xenopsd" in
+		finally
+			(fun () ->
+				let vdi = attach_and_activate dp sr vdi false in
+				let backend_vm_id = uuid_of_di (Xenctrl.domain_getinfo xc vdi.domid) |> Uuid.string_of_uuid in
+
+				let frontend_domid = this_domid ~xs in
+				begin match domid_of_uuid ~xc ~xs (Uuid.uuid_of_string backend_vm_id) with
+					| None ->
+						debug "Failed to determine my own domain id!";
+						raise (Exception Does_not_exist)
+					| Some backend_domid ->
+						let t = {
+							Device.Vbd.mode = Device.Vbd.ReadOnly;
+							device_number = None; (* we don't mind *)
+							phystype = Device.Vbd.Phys;
+							params = vdi.params;
+							dev_type = Device.Vbd.Disk;
+							unpluggable = true;
+							protocol = None;
+							extra_backend_keys = [];
+							extra_private_keys = [];
+							backend_domid = backend_domid;
+						} in
+						let device = Device.Vbd.add ~xs ~hvm:false t frontend_domid in
+						let open Device_common in
+						finally
+							(fun () ->
+								device.frontend.devid 
+							|> Device_number.of_xenstore_key |> Device_number.to_linux_device 
+							|> f)
+							(fun () -> Device.clean_shutdown ~xs device)
+				end
+			)
+			(fun () -> deactivate_and_detach dp)
 
 module Mem = struct
 	let call_daemon xs fn args = Squeezed_rpc.Rpc.client ~xs ~service:Squeezed_rpc._service ~fn ~args
@@ -314,6 +369,9 @@ module VM = struct
 
 	let destroy = on_domain (fun xc xs vm di ->
 		let domid = di.Xenctrl.domid in
+
+		let vbds = Opt.default [] (Opt.map (fun d -> d.VmExtra.vbds) (DB.read (key_of vm))) in
+
 		(* Normally we throw-away our domain-level information. If the domain
 		   has suspended then we preserve it. *)
 		if di.Xenctrl.shutdown && (Domain.shutdown_reason_of_int di.Xenctrl.shutdown_code = Domain.Suspend)
@@ -322,7 +380,9 @@ module VM = struct
 			debug "VM %s (domid: %d) will not have domain-level information preserved" vm.Vm.id di.Xenctrl.domid;
 			if DB.exists (key_of vm) then DB.remove (key_of vm);
 		end;
-		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid
+		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid;
+		(* Detach any remaining disks *)
+		List.iter (fun vbd -> Storage.deactivate_and_detach (Storage.id_of domid vbd.Vbd.id)) vbds
 	)
 
 	let pause = on_domain (fun xc xs _ di ->
@@ -634,16 +694,23 @@ module VBD = struct
 
 	let id_of vbd = snd vbd.id
 
-	let backend_domid_of xc xs vbd =
+	let attach_and_activate xc xs frontend_domid vbd =
 		match vbd.backend with
-			| None (* XXX: do something better with CDROMs *)
-			| Some (Local _) -> this_domid ~xs
-			| Some (Blkback (vm, _)) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
+			| None ->
+				(* XXX: do something better with CDROMs *)
+				{ Storage.domid = this_domid ~xs; params = "" }
+			| Some (Local path) ->
+				{ Storage.domid = this_domid ~xs; params = path }
+			| Some (VDI path) ->
+				let sr, vdi = Storage.get_disk_by_name path in
+				let dp = Storage.id_of frontend_domid vbd.id in
+				Storage.attach_and_activate dp sr vdi (vbd.mode = ReadWrite)
 
-	let params_of = function
-		| None -> ""
-		| Some (Local path) -> path
-		| Some (Blkback (_, params)) -> params
+	let frontend_domid_of_device device = device.Device_common.frontend.Device_common.domid
+
+	let deactivate_and_detach device vbd =
+		let dp = Storage.id_of (frontend_domid_of_device device) vbd.id in
+		Storage.deactivate_and_detach dp
 
 	let device_number_of_device d =
 		Device_number.of_xenstore_key d.Device_common.frontend.Device_common.devid
@@ -651,8 +718,7 @@ module VBD = struct
 	let plug vm vbd =
 		on_frontend
 			(fun xc xs frontend_domid hvm ->
-				let backend_domid = backend_domid_of xc xs vbd in
-				let params = params_of vbd.backend in
+				let vdi = attach_and_activate xc xs frontend_domid vbd in
 				(* Remember the VBD id with the device *)
 				let id = _device_id Device_common.Vbd, id_of vbd in
 				let x = {
@@ -662,7 +728,7 @@ module VBD = struct
 					);
 					device_number = vbd.position;
 					phystype = Device.Vbd.Phys;
-					params = params;
+					params = vdi.Storage.params;
 					dev_type = (match vbd.ty with
 						| CDROM -> Device.Vbd.CDROM
 						| Disk -> Device.Vbd.Disk
@@ -671,7 +737,7 @@ module VBD = struct
 					protocol = None;
 					extra_backend_keys = vbd.extra_backend_keys;
 					extra_private_keys = id :: vbd.extra_private_keys;
-					backend_domid = backend_domid
+					backend_domid = vdi.Storage.domid
 				} in
 				(* Store the VBD ID -> actual frontend ID for unplug *)
 				let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm x frontend_domid in
@@ -685,7 +751,8 @@ module VBD = struct
 					(* If the device is gone then this is ok *)
 					let device = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
 					Device.clean_shutdown ~xs device;
-					Device.Vbd.release ~xs device
+					Device.Vbd.release ~xs device;
+					deactivate_and_detach device vbd;
 				with (Exception Does_not_exist) ->
 					debug "Ignoring missing device: %s" (id_of vbd)
 			)
@@ -693,33 +760,34 @@ module VBD = struct
 	let insert vm vbd disk =
 		with_xc_and_xs
 			(fun xc xs ->
-				let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
-				let device_number = device_number_of_device d in
-				let params = params_of (Some disk) in
+				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+				let frontend_domid = frontend_domid_of_device device in
+				let vdi = attach_and_activate xc xs frontend_domid vbd in
+				let device_number = device_number_of_device device in
 				let phystype = Device.Vbd.Phys in
-				let domid = d.Device_common.frontend.Device_common.domid in
-				Device.Vbd.media_insert ~xs ~device_number ~params ~phystype domid
+				Device.Vbd.media_insert ~xs ~device_number ~params:vdi.Storage.params ~phystype frontend_domid
 			)
 
 	let eject vm vbd =
 		with_xc_and_xs
 			(fun xc xs ->
-				let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
-				let device_number = device_number_of_device d in
-				let domid = d.Device_common.frontend.Device_common.domid in
-				Device.Vbd.media_eject ~xs ~device_number domid
+				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+				let frontend_domid = frontend_domid_of_device device in
+				let device_number = device_number_of_device device in
+				Device.Vbd.media_eject ~xs ~device_number frontend_domid;
+				deactivate_and_detach device vbd;
 			)
 
 	let get_state vm vbd =
 		with_xc_and_xs
 			(fun xc xs ->
 				try
-					let (d: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
-					let path = Device_common.kthread_pid_path_of_device ~xs d in
+					let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+					let path = Device_common.kthread_pid_path_of_device ~xs device in
 					let kthread_pid = try xs.Xs.read path |> int_of_string with _ -> 0 in
-					let plugged = Hotplug.device_is_online ~xs d in
-					let device_number = device_number_of_device d in
-					let domid = d.Device_common.frontend.Device_common.domid in
+					let plugged = Hotplug.device_is_online ~xs device in
+					let device_number = device_number_of_device device in
+					let domid = device.Device_common.frontend.Device_common.domid in
 					let ejected = Device.Vbd.media_is_ejected ~xs ~device_number domid in
 					{
 						Vbd.plugged = plugged;

@@ -222,15 +222,21 @@ let rec perform op =
 	match op with
 		| VM_start id ->
 			debug "VM.start %s" id;
-			perform (VM_create id);
-			perform (VM_build id);
-			List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
-			List.iter (fun vif -> perform (VIF_plug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
-			(* Unfortunately this has to be done after the devices have been created since
-			   qemu reads xenstore keys in preference to its own commandline. After this is
-			   fixed we can consider creating qemu as a part of the 'build' *)
-			perform (VM_create_device_model id);
-			Updates.add (Dynamic.Vm id) updates
+			begin try
+				perform (VM_create id);
+				perform (VM_build id);
+				List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
+				List.iter (fun vif -> perform (VIF_plug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+				(* Unfortunately this has to be done after the devices have been created since
+				   qemu reads xenstore keys in preference to its own commandline. After this is
+				   fixed we can consider creating qemu as a part of the 'build' *)
+				perform (VM_create_device_model id);
+				Updates.add (Dynamic.Vm id) updates
+			with e ->
+				debug "VM.start threw error: %s. Calling VM.destroy" (Printexc.to_string e);
+				perform (VM_destroy id);
+				raise e
+			end
 		| VM_shutdown id ->
 			debug "VM.shutdown %s" id;
 			perform (VM_destroy id);

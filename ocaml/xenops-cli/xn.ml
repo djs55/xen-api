@@ -166,6 +166,7 @@ let add filename =
 							exit 2 in
 					let backend = match List.filter (fun x -> x <> "") (String.split ':' source) with
 						| [ "phy"; path ] -> Some (Local path)
+						| [ "sm"; path ] -> Some (VDI path)
 						| [ "file"; path ] ->
 							Printf.fprintf stderr "I don't understand 'file' disk paths. Please use 'phy'.\n";
 							exit 2
@@ -312,7 +313,10 @@ let vbd_list x =
 			let mode = if vbd.Vbd.mode = Vbd.ReadOnly then "RO" else "RW" in
 			let ty = match vbd.Vbd.ty with Vbd.CDROM -> "CDROM" | Vbd.Disk -> "HDD" in
 			let plugged = if state.Vbd.plugged then "X" else " " in
-			let disk = Opt.default "" (Opt.map (function Local x -> x | Blkback(domid, params) -> Printf.sprintf "%s:%s" domid params) vbd.Vbd.backend) |> trim 32 in
+			let disk = Opt.default "" (Opt.map (function
+				| Local x -> x |> trim 32
+				| VDI path -> path |> trim 32
+			) vbd.Vbd.backend) in
 			line id position mode ty plugged disk
 		) vbds in
 	List.iter print_endline (header :: lines)
