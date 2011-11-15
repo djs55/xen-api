@@ -339,11 +339,11 @@ let find_vbd id =
 
 let cd_eject id =
 	let vbd, _ = find_vbd id in
-	success (Client.VBD.eject rpc vbd.Vbd.id)
+	Client.VBD.eject rpc vbd.Vbd.id |> success |> wait_for_task rpc |> success_task rpc
 
 let cd_insert id disk =
 	let vbd, _ = find_vbd id in
-	success (Client.VBD.insert rpc vbd.Vbd.id (Local disk))
+	Client.VBD.insert rpc vbd.Vbd.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
 
 let _ =
 	match List.tl (Array.to_list Sys.argv) with

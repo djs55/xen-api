@@ -45,6 +45,7 @@ type error =
 	| Not_supported
 	| IO_error
 	| VDI_not_found of string
+	| Caller_must_pass_file_descriptor
 
 type error_response = unit option * error option
 
@@ -249,6 +250,9 @@ end
 module TASK = struct
 	external stat: Task.id -> (Task.t option) * (error option) = ""
 	external cancel: Task.id -> (unit option) * (error option) = ""
+
+	external connect: Task.id -> (unit option) * (error option) = ""
+	(** NB can only be called with an out-of-band file descriptor *)
 end
 
 module VM = struct
@@ -269,14 +273,15 @@ module VM = struct
 	external reboot: Vm.id -> float option -> (Task.id option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (Task.id option) * (error option) = ""
 	external resume: Vm.id -> disk -> (Task.id option) * (error option) = ""
+	external migrate: Vm.id -> (Task.id option) * (error option) = ""
 end
 
 module VBD = struct
 	external add: Vbd.t -> (Vbd.id option) * (error option) = ""
-	external plug: Vbd.id -> (unit option) * (error option) = ""
-	external unplug: Vbd.id -> (unit option) * (error option) = ""
-	external eject: Vbd.id -> (unit option) * (error option) = ""
-	external insert: Vbd.id -> disk -> (unit option) * (error option) = ""
+	external plug: Vbd.id -> (Task.id option) * (error option) = ""
+	external unplug: Vbd.id -> (Task.id option) * (error option) = ""
+	external eject: Vbd.id -> (Task.id option) * (error option) = ""
+	external insert: Vbd.id -> disk -> (Task.id option) * (error option) = ""
 	external stat: Vbd.id -> ((Vbd.t * Vbd.state) option) * (error option) = ""
 	external list: Vm.id -> ((Vbd.t * Vbd.state) list option) * (error option) = ""
 	external remove: Vbd.id -> (unit option) * (error option) = ""
@@ -284,8 +289,8 @@ end
 
 module VIF = struct
 	external add: Vif.t -> (Vif.id option) * (error option) = ""
-	external plug: Vif.id -> (unit option) * (error option) = ""
-	external unplug: Vif.id -> (unit option) * (error option) = ""
+	external plug: Vif.id -> (Task.id option) * (error option) = ""
+	external unplug: Vif.id -> (Task.id option) * (error option) = ""
 	external stat: Vif.id -> ((Vif.t * Vif.state) option) * (error option) = ""
 	external list: Vm.id -> ((Vif.t * Vif.state) list option) * (error option) = ""
 	external remove: Vif.id -> (unit option) * (error option) = ""

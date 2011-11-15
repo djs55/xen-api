@@ -45,12 +45,36 @@ let filter_prefix prefix xs =
 
 let updates = Updates.empty ()
 
+type operation =
+	| VM_start of Vm.id
+	| VM_shutdown of Vm.id
+	| VM_reboot of (Vm.id * float option)
+	| VM_suspend of (Vm.id * disk)
+	| VM_resume of (Vm.id * disk)
+	| VM_restore of (Vm.id * disk)
+	| VM_migrate of Vm.id
+	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
+	| VM_destroy of Vm.id
+	| VM_create of Vm.id
+	| VM_build of Vm.id
+	| VM_create_device_model of Vm.id
+	| VM_pause of Vm.id
+	| VM_unpause of Vm.id
+	| VM_check_state of Vm.id
+	| VBD_plug of Vbd.id
+	| VBD_unplug of Vbd.id
+	| VBD_insert of Vbd.id * disk
+	| VBD_eject of Vbd.id
+	| VIF_plug of Vif.id
+	| VIF_unplug of Vif.id
+
 module TASK = struct
 	type t = {
 		id: string;
 		mutable result: Task.result;
-		f: unit -> unit;
+		mutable f: t -> unit;
 		cancel: unit -> unit;
+		mutable fd: Unix.file_descr option; (* VM.migrate *)
 	}
 
 	module SMap = Map.Make(struct type t = string let compare = compare end)
@@ -66,12 +90,13 @@ module TASK = struct
 			incr counter;
 			result
 
-	let add f =
+	let add (f: t -> unit) =
 		let t = {
 			id = next_task_id ();
 			result = Task.Pending 0.;
 			f = f;
-			cancel = (fun () -> ())
+			cancel = (fun () -> ());
+			fd = None;
 		} in
 		Mutex.execute m
 			(fun () ->
@@ -97,6 +122,9 @@ module TASK = struct
 				}
 			)
 	let stat _ id = stat' id |> return
+
+	let connect _ id =
+		raise (Exception Caller_must_pass_file_descriptor)
 end
 
 module Per_VM_queues = struct
@@ -122,7 +150,7 @@ module Per_VM_queues = struct
 				) in
 		begin
 			try
-				item.TASK.f ();
+				item.TASK.f item;
 				item.TASK.result <- Task.Completed;
 				debug "Triggering event on task id %s" item.TASK.id;
 				Updates.add (Dynamic.Task item.TASK.id) updates;
@@ -195,81 +223,62 @@ module VIF_DB = struct
 		List.combine vifs states
 end
 
-type operation =
-	| VM_start of Vm.id
-	| VM_shutdown of Vm.id
-	| VM_reboot of (Vm.id * float option)
-	| VM_suspend of (Vm.id * disk)
-	| VM_resume of (Vm.id * disk)
-	| VM_restore of (Vm.id * disk)
-	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
-	| VM_destroy of Vm.id
-	| VM_create of Vm.id
-	| VM_build of Vm.id
-	| VM_create_device_model of Vm.id
-	| VM_pause of Vm.id
-	| VM_unpause of Vm.id
-	| VM_check_state of Vm.id
-	| VBD_plug of Vbd.id
-	| VBD_unplug of Vbd.id
-	| VBD_insert of Vbd.id * disk
-	| VBD_eject of Vbd.id
-	| VIF_plug of Vif.id
-	| VIF_unplug of Vif.id
-
-let rec perform op =
+let rec perform (op: operation) (t: TASK.t) : unit =
 	let module B = (val get_backend () : S) in
 	match op with
 		| VM_start id ->
 			debug "VM.start %s" id;
 			begin try
-				perform (VM_create id);
-				perform (VM_build id);
-				List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
-				List.iter (fun vif -> perform (VIF_plug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+				perform (VM_create id) t;
+				perform (VM_build id) t;
+				List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
+				List.iter (fun vif -> perform (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 				(* Unfortunately this has to be done after the devices have been created since
 				   qemu reads xenstore keys in preference to its own commandline. After this is
 				   fixed we can consider creating qemu as a part of the 'build' *)
-				perform (VM_create_device_model id);
+				perform (VM_create_device_model id) t;
 				Updates.add (Dynamic.Vm id) updates
 			with e ->
 				debug "VM.start threw error: %s. Calling VM.destroy" (Printexc.to_string e);
-				perform (VM_destroy id);
+				perform (VM_destroy id) t;
 				raise e
 			end
 		| VM_shutdown id ->
 			debug "VM.shutdown %s" id;
-			perform (VM_destroy id);
-			List.iter (fun vbd -> perform (VBD_unplug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
-			List.iter (fun vif -> perform (VIF_unplug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+			perform (VM_destroy id) t;
+			List.iter (fun vbd -> perform (VBD_unplug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform (VIF_unplug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_reboot (id, timeout) ->
 			debug "VM.reboot %s" id;
-			Opt.iter (fun t -> perform (VM_shutdown_domain(id, Reboot, t))) timeout;
-			perform (VM_shutdown id);
-			perform (VM_start id);
-			perform (VM_unpause id);
+			Opt.iter (fun x -> perform (VM_shutdown_domain(id, Reboot, x)) t) timeout;
+			perform (VM_shutdown id) t;
+			perform (VM_start id) t;
+			perform (VM_unpause id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_suspend (id, disk) ->
 			debug "VM.suspend %s" id;
 			B.VM.suspend (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
-			perform (VM_shutdown id);
+			perform (VM_shutdown id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_restore (id, disk) ->
 			debug "VM.restore %s" id;
 			B.VM.restore (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk
 		| VM_resume (id, disk) ->
 			debug "VM.resume %s" id;
-			perform (VM_create id);
-			perform (VM_restore (id, disk));
-			List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id)) (VBD_DB.list id |> List.map fst);
-			List.iter (fun vif -> perform (VIF_plug vif.Vif.id)) (VIF_DB.list id |> List.map fst);
+			perform (VM_create id) t;
+			perform (VM_restore (id, disk)) t;
+			List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 			(* Unfortunately this has to be done after the devices have been created since
 			   qemu reads xenstore keys in preference to its own commandline. After this is
 			   fixed we can consider creating qemu as a part of the 'build' *)
-			perform (VM_create_device_model id);
+			perform (VM_create_device_model id) t;
 			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
+		| VM_migrate id ->
+			debug "VM.migrate %s" id;
+			raise (Exception Unimplemented)
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
@@ -318,7 +327,7 @@ let rec perform op =
 				| Vm.Start    -> [ VM_shutdown id; VM_start id; VM_unpause id ]
 				| Vm.Delay    -> [] in
 			let operations = List.concat (List.map operations_of_action actions) in
-			List.iter perform operations
+			List.iter (fun x -> perform x t) operations
 		| VBD_plug id ->
 			debug "VBD.plug %s" (VBD_DB.string_of_id id);
 			B.VBD.plug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
@@ -351,6 +360,17 @@ let rec perform op =
 			debug "VIF.unplug %s" (VIF_DB.string_of_id id);
 			B.VIF.unplug (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
 
+let queue_operation id op =
+	let task = TASK.add (fun t -> perform op t) in
+	Per_VM_queues.add id task;
+	debug "Pushed task with id %s" task.TASK.id;
+	task.TASK.id
+
+let wait_for_fd op =
+	let task = TASK.add (perform op) in
+	debug "Created blocked task with id %s" task.TASK.id;
+	task.TASK.id
+
 module VBD = struct
 	open Vbd
 	module DB = VBD_DB
@@ -361,11 +381,11 @@ module VBD = struct
 		DB.add (DB.key_of x.id) x;
 		return x.id
 
-	let plug _ id = perform (VBD_plug id) |> return
-	let unplug _ id = perform (VBD_unplug id) |> return
+	let plug _ id = queue_operation (DB.vm_of id) (VBD_plug id) |> return
+	let unplug _ id = queue_operation (DB.vm_of id) (VBD_unplug id) |> return
 
-	let insert _ id disk = perform (VBD_insert(id, disk)) |> return
-	let eject _ id = perform (VBD_eject id) |> return
+	let insert _ id disk = queue_operation (DB.vm_of id) (VBD_insert(id, disk)) |> return
+	let eject _ id = queue_operation (DB.vm_of id) (VBD_eject id) |> return
 	let remove _ id =
 		debug "VBD.remove %s" (string_of_id id);
 		let module B = (val get_backend () : S) in
@@ -399,8 +419,8 @@ module VIF = struct
 		DB.add (DB.key_of x.id) { x with mac = mac };
 		return x.id
 
-	let plug _ id = perform (VIF_plug id) |> return
-	let unplug _ id = perform (VIF_unplug id) |> return
+	let plug _ id = queue_operation (DB.vm_of id) (VIF_plug id) |> return
+	let unplug _ id = queue_operation (DB.vm_of id) (VIF_unplug id) |> return
 
 	let remove _ id =
 		debug "VIF.remove %s" (string_of_id id);
@@ -423,12 +443,6 @@ module VM = struct
 	open Vm
 
 	module DB = VM_DB
-
-	let queue_operation id op =
-		let task = TASK.add (fun () -> perform op) in
-		Per_VM_queues.add id task;
-		debug "Pushed task with id %s" task.TASK.id;
-		task.TASK.id
 
 	let add _ x =
 		debug "VM.add %s" (Jsonrpc.to_string (rpc_of_t x));
@@ -475,6 +489,8 @@ module VM = struct
 
 	let resume _ id disk = queue_operation id (VM_resume (id, disk)) |> return
 
+	let migrate _ id = wait_for_fd (VM_migrate id) |> return
+
 end
 
 module DEBUG = struct
@@ -518,7 +534,7 @@ let internal_event_thread_body () =
 					debug "Ignoring event on unmanaged VM: %s" id
 				| Dynamic.Vm id, Some (Dynamic.Vm_t (vm, state)) ->
 					debug "Received an event on managed VM %s" vm.Vm.id;
-					let (_: Task.id) = VM.queue_operation vm.Vm.id (VM_check_state vm.Vm.id) in
+					let (_: Task.id) = queue_operation vm.Vm.id (VM_check_state vm.Vm.id) in
 					()
 				| id, _ ->
 					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_id id))

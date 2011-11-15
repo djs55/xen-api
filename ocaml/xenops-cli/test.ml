@@ -366,8 +366,8 @@ module type DEVICE = sig
 	val create: id -> position -> t
 	val add: t -> id option * error option
 	val remove: id -> unit option * error option
-	val plug: id -> unit option * error option
-	val unplug: id -> unit option * error option
+	val plug: id -> Task.id option * error option
+	val unplug: id -> Task.id option * error option
 	val list: Vm.id -> (t * state) list option * error option
 	val find: id -> (t * state) list -> t
 end
@@ -398,8 +398,8 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			(fun id ->
 				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
-				success (plug dev_id);
-				success (unplug dev_id);
+				plug dev_id |> success |> wait_for_task rpc |> success_task rpc;
+				unplug dev_id |> success |> wait_for_task rpc |> success_task rpc;
 				success (remove dev_id);
 			)
 
@@ -411,12 +411,12 @@ module DeviceTests = functor(D: DEVICE) -> struct
 						(fun (id, position) ->
 							let dev = create id position in
 							let id = success (add dev) in
-							success (plug id);
+							plug id |> success |> wait_for_task rpc |> success_task rpc;
 							id
 						) (List.combine ids positions) in
 				List.iter
 					(fun id ->
-						success (unplug id);
+						unplug id |> success |> wait_for_task rpc |> success_task rpc;
 						success (remove id);
 					) ids
 			)
@@ -445,7 +445,7 @@ module DeviceTests = functor(D: DEVICE) -> struct
 			(fun id ->
 				let dev = create (List.hd ids) (List.hd positions) in
 				let (dev_id: id) = success (add dev) in
-				success (plug dev_id);
+				plug dev_id |> success |> wait_for_task rpc |> success_task rpc;
 				(* no unplug *)
 				fail_connected (remove dev_id);				
 			)
