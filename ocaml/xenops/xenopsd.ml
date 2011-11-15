@@ -22,20 +22,20 @@ open Pervasiveext
 open Fun
 
 let socket = ref None
-let server = Http_svr.Server.empty ()
+let server = Http_svr.Server.empty (Xenops_server.make_context ())
 
 let path = "/var/xapi/xenopsd"
 let forwarded_path = path  ^ ".forwarded" (* receive an authenticated fd from xapi *)
 
 module Server = Xenops_interface.Server(Xenops_server)
 
-let xmlrpc_handler process req bio =
+let xmlrpc_handler process req bio context =
     let body = Http_svr.read_body req bio in
     let s = Buf_io.fd_of bio in
     let rpc = Xmlrpc.call_of_string body in
 	(* Xenops_utils.debug "Request: %s %s" rpc.Rpc.name (Jsonrpc.to_string (List.hd rpc.Rpc.params)); *)
 	try
-		let result = process (Xenops_server.make_context ()) rpc in
+		let result = process context rpc in
 		(* Xenops_utils.debug "Response: success:%b %s" result.Rpc.success (Jsonrpc.to_string result.Rpc.contents); *)
 		let str = Xmlrpc.string_of_response result in
 		Http_svr.response_str req s str
@@ -48,7 +48,7 @@ let xmlrpc_handler process req bio =
 		Xenops_utils.debug "Caught %s" (Printexc.to_string e);
 		Http_svr.response_unauthorised ~req (Printf.sprintf "Go away: %s" (Printexc.to_string e)) s
 
-let get_handler req bio =
+let get_handler req bio _ =
 	let s = Buf_io.fd_of bio in
 	Http_svr.response_str req s "<html><body>Hello there</body></html>"
 
@@ -84,7 +84,10 @@ let start path process =
 							(fun () ->
 								let req = String.sub buf 0 len |> Jsonrpc.of_string |> Http.Request.t_of_rpc in
 								req.Http.Request.close <- true;
-								let (_: bool) = Http_svr.handle_one server received_fd req in
+								let context = {
+									Xenops_server.transferred_fd = Some received_fd
+								} in
+								let (_: bool) = Http_svr.handle_one server received_fd context req in
 								()
 							) (fun () -> Unix.close received_fd)
 					) (fun () -> Unix.close this_connection)

@@ -20,9 +20,14 @@ open Xenops_interface
 open Xenops_server_plugin
 open Xenops_utils
 
-type context = unit
+type context = {
+	transferred_fd: Unix.file_descr option;
+	(** some API calls take a file descriptor argument *)
+}
 
-let make_context () = ()
+let make_context () = {
+	transferred_fd = None
+}
 
 let query _ _ = Some {
     Query.name = "xenops";
@@ -123,8 +128,10 @@ module TASK = struct
 			)
 	let stat _ id = stat' id |> return
 
-	let connect _ id =
-		raise (Exception Caller_must_pass_file_descriptor)
+	let connect context id = match context.transferred_fd with
+		| None -> raise (Exception Caller_must_pass_file_descriptor)
+		| Some _ ->
+			raise (Exception Unimplemented)
 end
 
 module Per_VM_queues = struct
