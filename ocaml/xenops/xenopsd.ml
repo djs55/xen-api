@@ -19,11 +19,13 @@ module D = Debug.Debugger(struct let name = name end)
 open D
 
 open Pervasiveext 
+open Fun
 
 let socket = ref None
 let server = Http_svr.Server.empty ()
 
 let path = "/var/xapi/xenopsd"
+let forwarded_path = path  ^ ".forwarded" (* receive an authenticated fd from xapi *)
 
 module Server = Xenops_interface.Server(Xenops_server)
 
@@ -46,15 +48,49 @@ let xmlrpc_handler process req bio =
 		Xenops_utils.debug "Caught %s" (Printexc.to_string e);
 		Http_svr.response_unauthorised ~req (Printf.sprintf "Go away: %s" (Printexc.to_string e)) s
 
+let get_handler req bio =
+	let s = Buf_io.fd_of bio in
+	Http_svr.response_str req s "<html><body>Hello there</body></html>"
+
 let start path process =
     Unixext.mkdir_safe (Filename.dirname path) 0o700;
     Unixext.unlink_safe path;
     let domain_sock = Http_svr.bind (Unix.ADDR_UNIX(path)) "unix_rpc" in
     Http_svr.Server.add_handler server Http.Post "/" (Http_svr.BufIO (xmlrpc_handler process));
+    Http_svr.Server.add_handler server Http.Get "/" (Http_svr.BufIO get_handler);
     Http_svr.start server domain_sock;
-	socket := Some domain_sock
+	socket := Some domain_sock;
 
-
+	(* Start receiving forwarded /file descriptors/ from xapi *)
+	Unixext.unlink_safe forwarded_path;
+	let forwarded_sock = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+	Unix.bind forwarded_sock (Unix.ADDR_UNIX forwarded_path);
+	Unix.listen forwarded_sock 5;
+	let (_: Thread.t) = Thread.create
+		(fun () ->
+			(* XXX: need some error handling here *)
+			while true do
+				let msg_size = 16384 in
+				let buf = String.make msg_size '\000' in
+				debug "Calling Unix.accept()";
+				let this_connection, _ = Unix.accept forwarded_sock in
+				debug "Unix.accept() ok";
+				finally
+					(fun () ->
+						debug "Calling Unixext.recv_fd()";
+						let len, _, received_fd = Unixext.recv_fd this_connection buf 0 msg_size [] in
+						debug "Unixext.recv_fd ok";
+						finally
+							(fun () ->
+								let req = String.sub buf 0 len |> Jsonrpc.of_string |> Http.Request.t_of_rpc in
+								req.Http.Request.close <- true;
+								let (_: bool) = Http_svr.handle_one server received_fd req in
+								()
+							) (fun () -> Unix.close received_fd)
+					) (fun () -> Unix.close this_connection)
+			done
+		) () in
+	()
 
 (* val reopen_logs: unit -> unit *)
 let reopen_logs _ = 
