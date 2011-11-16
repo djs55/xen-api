@@ -291,7 +291,13 @@ module Builtin_impl = struct
 
 		let get_by_content context ~task ~sr ~content_id =
 			info "VDI.get_by_content task:%s sr:%s content_id:%s" task sr content_id;
-			Failure (Internal_error "unimplemented")
+			(* PR-1255: the backend should do this for us *)
+			 Server_helpers.exec_with_new_task "VDI.get_by_content" ~subtask_of:(Ref.of_string task)
+                (fun __context ->
+					let vdi = content_id in (* PR-1255 *)
+					Success(Vdi(SR.vdi_info_of_vdi_rec __context (snd(vdi_of_location ~__context vdi))))
+				)
+
 		let similar_content context ~task ~sr ~vdi =
 			info "VDI.similar_content task:%s sr:%s vdi:%s" task sr vdi;
             Server_helpers.exec_with_new_task "VDI.similar_content" ~subtask_of:(Ref.of_string task)
