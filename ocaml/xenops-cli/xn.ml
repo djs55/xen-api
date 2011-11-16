@@ -13,15 +13,33 @@
  *)
 
 open Stringext
+open Threadext
+open Pervasiveext
 open Fun
 
 let usage () =
 	Printf.fprintf stderr "%s <command> [args] - send commands to the xenops daemon\n" Sys.argv.(0);
-	Printf.fprintf stderr "%s add <config> - add a VM from <config>\n" Sys.argv.(0)
+	Printf.fprintf stderr "%s add <config> - add a VM from <config>\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s list - query the states of known VMs\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s remove <name or id> - forget about a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s start <name or id> - start a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s pause <name or id> - pause a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s unpause <name or id> - unpause a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s shutdown <name or id> - shutdown a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s reboot <name or id> - reboot a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s suspend <name or id> <disk> - suspend a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s resume <name or id> <disk> - resume a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s migrate <name or id> - migrate a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s vbd-list <name or id> - query the states of a VM's block devices\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s cd-insert <id> <disk> - insert a CD into a VBD\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
+	()
+
 
 open Xenops_interface
 open Xmlrpc_client
 let default_path = "/var/xapi/xenopsd"
+let forwarded_path = default_path ^ ".forwarded"
 let transport = ref (Unix default_path)
 
 let rpc call =
@@ -294,6 +312,49 @@ let resume x disk =
 	let vm, _ = find_by_name x in
 	Client.VM.resume rpc vm.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
 
+let migrate x remotecmd =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	let a, b = Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+	let toclose = ref [ a; b ] in
+	let close x = if List.mem x !toclose then (Unix.close x; toclose := List.filter (fun y -> x <> y) !toclose) in
+	finally
+		(fun () ->
+			let pid = Unix.create_process (List.hd remotecmd) (Array.of_list remotecmd) b b Unix.stderr in
+			close b;
+			(* Send 'a' as part of the VM.migrate operation *)
+			let local = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+			Unix.connect local (Unix.ADDR_UNIX forwarded_path);
+			let jsonrpc_request = Rpc.call "VM.migrate" [ Vm.rpc_of_id vm.id ] |> Jsonrpc.string_of_call in
+			let buf = Xmlrpc_client.xmlrpc ~length:(String.length jsonrpc_request |> Int64.of_int) "/" |> Http.Request.rpc_of_t |> Jsonrpc.to_string in
+			let n = Unixext.send_fd local buf 0 (String.length buf) [] a in
+			close a;
+			Printf.fprintf stderr "sent message = [%s]\n%!" buf;
+			if n <> (String.length buf) then failwith "Failed to transmit fd";
+
+			let n = Unix.write local jsonrpc_request 0 (String.length jsonrpc_request) in
+			Printf.fprintf stderr "sent message = [%s]\n%!" jsonrpc_request;
+			Unix.shutdown local Unix.SHUTDOWN_SEND;
+			if n <> (String.length jsonrpc_request) then failwith "Failed to transmit fd";
+			let buf' = String.make 16384 '\000' in
+			let _ = Unix.read local buf' 0 (String.length buf') in
+			Printf.fprintf stderr "received [%s]\n%!" buf';
+			begin match Http_client.response_of_fd local with
+				| None -> failwith "Invalid HTTP response"
+				| Some resp ->
+					let buf' = String.make 16384 '\000' in
+					let n = Unix.recv local buf' 0 (String.length buf') [] in
+					if n = 0 then failwith "Received a zero-length response";
+					let resp = String.sub buf' 0 n |> Jsonrpc.response_of_string in
+					if not resp.Rpc.success then failwith "Received a failure";
+					Printf.fprintf stderr "Received [%s]\n%!" buf';
+					let resp' = Xenops_interface.string_response_of_rpc resp.Rpc.contents in
+					resp' |> success |> wait_for_task rpc |> success_task rpc;
+			end;
+			let _ = Unix.waitpid [] pid in
+			()
+		) (fun () -> close a; close b)
+
 let trim limit str =
 	let l = String.length str in
 	if l < limit then str
@@ -345,6 +406,29 @@ let cd_insert id disk =
 	let vbd, _ = find_vbd id in
 	Client.VBD.insert rpc vbd.Vbd.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
 
+let slave () =
+	let copy a b =
+		let len = 1024 * 1024 in
+		let buf = String.make len '\000' in
+		let finished = ref false in
+		while not !finished do
+			let n = Unix.read a buf 0 len in
+			if n = 0 then finished := true
+			else
+				let m = Unix.write b buf 0 n in
+				if m <> n then finished := true
+		done in
+
+	let fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+	finally
+		(fun () ->
+			Unix.connect fd (Unix.ADDR_UNIX default_path);
+			let incoming = Thread.create (copy Unix.stdin) fd in
+			let outgoing = Thread.create (copy fd) Unix.stdout in
+			Thread.join incoming;
+			Thread.join outgoing;
+		) (fun () -> Unix.close fd)
+
 let _ =
 	match List.tl (Array.to_list Sys.argv) with
 		| [ "help" ] | [] ->
@@ -372,12 +456,16 @@ let _ =
 			suspend id disk
 		| [ "resume"; id; disk ] ->
 			resume id disk
+		| "migrate" :: id :: remotecmd ->
+			migrate id remotecmd
 		| [ "vbd-list"; id ] ->
 			vbd_list id
 		| [ "cd-insert"; id; disk ] ->
 			cd_insert id disk
 		| [ "cd-eject"; id ] ->
 			cd_eject id
+		| [ "slave" ] ->
+			slave ()
 		| cmd :: _ ->
 			Printf.fprintf stderr "Unrecognised command: %s\n" cmd;
 			usage ();

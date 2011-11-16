@@ -48,6 +48,7 @@ type error =
 	| Caller_must_pass_file_descriptor
 
 type error_response = unit option * error option
+type string_response = string option * error option
 
 module Query = struct
 	type t = {
@@ -250,9 +251,6 @@ end
 module TASK = struct
 	external stat: Task.id -> (Task.t option) * (error option) = ""
 	external cancel: Task.id -> (unit option) * (error option) = ""
-
-	external connect: Task.id -> (unit option) * (error option) = ""
-	(** NB can only be called with an out-of-band file descriptor *)
 end
 
 module VM = struct
@@ -273,7 +271,9 @@ module VM = struct
 	external reboot: Vm.id -> float option -> (Task.id option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (Task.id option) * (error option) = ""
 	external resume: Vm.id -> disk -> (Task.id option) * (error option) = ""
+
 	external migrate: Vm.id -> (Task.id option) * (error option) = ""
+	(** NB can only be called with an out-of-band file descriptor *)
 end
 
 module VBD = struct

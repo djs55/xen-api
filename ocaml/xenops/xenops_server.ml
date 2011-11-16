@@ -15,6 +15,7 @@
 open Listext
 open Stringext
 open Threadext
+open Pervasiveext
 open Fun
 open Xenops_interface
 open Xenops_server_plugin
@@ -57,7 +58,7 @@ type operation =
 	| VM_suspend of (Vm.id * disk)
 	| VM_resume of (Vm.id * disk)
 	| VM_restore of (Vm.id * disk)
-	| VM_migrate of Vm.id
+	| VM_migrate of (Vm.id * Unix.file_descr)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
 	| VM_create of Vm.id
@@ -77,9 +78,8 @@ module TASK = struct
 	type t = {
 		id: string;
 		mutable result: Task.result;
-		mutable f: t -> unit;
+		f: t -> unit;
 		cancel: unit -> unit;
-		mutable fd: Unix.file_descr option; (* VM.migrate *)
 	}
 
 	module SMap = Map.Make(struct type t = string let compare = compare end)
@@ -101,7 +101,6 @@ module TASK = struct
 			result = Task.Pending 0.;
 			f = f;
 			cancel = (fun () -> ());
-			fd = None;
 		} in
 		Mutex.execute m
 			(fun () ->
@@ -127,11 +126,6 @@ module TASK = struct
 				}
 			)
 	let stat _ id = stat' id |> return
-
-	let connect context id = match context.transferred_fd with
-		| None -> raise (Exception Caller_must_pass_file_descriptor)
-		| Some _ ->
-			raise (Exception Unimplemented)
 end
 
 module Per_VM_queues = struct
@@ -283,9 +277,12 @@ let rec perform (op: operation) (t: TASK.t) : unit =
 			perform (VM_create_device_model id) t;
 			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
-		| VM_migrate id ->
-			debug "VM.migrate %s" id;
-			raise (Exception Unimplemented)
+		| VM_migrate (id, fd) ->
+			finally
+				(fun () ->
+					debug "VM.migrate %s" id;
+					raise (Exception Unimplemented)
+				) (fun () -> Unix.close fd)
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
@@ -371,11 +368,6 @@ let queue_operation id op =
 	let task = TASK.add (fun t -> perform op t) in
 	Per_VM_queues.add id task;
 	debug "Pushed task with id %s" task.TASK.id;
-	task.TASK.id
-
-let wait_for_fd op =
-	let task = TASK.add (perform op) in
-	debug "Created blocked task with id %s" task.TASK.id;
 	task.TASK.id
 
 module VBD = struct
@@ -496,7 +488,9 @@ module VM = struct
 
 	let resume _ id disk = queue_operation id (VM_resume (id, disk)) |> return
 
-	let migrate _ id = wait_for_fd (VM_migrate id) |> return
+	let migrate context id = match context.transferred_fd with
+		| None -> raise (Exception Caller_must_pass_file_descriptor)
+		| Some fd -> queue_operation id (VM_migrate (id, fd)) |> return
 
 end
 

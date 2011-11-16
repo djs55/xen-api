@@ -15,9 +15,7 @@ let name = "xenopsd"
 let default_pidfile = Printf.sprintf "/var/run/%s.pid" name 
 let log_file_path = Printf.sprintf "file:/var/log/%s.log" name 
 
-module D = Debug.Debugger(struct let name = name end)
-open D
-
+open Xenops_utils
 open Pervasiveext 
 open Fun
 
@@ -68,6 +66,7 @@ let start path process =
 	Unix.listen forwarded_sock 5;
 	let (_: Thread.t) = Thread.create
 		(fun () ->
+			debug "Listening on %s" forwarded_path;
 			(* XXX: need some error handling here *)
 			while true do
 				let msg_size = 16384 in
@@ -79,10 +78,11 @@ let start path process =
 					(fun () ->
 						debug "Calling Unixext.recv_fd()";
 						let len, _, received_fd = Unixext.recv_fd this_connection buf 0 msg_size [] in
-						debug "Unixext.recv_fd ok";
+						debug "Unixext.recv_fd ok (len = %d)" len;
 						finally
 							(fun () ->
 								let req = String.sub buf 0 len |> Jsonrpc.of_string |> Http.Request.t_of_rpc in
+								debug "Received request = [%s]\n%!" (req |> Http.Request.rpc_of_t |> Jsonrpc.to_string);
 								req.Http.Request.close <- true;
 								let context = {
 									Xenops_server.transferred_fd = Some received_fd
