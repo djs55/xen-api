@@ -37,9 +37,13 @@ type task = string
 	connect a VBD backend to a VBD frontend *)
 type params = string
 
+(** Uniquely identifies the contents of a VDI *)
+type content_id = string
+
 (** The result of an operation which creates or examines a VDI *)
 type vdi_info = {
     vdi: vdi;
+	content_id: content_id;
     name_label: string;
     name_description: string;
     ty: string;
@@ -192,4 +196,14 @@ module VDI = struct
 	(** [detach task dp sr vdi] signals that this client no-longer needs the [params]
 		to be valid. *)
     external detach : task:task -> dp:dp -> sr:sr -> vdi:vdi -> result = ""
+
+	(** [export task sr vdi url sr2] copies the data from [vdi] into a remote system [url]'s [sr2] *)
+	external export : task:task -> sr:sr -> vdi:vdi -> url:string -> dest:sr -> result = ""
+
+	(** [similar_content task sr vdi] returns a list of VDIs which have similar content to [vdi] *)
+	external similar_content : task:task -> sr:sr -> vdi:vdi -> result = ""
+
+	(** [get_by_content task sr content_id] returns the info of a VDI with the [content_id] *)
+	external get_by_content : task:task -> sr:sr -> content_id:content_id -> result = ""
+
 end

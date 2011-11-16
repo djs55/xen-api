@@ -483,6 +483,18 @@ module Wrapper = functor(Impl: Server_impl) -> struct
                         )
                 )
 
+		let get_by_content context ~task ~sr ~content_id =
+			info "VDI.get_by_content task:%s sr:%s content_id:%s" task sr content_id;
+			Impl.VDI.get_by_content context ~task ~sr ~content_id
+
+		let similar_content context ~task ~sr ~vdi =
+			info "VDI.similar_content task:%s sr:%s vdi:%s" task sr vdi;
+			Impl.VDI.similar_content context ~task ~sr ~vdi
+
+		let export context ~task ~sr ~vdi ~url ~dest =
+			info "VDI.export task:%s sr:%s vdi:%s url:%s dest:%s" task sr vdi url dest;
+			failwith "unimplemented"
+
 	end
 
 	module DP = struct

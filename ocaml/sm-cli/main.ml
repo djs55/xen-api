@@ -77,6 +77,7 @@ let _ =
 			let find key = if List.mem_assoc key kvpairs then Some (List.assoc key kvpairs) else None in
 			let vdi_info = {
 				vdi = "";
+				content_id = ""; (* PR-1255 *)
 				name_label = Opt.default "default name_label" (find "name_label");
 				name_description = Opt.default "default name_description" (find "name_description");
 				ty = Opt.default "user" (find "ty");
@@ -104,6 +105,29 @@ let _ =
 			end
 		| [ "vdi-destroy"; sr; vdi ] ->
 			begin match Client.VDI.destroy rpc ~task ~sr ~vdi with
+				| Success Unit -> ()
+				| x ->
+					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
+			end
+		| [ "vdi-get-by-content"; sr; content_id ] ->
+			begin match Client.VDI.get_by_content rpc ~task ~sr ~content_id with
+				| Success (Vdi v) ->
+					Printf.printf "%s\n" (string_of_vdi_info v)
+				| x ->
+					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
+			end
+		| [ "vdi-similar-content"; sr; vdi ] ->
+			begin match Client.VDI.similar_content rpc ~task ~sr ~vdi with
+				| Success (Vdis vs) ->
+					List.iter
+						(fun v ->
+							Printf.printf "%s\n" (string_of_vdi_info v)
+						) vs
+				| x ->
+					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
+			end
+		| [ "vdi-export"; sr; vdi; url; dest ] ->
+			begin match Client.VDI.export rpc ~task ~sr ~vdi ~url ~dest with
 				| Success Unit -> ()
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)

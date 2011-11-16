@@ -119,6 +119,7 @@ module Builtin_impl = struct
 								let vdis = Db.VDI.get_records_where ~__context ~expr:(Eq(Field "SR", Literal (Ref.string_of sr))) in
 								let info_of_vdi (vdi_ref, vdi_rec) = {
 									vdi = vdi_rec.API.vDI_location;
+									content_id = vdi_rec.API.vDI_location; (* PR-1255 *)
 									name_label = vdi_rec.API.vDI_name_label;
 									name_description = vdi_rec.API.vDI_name_description;
 									ty = Record_util.vdi_type_to_string vdi_rec.API.vDI_type;
@@ -236,6 +237,7 @@ module Builtin_impl = struct
             let r = Db.VDI.get_record ~__context ~self:ref in
             Vdi {
                 vdi = r.API.vDI_location;
+				content_id = r.API.vDI_location; (* PR-1255 *)
                 name_label = r.API.vDI_name_label;
                 name_description = r.API.vDI_name_description;
                 ty = Record_util.vdi_type_to_string r.API.vDI_type;
@@ -280,6 +282,15 @@ module Builtin_impl = struct
 					Failure (Backend_error(code, params))
 				| No_VDI ->
 					Failure Vdi_does_not_exist
+
+		let get_by_content context ~task ~sr ~content_id =
+			info "VDI.get_by_content task:%s sr:%s content_id:%s" task sr content_id;
+			Failure (Internal_error "unimplemented")
+		let similar_content context ~task ~sr ~vdi =
+			info "VDI.similar_content task:%s sr:%s vdi:%s" task sr vdi;
+			Failure (Internal_error "unimplemented")
+
+		let export context ~task ~sr ~vdi ~url ~dest = assert false
 	end
 end
 

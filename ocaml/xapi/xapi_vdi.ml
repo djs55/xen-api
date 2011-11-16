@@ -219,6 +219,7 @@ let create ~__context ~name_label ~name_description
     let open Storage_interface in
 	let vdi_info = {
 		vdi = "";
+		content_id = "";
 		name_label = name_label;
 		name_description = name_description;
 		ty = vdi_type;
