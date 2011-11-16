@@ -14,6 +14,7 @@
 open Threadext
 open Stringext
 module XenAPI = Client.Client
+open Fun
 open Storage_interface
 
 module D=Debug.Debugger(struct let name="storage_access" end)
@@ -106,6 +107,21 @@ module Builtin_impl = struct
 						)
 				)
 
+		let vdi_info_of_vdi_rec __context vdi_rec = {
+			vdi = vdi_rec.API.vDI_location;
+			content_id = vdi_rec.API.vDI_location; (* PR-1255 *)
+			name_label = vdi_rec.API.vDI_name_label;
+			name_description = vdi_rec.API.vDI_name_description;
+			ty = Record_util.vdi_type_to_string vdi_rec.API.vDI_type;
+			metadata_of_pool = Ref.string_of vdi_rec.API.vDI_metadata_of_pool;
+			is_a_snapshot = vdi_rec.API.vDI_is_a_snapshot;
+			snapshot_time = Date.to_string vdi_rec.API.vDI_snapshot_time;
+			snapshot_of = Ref.string_of vdi_rec.API.vDI_snapshot_of;
+			read_only = vdi_rec.API.vDI_read_only;
+			virtual_size = vdi_rec.API.vDI_virtual_size;
+			physical_utilisation = vdi_rec.API.vDI_physical_utilisation;
+		}
+
 		let scan context ~task ~sr =
 			Server_helpers.exec_with_new_task "SR.scan" ~subtask_of:(Ref.of_string task)
 				(fun __context ->
@@ -116,22 +132,8 @@ module Builtin_impl = struct
 							try
 								Sm.sr_scan device_config _type sr;
 								let open Db_filter_types in
-								let vdis = Db.VDI.get_records_where ~__context ~expr:(Eq(Field "SR", Literal (Ref.string_of sr))) in
-								let info_of_vdi (vdi_ref, vdi_rec) = {
-									vdi = vdi_rec.API.vDI_location;
-									content_id = vdi_rec.API.vDI_location; (* PR-1255 *)
-									name_label = vdi_rec.API.vDI_name_label;
-									name_description = vdi_rec.API.vDI_name_description;
-									ty = Record_util.vdi_type_to_string vdi_rec.API.vDI_type;
-									metadata_of_pool = Ref.string_of vdi_rec.API.vDI_metadata_of_pool;
-									is_a_snapshot = vdi_rec.API.vDI_is_a_snapshot;
-									snapshot_time = Date.to_string vdi_rec.API.vDI_snapshot_time;
-									snapshot_of = Ref.string_of vdi_rec.API.vDI_snapshot_of;
-									read_only = vdi_rec.API.vDI_read_only;
-									virtual_size = vdi_rec.API.vDI_virtual_size;
-									physical_utilisation = vdi_rec.API.vDI_physical_utilisation;
-								} in
-								Success (Vdis (List.map info_of_vdi vdis))
+								let vdis = Db.VDI.get_records_where ~__context ~expr:(Eq(Field "SR", Literal (Ref.string_of sr))) |> List.map snd in
+								Success (Vdis (List.map (vdi_info_of_vdi_rec __context) vdis))
 							with
 								| Smint.Not_implemented_in_backend ->
 									Failure (Storage_interface.Backend_error(Api_errors.sr_operation_not_supported, [ Ref.string_of sr ]))
@@ -149,17 +151,21 @@ module Builtin_impl = struct
 	module VDI = struct
 		exception No_VDI
 
+		let vdi_of_location ~__context vdi =
+			let open Db_filter_types in
+			match Db.VDI.get_records_where ~__context ~expr:(Eq (Field "location", Literal vdi)) with
+				| x :: _ -> x
+				| _ -> raise No_VDI
+
 		let for_vdi ~task ~sr ~vdi op_name f =
 			Server_helpers.exec_with_new_task op_name ~subtask_of:(Ref.of_string task)
 				(fun __context ->
 					let open Db_filter_types in
-					match Db.VDI.get_records_where ~__context ~expr:(Eq (Field "location", Literal vdi)) with
-						| (self, _) :: _ ->
-							Sm.call_sm_vdi_functions ~__context ~vdi:self
-								(fun device_config _type sr ->
-									f device_config _type sr self
-								)
-						| [] -> raise No_VDI
+					let self = vdi_of_location ~__context vdi |> fst in
+					Sm.call_sm_vdi_functions ~__context ~vdi:self
+						(fun device_config _type sr ->
+							f device_config _type sr self
+						)
 				)
 		(* Allow us to remember whether a VDI is attached read/only or read/write.
 		   If this is meaningful to the backend then this should be recorded there! *)
@@ -288,7 +294,53 @@ module Builtin_impl = struct
 			Failure (Internal_error "unimplemented")
 		let similar_content context ~task ~sr ~vdi =
 			info "VDI.similar_content task:%s sr:%s vdi:%s" task sr vdi;
-			Failure (Internal_error "unimplemented")
+            Server_helpers.exec_with_new_task "VDI.similar_content" ~subtask_of:(Ref.of_string task)
+                (fun __context ->
+					(* PR-1255: the backend should do this for us. *)
+					let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
+					(* Return a nearest-first list of similar VDIs. "near" should mean
+					   "has similar blocks" but we approximate this with distance in the tree *)
+					let module StringMap = Map.Make(struct type t = string let compare = compare end) in
+					let _vhdparent = "vhd-parent" in
+					let open Db_filter_types in
+					let all = Db.VDI.get_records_where ~__context ~expr:(Eq (Field "SR", Literal (Ref.string_of sr))) in
+					let locations = List.fold_left
+						(fun acc (_, vdi_rec) -> StringMap.add vdi_rec.API.vDI_location vdi_rec acc)
+						StringMap.empty all in
+					(* Compute a map of parent location -> children locations *)
+					let children, parents = List.fold_left
+						(fun (children, parents) (vdi_r, vdi_rec) ->
+							if List.mem_assoc _vhdparent vdi_rec.API.vDI_sm_config then begin
+								let me = vdi_rec.API.vDI_location in
+								let parent = List.assoc _vhdparent vdi_rec.API.vDI_sm_config in
+								let other_children = if StringMap.mem parent children then StringMap.find parent children else [] in
+								(StringMap.add parent (me :: other_children) children),
+								(StringMap.add me parent parents)
+							end else (children, parents)) (StringMap.empty, StringMap.empty) all in
+
+					let rec explore current_distance acc vdi =
+						(* add me *)
+						let acc = StringMap.add vdi current_distance acc in
+						(* add the parent *)
+						let parent = if StringMap.mem vdi parents then [ StringMap.find vdi parents ] else [] in
+						let children = if StringMap.mem vdi children then StringMap.find vdi children else [] in
+						List.fold_left
+							(fun acc vdi ->
+								if not(StringMap.mem vdi acc)
+								then explore (current_distance + 1) acc vdi
+								else acc) acc (parent @ children) in
+					let module IntMap = Map.Make(struct type t = int let compare = compare end) in
+					let invert map =
+						StringMap.fold
+							(fun vdi n acc ->
+								let current = if IntMap.mem n acc then IntMap.find n acc else [] in
+								IntMap.add n (vdi :: current) acc
+							) map IntMap.empty in
+					let _, vdi_rec = vdi_of_location ~__context vdi in
+					let vdis = explore 0 StringMap.empty vdi_rec.API.vDI_location |> invert |> IntMap.bindings |> List.map snd |> List.concat in
+					let vdi_recs = List.map (fun l -> StringMap.find l locations) vdis in
+					Success(Vdis(List.map (fun x -> SR.vdi_info_of_vdi_rec __context x) vdi_recs))
+				)
 
 		let export context ~task ~sr ~vdi ~url ~dest = assert false
 	end
