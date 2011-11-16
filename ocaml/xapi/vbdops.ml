@@ -114,7 +114,7 @@ let create_vbd ~__context ~xs ~hvm ~protocol domid self =
 						Device.Vbd.mode = mode;
 						device_number = Some device_number;
 						phystype = phystype;
-						params = "";
+						params = params;
 						dev_type = dev_type;
 						unpluggable = unpluggable;
 						protocol = if protocol = Device_common.Protocol_Native then None else Some protocol;
