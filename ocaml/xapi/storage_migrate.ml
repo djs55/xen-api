@@ -79,7 +79,7 @@ let export ~task ~sr ~vdi ~url ~dest =
 	(* Finding VDIs which are similar to [vdi] *)
 	let vdis = Client.VDI.similar_content (rpc !local_url) ~task ~sr ~vdi |> success |> _vdis in
 	(* Choose the "nearest" one *)
-	let _ = List.fold_left
+	let nearest = List.fold_left
 		(fun acc vdi -> match acc with
 			| Some x -> Some x
 			| None ->
@@ -89,14 +89,32 @@ let export ~task ~sr ~vdi ~url ~dest =
 				with _ -> None) None vdis in
 
 	
-	let dest_vdi = Client.VDI.create (rpc remote_url) ~task ~sr:dest ~vdi_info:local_vdi ~params:[] |> success |> _vdi in
-	debug "Created remote VDI: %s" dest_vdi.vdi;
+	let dest_vdi =
+		match nearest with
+			| Some (_, remote_vdi) ->
+				debug "Cloning remote VDI %s" remote_vdi.vdi;
+				Client.VDI.clone (rpc remote_url) ~task ~sr:dest ~vdi:remote_vdi.vdi ~params:[] |> success |> _vdi
+			| None ->
+				debug "Creating a blank remote VDI";
+				Client.VDI.create (rpc remote_url) ~task ~sr:dest ~vdi_info:local_vdi ~params:[] |> success |> _vdi in
+	debug "Will copy into new remote VDI: %s" dest_vdi.vdi;
 	let dest_vdi_url = Printf.sprintf "http://root:xenroot@st30.uk.xensource.com/import_raw_vdi?vdi=%s" dest_vdi.vdi in
-	with_activated_disk ~task ~sr ~vdi:(Some vdi)
-		(fun src ->
-			let src = Opt.unbox src in
-			let out, err = Forkhelpers.execute_command_get_output "/opt/xensource/libexec/sparse_dd" [ "-src"; src; "-dest"; dest_vdi_url; "-size"; Int64.to_string dest_vdi.virtual_size; "-prezeroed" ] in
-			debug "%s:%s" out err
+	let base_vdi = Opt.map (fun x -> (fst x).vdi) nearest in
+	debug "Will base our copy from: %s" (Opt.default "None" base_vdi);
+	with_activated_disk ~task ~sr ~vdi:base_vdi
+		(fun base_path ->
+			with_activated_disk ~task ~sr ~vdi:(Some vdi)
+				(fun src ->
+					let args = [
+						"-src"; Opt.unbox src;
+						"-dest"; dest_vdi_url;
+						"-size"; Int64.to_string dest_vdi.virtual_size;
+						"-prezeroed"
+					] @ (Opt.default [] (Opt.map (fun x -> [ "-base"; x ]) base_path)) in
+
+					let out, err = Forkhelpers.execute_command_get_output "/opt/xensource/libexec/sparse_dd" args in
+					debug "%s:%s" out err
+				)
 		);
 	Success (Vdi dest_vdi)
 
