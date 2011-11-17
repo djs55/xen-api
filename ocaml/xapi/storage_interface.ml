@@ -176,6 +176,9 @@ module VDI = struct
 	(** [snapshot task sr vdi params] creates a new VDI which is a snapshot of [vdi] in [sr] *)
 	external snapshot : task:task -> sr:sr -> vdi:vdi -> params:(string*string) list -> result = ""
 
+	(** [clone task sr vdi params] creates a new VDI which is a clone of [vdi] in [sr] *)
+	external clone : task:task -> sr:sr -> vdi:vdi -> params:(string*string) list -> result = ""
+
     (** [destroy task sr vdi] removes [vdi] from [sr] *)
     external destroy : task:task -> sr:sr -> vdi:vdi -> result = ""
 

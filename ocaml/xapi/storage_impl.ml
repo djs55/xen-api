@@ -473,12 +473,15 @@ module Wrapper = functor(Impl: Server_impl) -> struct
                     Failure(Backend_error("SR_BACKEND_FAILURE", ["Disk too small"; Int64.to_string vdi_info.virtual_size; Int64.to_string virtual_size']))
                 | result -> result
 
-		let snapshot context ~task ~sr ~vdi ~params =
-			info "VDI.snapshot task:%s sr:%s vdi:%s params:%s" task sr vdi (String.concat ";" (List.map (fun (k, v) -> k ^ ":" ^ v) params));
+		let snapshot_and_clone call_name call_f context ~task ~sr ~vdi ~params =
+			info "%s task:%s sr:%s vdi:%s params:%s" call_name task sr vdi (String.concat ";" (List.map (fun (k, v) -> k ^ ":" ^ v) params));
 			with_vdi sr vdi
 				(fun () ->
-					Impl.VDI.snapshot context ~task ~sr ~vdi ~params
+					call_f context ~task ~sr ~vdi ~params
 				)
+
+		let snapshot = snapshot_and_clone "VDI.snapshot" Impl.VDI.snapshot
+		let clone = snapshot_and_clone "VDI.clone" Impl.VDI.clone
 
         let destroy context ~task ~sr ~vdi =
             info "VDI.destroy task:%s sr:%s vdi:%s" task sr vdi;
