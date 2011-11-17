@@ -47,6 +47,7 @@ module Proxy = functor(RPC: RPC) -> struct
 		let stat _ = Client.VDI.stat RPC.rpc
 
 		let create _ = Client.VDI.create RPC.rpc
+		let snapshot _ = Client.VDI.snapshot RPC.rpc
 		let destroy _ = Client.VDI.destroy RPC.rpc
 		let get_by_content _ = Client.VDI.get_by_content RPC.rpc
 		let similar_content _ = Client.VDI.similar_content RPC.rpc

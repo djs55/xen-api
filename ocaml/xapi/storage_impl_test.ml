@@ -64,6 +64,8 @@ module Debug_print_impl = struct
                 );
             Success (Vdi info)
 
+		let snapshot context ~task ~sr ~vdi ~params =
+			create context ~task ~sr ~name_label:("snapshot of " ^ vdi) ~name_description:("snapshot of " ^ name_description) ~virtual_size:0L ~ty:"whatever" ~params
         let destroy context ~task ~sr ~vdi =
             Mutex.execute m
                 (fun () ->

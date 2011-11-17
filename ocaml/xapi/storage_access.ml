@@ -274,6 +274,20 @@ module Builtin_impl = struct
             with Api_errors.Server_error(code, params) ->
                 Failure (Backend_error(code, params))
 
+		let snapshot context ~task ~sr ~vdi ~params =
+			try
+				Server_helpers.exec_with_new_task "VDI.snapshot" ~subtask_of:(Ref.of_string task)
+					(fun __context ->
+						let sr = Ref.of_string sr in
+						let vi = for_vdi ~task ~sr ~vdi "VDI.snapshot"
+							(fun device_config _type sr self ->
+								Sm.vdi_snapshot device_config _type params sr (Ref.of_string vdi)
+							) in
+						Success (newvdi ~__context vi)
+					)
+            with Api_errors.Server_error(code, params) ->
+                Failure (Backend_error(code, params))
+
         let destroy context ~task ~sr ~vdi =
             try
                 for_vdi ~task ~sr ~vdi "VDI.destroy"
