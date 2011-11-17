@@ -107,20 +107,25 @@ module Builtin_impl = struct
 						)
 				)
 
-		let vdi_info_of_vdi_rec __context vdi_rec = {
-			vdi = vdi_rec.API.vDI_location;
-			content_id = vdi_rec.API.vDI_location; (* PR-1255 *)
-			name_label = vdi_rec.API.vDI_name_label;
-			name_description = vdi_rec.API.vDI_name_description;
-			ty = Record_util.vdi_type_to_string vdi_rec.API.vDI_type;
-			metadata_of_pool = Ref.string_of vdi_rec.API.vDI_metadata_of_pool;
-			is_a_snapshot = vdi_rec.API.vDI_is_a_snapshot;
-			snapshot_time = Date.to_string vdi_rec.API.vDI_snapshot_time;
-			snapshot_of = Ref.string_of vdi_rec.API.vDI_snapshot_of;
-			read_only = vdi_rec.API.vDI_read_only;
-			virtual_size = vdi_rec.API.vDI_virtual_size;
-			physical_utilisation = vdi_rec.API.vDI_physical_utilisation;
-		}
+		let vdi_info_of_vdi_rec __context vdi_rec =
+			let content_id =
+				if List.mem_assoc "content_id" vdi_rec.API.vDI_other_config
+				then List.assoc "content_id" vdi_rec.API.vDI_other_config
+				else vdi_rec.API.vDI_location (* PR-1255 *)
+			in {
+				vdi = vdi_rec.API.vDI_location;
+				content_id = content_id; (* PR-1255 *)
+				name_label = vdi_rec.API.vDI_name_label;
+				name_description = vdi_rec.API.vDI_name_description;
+				ty = Record_util.vdi_type_to_string vdi_rec.API.vDI_type;
+				metadata_of_pool = Ref.string_of vdi_rec.API.vDI_metadata_of_pool;
+				is_a_snapshot = vdi_rec.API.vDI_is_a_snapshot;
+				snapshot_time = Date.to_string vdi_rec.API.vDI_snapshot_time;
+				snapshot_of = Ref.string_of vdi_rec.API.vDI_snapshot_of;
+				read_only = vdi_rec.API.vDI_read_only;
+				virtual_size = vdi_rec.API.vDI_virtual_size;
+				physical_utilisation = vdi_rec.API.vDI_physical_utilisation;
+			}
 
 		let scan context ~task ~sr =
 			Server_helpers.exec_with_new_task "SR.scan" ~subtask_of:(Ref.of_string task)
