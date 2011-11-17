@@ -240,12 +240,8 @@ module Builtin_impl = struct
                 | Some uuid -> uuid
                 | None -> failwith "SM backend failed to return <uuid> field"
 
-        let newvdi ~__context vi =
-            (* The current backends stash data directly in the db *)
-            let uuid = require_uuid vi in
-            let ref = Db.VDI.get_by_uuid ~__context ~uuid in
-
-            let r = Db.VDI.get_record ~__context ~self:ref in
+		let vdi_info_from_db ~__context self =
+            let r = Db.VDI.get_record ~__context ~self in
             Vdi {
                 vdi = r.API.vDI_location;
 				content_id = r.API.vDI_location; (* PR-1255 *)
@@ -260,6 +256,11 @@ module Builtin_impl = struct
                 virtual_size = r.API.vDI_virtual_size;
                 physical_utilisation = r.API.vDI_physical_utilisation;
             }
+
+        let newvdi ~__context vi =
+            (* The current backends stash data directly in the db *)
+            let uuid = require_uuid vi in
+            vdi_info_from_db ~__context (Db.VDI.get_by_uuid ~__context ~uuid)
 
         let create context ~task ~sr ~vdi_info ~params =
             try
@@ -279,16 +280,25 @@ module Builtin_impl = struct
             with Api_errors.Server_error(code, params) ->
                 Failure (Backend_error(code, params))
 
-		let snapshot_and_clone call_name call_f context ~task ~sr ~vdi ~params =
+		let snapshot_and_clone call_name call_f context ~task ~sr ~vdi ~vdi_info ~params =
 			try
 				Server_helpers.exec_with_new_task call_name ~subtask_of:(Ref.of_string task)
 					(fun __context ->
 						let sr = Ref.of_string sr in
+
 						let vi = for_vdi ~task ~sr ~vdi call_name
 							(fun device_config _type sr self ->
-								call_f device_config _type params sr (Db.VDI.get_by_uuid ~__context ~uuid:vdi)
+								call_f device_config _type params sr (Db.VDI.get_by_uuid ~__context ~uuid:vdi);
 							) in
-						Success (newvdi ~__context vi)
+						(* PR-1255: modify clone, snapshot to take the same parameters as create? *)
+						let self, _ = vdi_of_location ~__context vi.Smint.vdi_info_location in
+						Db.VDI.set_name_label ~__context ~self ~value:vdi_info.name_label;
+						Db.VDI.set_name_description ~__context ~self ~value:vdi_info.name_description;
+						for_vdi ~task ~sr ~vdi:vi.Smint.vdi_info_location "VDI.update"
+							(fun device_config _type sr self ->
+								Sm.vdi_update device_config _type sr self
+							);
+						Success (vdi_info_from_db ~__context self)
 					)
             with Api_errors.Server_error(code, params) ->
                 Failure (Backend_error(code, params))

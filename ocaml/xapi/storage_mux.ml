@@ -103,8 +103,8 @@ module Mux = struct
 		let create context ~task ~sr ~vdi_info ~params =
 			Client.VDI.create (of_sr sr) ~task ~sr ~vdi_info ~params
 		let stat context ~task ~sr ~vdi = Client.VDI.stat (of_sr sr) ~task ~sr ~vdi
-		let snapshot_and_clone call_f context ~task ~sr ~vdi ~params =
-			call_f (of_sr sr) ~task ~sr ~vdi ~params
+		let snapshot_and_clone call_f context ~task ~sr ~vdi ~vdi_info ~params =
+			call_f (of_sr sr) ~task ~sr ~vdi ~vdi_info ~params
 		let snapshot = snapshot_and_clone Client.VDI.snapshot
 		let clone = snapshot_and_clone Client.VDI.clone
 

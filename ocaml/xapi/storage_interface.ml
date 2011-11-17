@@ -173,11 +173,11 @@ module VDI = struct
         returns the vdi_info which was used. *)
 	external create : task:task -> sr:sr -> vdi_info:vdi_info -> params:(string*string) list -> result = ""
 
-	(** [snapshot task sr vdi params] creates a new VDI which is a snapshot of [vdi] in [sr] *)
-	external snapshot : task:task -> sr:sr -> vdi:vdi -> params:(string*string) list -> result = ""
+	(** [snapshot task sr vdi vdi_info params] creates a new VDI which is a snapshot of [vdi] in [sr] *)
+	external snapshot : task:task -> sr:sr -> vdi:vdi -> vdi_info:vdi_info -> params:(string*string) list -> result = ""
 
-	(** [clone task sr vdi params] creates a new VDI which is a clone of [vdi] in [sr] *)
-	external clone : task:task -> sr:sr -> vdi:vdi -> params:(string*string) list -> result = ""
+	(** [clone task sr vdi vdi_info params] creates a new VDI which is a clone of [vdi] in [sr] *)
+	external clone : task:task -> sr:sr -> vdi:vdi -> vdi_info:vdi_info -> params:(string*string) list -> result = ""
 
     (** [destroy task sr vdi] removes [vdi] from [sr] *)
     external destroy : task:task -> sr:sr -> vdi:vdi -> result = ""

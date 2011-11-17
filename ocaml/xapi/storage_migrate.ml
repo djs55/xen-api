@@ -94,7 +94,7 @@ let export ~task ~sr ~vdi ~url ~dest =
 		match nearest with
 			| Some (_, remote_vdi) ->
 				debug "Cloning remote VDI %s" remote_vdi.vdi;
-				Client.VDI.clone (rpc remote_url) ~task ~sr:dest ~vdi:remote_vdi.vdi ~params:[] |> success |> _vdi
+				Client.VDI.clone (rpc remote_url) ~task ~sr:dest ~vdi:remote_vdi.vdi ~vdi_info:local_vdi ~params:[] |> success |> _vdi
 			| None ->
 				debug "Creating a blank remote VDI";
 				Client.VDI.create (rpc remote_url) ~task ~sr:dest ~vdi_info:local_vdi ~params:[] |> success |> _vdi in

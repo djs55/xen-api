@@ -198,6 +198,22 @@ let newvdi ~__context ~sr newvdi =
 		| (vdi, _) :: _ -> vdi
 		| [] -> failwith (Printf.sprintf "newvdi failed to create a VDI for %s" (string_of_vdi_info newvdi))
 
+let default_vdi_info =
+	let open Storage_interface in {
+		vdi = "";
+		content_id = "";
+		name_label = "";
+		name_description = "";
+		ty = "user";
+		metadata_of_pool = "";
+		is_a_snapshot = false;
+		snapshot_time = Date.to_string Date.never;
+		snapshot_of = "";
+		read_only = false;
+		virtual_size = 0L;
+		physical_utilisation = 0L
+	}
+
 let create ~__context ~name_label ~name_description
         ~sR ~virtual_size ~_type
         ~sharable ~read_only ~other_config ~xenstore_data ~sm_config ~tags =
@@ -218,18 +234,12 @@ let create ~__context ~name_label ~name_description
     let task = Context.get_task_id __context in
     let open Storage_interface in
 	let vdi_info = {
-		vdi = "";
-		content_id = "";
+		default_vdi_info with
 		name_label = name_label;
 		name_description = name_description;
 		ty = vdi_type;
-		metadata_of_pool = "";
-		is_a_snapshot = false;
-		snapshot_time = Date.to_string Date.never;
-		snapshot_of = "";
 		read_only = read_only;
 		virtual_size = virtual_size;
-		physical_utilisation = 0L
 	} in
     expect_vdi
         (fun vi ->
@@ -334,9 +344,14 @@ let snapshot_and_clone call_f ~__context ~vdi ~driver_params =
 	  let open Storage_access in
 	  let task = Context.get_task_id __context in	
 	  let open Storage_interface in
+	  let vdi_info = {
+		  default_vdi_info with
+			  name_label = a.Db_actions.vDI_name_label;
+			  name_description = a.Db_actions.vDI_name_description
+	  } in
 	  expect_vdi (newvdi ~__context ~sr:sR)
 		  (call_f rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sR)
-			  ~vdi:(Ref.string_of vdi) ~params:driver_params) in
+			  ~vdi:(Ref.string_of vdi) ~vdi_info  ~params:driver_params) in
 
   (* While we don't have blkback support for pause/unpause we only do this
      for .vhd-based backends. *)
@@ -562,7 +577,7 @@ let set_on_boot ~__context ~self ~value =
 				(Client.VDI.destroy rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sr) ~vdi:newvdi.vdi)
 		)
 		(Client.VDI.clone rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sr)
-			~vdi:(Ref.string_of self) ~params:[]);
+			~vdi:(Ref.string_of self) ~vdi_info:default_vdi_info ~params:[]);
 	Db.VDI.set_on_boot ~__context ~self ~value
 
 let set_allow_caching ~__context ~self ~value =
