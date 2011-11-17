@@ -493,7 +493,7 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 
 		let export context ~task ~sr ~vdi ~url ~dest =
 			info "VDI.export task:%s sr:%s vdi:%s url:%s dest:%s" task sr vdi url dest;
-			failwith "unimplemented"
+			Impl.VDI.export context ~task ~sr ~vdi ~url ~dest
 
 	end
 

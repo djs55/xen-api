@@ -113,7 +113,7 @@ module Mux = struct
 
 		let get_by_content context ~task ~sr ~content_id = Client.VDI.get_by_content (of_sr sr) ~task ~sr ~content_id
 		let similar_content context ~task ~sr ~vdi = Client.VDI.similar_content (of_sr sr) ~task ~sr ~vdi
-		let export context ~task ~sr ~vdi ~url ~dest = assert false
+		let export context ~task ~sr ~vdi ~url ~dest = Storage_migrate.export ~task ~sr ~vdi ~url ~dest
 	end
 end
 

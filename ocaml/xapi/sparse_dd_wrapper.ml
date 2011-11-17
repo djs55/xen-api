@@ -24,7 +24,7 @@ open D
 let sparse_dd_path = Xapi_globs.base_path ^ "/libexec/sparse_dd"
 
 (** Use the new external sparse_dd program *)
-let dd ~__context prezeroed infile outfile size = 
+let dd ~__context ?base prezeroed infile outfile size = 
 	let pipe_read, pipe_write = Unix.pipe () in
 	let to_close = ref [ pipe_read; pipe_write ] in
 	let close x = if List.mem x !to_close then (Unix.close x; to_close := List.filter (fun y -> y <> x) !to_close) in

@@ -128,7 +128,8 @@ let _ =
 			end
 		| [ "vdi-export"; sr; vdi; url; dest ] ->
 			begin match Client.VDI.export rpc ~task ~sr ~vdi ~url ~dest with
-				| Success Unit -> ()
+				| Success (Vdi v) ->
+					Printf.printf "%s\n" (string_of_vdi_info v)
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
