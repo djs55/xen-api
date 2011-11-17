@@ -116,6 +116,13 @@ let _ =
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
+		| [ "vdi-set-content-id"; sr; vdi; content_id ] ->
+			begin match Client.VDI.set_content_id rpc ~task ~sr ~vdi~content_id with
+				| Success Unit ->
+					()
+				| x ->
+					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
+			end
 		| [ "vdi-similar-content"; sr; vdi ] ->
 			begin match Client.VDI.similar_content rpc ~task ~sr ~vdi with
 				| Success (Vdis vs) ->

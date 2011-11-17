@@ -286,7 +286,7 @@ module Builtin_impl = struct
 						let sr = Ref.of_string sr in
 						let vi = for_vdi ~task ~sr ~vdi call_name
 							(fun device_config _type sr self ->
-								call_f device_config _type params sr (Ref.of_string vdi)
+								call_f device_config _type params sr (Db.VDI.get_by_uuid ~__context ~uuid:vdi)
 							) in
 						Success (newvdi ~__context vi)
 					)
@@ -316,8 +316,28 @@ module Builtin_impl = struct
 			(* PR-1255: the backend should do this for us *)
 			 Server_helpers.exec_with_new_task "VDI.get_by_content" ~subtask_of:(Ref.of_string task)
                 (fun __context ->
-					let vdi = content_id in (* PR-1255 *)
-					Success(Vdi(SR.vdi_info_of_vdi_rec __context (snd(vdi_of_location ~__context vdi))))
+					(* PR-1255: the backend should do this for us *)
+					let open Db_filter_types in
+					let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
+					let all = Db.VDI.get_records_where ~__context ~expr:(Eq (Field "SR", Literal (Ref.string_of sr))) in
+					let _, vdi = List.find
+						(fun (_, vdi_rec) ->
+							false
+							|| (vdi_rec.API.vDI_location = content_id)
+							|| (List.mem_assoc "content_id" vdi_rec.API.vDI_other_config && (List.assoc "content_id" vdi_rec.API.vDI_other_config = content_id))
+						) all in
+					Success(Vdi(SR.vdi_info_of_vdi_rec __context vdi))
+				)
+
+		let set_content_id context ~task ~sr ~vdi ~content_id =
+			info "VDI.get_by_content task:%s sr:%s vdi:%s content_id:%s" task sr vdi content_id;
+			(* PR-1255: the backend should do this for us *)
+			 Server_helpers.exec_with_new_task "VDI.set_content_id" ~subtask_of:(Ref.of_string task)
+                (fun __context ->
+					let vdi, _ = vdi_of_location ~__context vdi in
+					Db.VDI.remove_from_other_config ~__context ~self:vdi ~key:"content_id";
+					Db.VDI.add_to_other_config ~__context ~self:vdi ~key:"content_id" ~value:content_id;
+					Success Unit
 				)
 
 		let similar_content context ~task ~sr ~vdi =

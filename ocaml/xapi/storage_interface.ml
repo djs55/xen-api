@@ -212,4 +212,7 @@ module VDI = struct
 	(** [get_by_content task sr content_id] returns the info of a VDI with the [content_id] *)
 	external get_by_content : task:task -> sr:sr -> content_id:content_id -> result = ""
 
+	(** [set_content_id task sr vdi content_id] tells the storage backend that a VDI has an updated [content_id] *)
+	external set_content_id : task:task -> sr:sr -> vdi:vdi -> content_id:content_id -> result = ""
+
 end
