@@ -119,5 +119,7 @@ let export ~task ~sr ~vdi ~url ~dest =
 		);
 	debug "Updating remote content_id";
 	Client.VDI.set_content_id (rpc remote_url) ~task ~sr:dest ~vdi:dest_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
+	(* XXX: this is useful because we don't have content_ids by default *)
+	Client.VDI.set_content_id (rpc !local_url) ~task ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
 	Success (Vdi dest_vdi)
 

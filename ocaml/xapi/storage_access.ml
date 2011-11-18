@@ -22,13 +22,26 @@ open D
 
 exception No_VDI
 
-(* Find a VDI reference given a storage-layer SR and VDI *)
+(* Find a VDI given a storage-layer SR and VDI *)
 let find_vdi ~__context sr vdi =
 	let open Db_filter_types in
 	let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
 	match Db.VDI.get_records_where ~__context ~expr:(And((Eq (Field "location", Literal vdi)),Eq (Field "SR", Literal (Ref.string_of sr)))) with
 		| x :: _ -> x
 		| _ -> raise No_VDI
+
+(* Find a VDI reference given a content_id *)
+let find_content ~__context ?sr content_id =
+	(* PR-1255: the backend should do this for us *)
+	let open Db_filter_types in
+	let expr = Opt.default True (Opt.map (fun sr -> Eq(Field "SR", Literal (Ref.string_of (Db.SR.get_by_uuid ~__context ~uuid:sr)))) sr) in
+	let all = Db.VDI.get_records_where ~__context ~expr in
+	List.find
+		(fun (_, vdi_rec) ->
+			false
+			|| (vdi_rec.API.vDI_location = content_id) (* PR-1255 *)
+			|| (List.mem_assoc "content_id" vdi_rec.API.vDI_other_config && (List.assoc "content_id" vdi_rec.API.vDI_other_config = content_id))
+		) all
 
 module Builtin_impl = struct
 	(** xapi's builtin ability to call local SM plugins using the existing
@@ -327,15 +340,7 @@ module Builtin_impl = struct
 			 Server_helpers.exec_with_new_task "VDI.get_by_content" ~subtask_of:(Ref.of_string task)
                 (fun __context ->
 					(* PR-1255: the backend should do this for us *)
-					let open Db_filter_types in
-					let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
-					let all = Db.VDI.get_records_where ~__context ~expr:(Eq (Field "SR", Literal (Ref.string_of sr))) in
-					let _, vdi = List.find
-						(fun (_, vdi_rec) ->
-							false
-							|| (vdi_rec.API.vDI_location = content_id)
-							|| (List.mem_assoc "content_id" vdi_rec.API.vDI_other_config && (List.assoc "content_id" vdi_rec.API.vDI_other_config = content_id))
-						) all in
+					let _, vdi = find_content ~__context ~sr content_id in
 					Success(Vdi(SR.vdi_info_of_vdi_rec __context vdi))
 				)
 

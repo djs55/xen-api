@@ -829,6 +829,8 @@ let _ =
     ~doc:"This operation cannot be performed because the specified VDI could not be found in the specified SR" ();
   error Api_errors.vdi_missing [ "sr"; "vdi" ]
     ~doc:"This operation cannot be performed because the specified VDI could not be found on the storage substrate" ();
+  error Api_errors.vdi_content_id_missing [ "content_id" ]
+    ~doc:"This operation cannot be performed because the specified VDI content_id could not be found on any storage substrate" ();
   error Api_errors.vdi_incompatible_type [ "vdi"; "type" ]
     ~doc:"This operation cannot be performed because the specified VDI is of an incompatible type (eg: an HA statefile cannot be attached to a guest)" ();
   error Api_errors.vdi_not_managed [ "vdi" ]
