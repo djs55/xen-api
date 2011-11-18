@@ -136,7 +136,7 @@ let _ =
 		| [ "vdi-export"; sr; vdi; url; dest ] ->
 			begin match Client.VDI.export rpc ~task ~sr ~vdi ~url ~dest with
 				| Success (Vdi v) ->
-					Printf.printf "%s\n" (string_of_vdi_info v)
+					Printf.printf "Created VDI %s\n" v.vdi
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
