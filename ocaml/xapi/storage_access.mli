@@ -30,6 +30,10 @@ module Qemu_blkfront: sig
 	val destroy: __context:Context.t -> self:API.ref_VBD -> unit
 end
 
+(** [find_vdi __context sr vdi] returns the XenAPI VDI ref associated
+	with (sr, vdi) *)
+val find_vdi: __context:Context.t -> Storage_interface.sr -> Storage_interface.vdi -> API.ref_VDI * API.vDI_t
+
 (** [bind __context pbd] causes the storage_access module to choose the most
         appropriate driver implementation for the given [pbd] *)
 val bind: __context:Context.t -> pbd:API.ref_PBD -> unit

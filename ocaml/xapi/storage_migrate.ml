@@ -89,7 +89,6 @@ let export ~task ~sr ~vdi ~url ~dest =
 					Some (vdi, remote_vdi)
 				with _ -> None) None vdis in
 
-	
 	let dest_vdi =
 		match nearest with
 			| Some (_, remote_vdi) ->
@@ -98,8 +97,9 @@ let export ~task ~sr ~vdi ~url ~dest =
 			| None ->
 				debug "Creating a blank remote VDI";
 				Client.VDI.create (rpc remote_url) ~task ~sr:dest ~vdi_info:local_vdi ~params:[] |> success |> _vdi in
-	debug "Will copy into new remote VDI: %s" dest_vdi.vdi;
-	let dest_vdi_url = Printf.sprintf "http://root:xenroot@st30.uk.xensource.com/import_raw_vdi?vdi=%s" dest_vdi.vdi in
+	let dest_vdi_url = Printf.sprintf "%s/data/%s/%s" url dest dest_vdi.vdi in
+	debug "Will copy into new remote VDI: %s (%s)" dest_vdi.vdi dest_vdi_url;
+
 	let base_vdi = Opt.map (fun x -> (fst x).vdi) nearest in
 	debug "Will base our copy from: %s" (Opt.default "None" base_vdi);
 	with_activated_disk ~task ~sr ~vdi:base_vdi

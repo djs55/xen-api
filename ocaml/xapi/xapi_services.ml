@@ -20,12 +20,7 @@ open D
 open Fun
 open Stringext
 open Pervasiveext
-
-(* URI prefix *)
-let _services = "services"
-let _SM = "SM"
-
-let path xs = "/" ^ (String.concat "/" xs)
+open Constants
 
 let convert_driver_info x =
 	let open Smint in {
@@ -78,6 +73,18 @@ let post_handler (req: Http.Request.t) s _ =
 			match String.split '/' req.Http.Request.uri with
 				| [ ""; services; "SM" ] when services = _services ->
 					Storage_impl.Local_domain_socket.xmlrpc_handler Storage_mux.Server.process req (Buf_io.of_fd s) ()
+				| _ ->
+					Http_svr.headers s (Http.http_404_missing ~version:"1.0" ());
+					req.Http.Request.close <- true
+		)
+
+let put_handler (req: Http.Request.t) s _ =
+	Xapi_http.with_context ~dummy:true "Querying services" req s
+		(fun __context ->
+			match String.split '/' req.Http.Request.uri with
+				| [ ""; services; "SM"; "data"; sr; vdi ] when services = _services ->
+					let vdi, _ = Storage_access.find_vdi ~__context sr vdi in
+					Import_raw_vdi.import vdi req s ()
 				| _ ->
 					Http_svr.headers s (Http.http_404_missing ~version:"1.0" ());
 					req.Http.Request.close <- true

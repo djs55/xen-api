@@ -20,6 +20,16 @@ open Storage_interface
 module D=Debug.Debugger(struct let name="storage_access" end)
 open D
 
+exception No_VDI
+
+(* Find a VDI reference given a storage-layer SR and VDI *)
+let find_vdi ~__context sr vdi =
+	let open Db_filter_types in
+	let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
+	match Db.VDI.get_records_where ~__context ~expr:(And((Eq (Field "location", Literal vdi)),Eq (Field "SR", Literal (Ref.string_of sr)))) with
+		| x :: _ -> x
+		| _ -> raise No_VDI
+
 module Builtin_impl = struct
 	(** xapi's builtin ability to call local SM plugins using the existing
 	    protocol. The code here should only call the SM functions and encapsulate
@@ -154,19 +164,11 @@ module Builtin_impl = struct
 	end
 
 	module VDI = struct
-		exception No_VDI
-
-		let vdi_of_location ~__context vdi =
-			let open Db_filter_types in
-			match Db.VDI.get_records_where ~__context ~expr:(Eq (Field "location", Literal vdi)) with
-				| x :: _ -> x
-				| _ -> raise No_VDI
-
 		let for_vdi ~task ~sr ~vdi op_name f =
 			Server_helpers.exec_with_new_task op_name ~subtask_of:(Ref.of_string task)
 				(fun __context ->
 					let open Db_filter_types in
-					let self = vdi_of_location ~__context vdi |> fst in
+					let self = find_vdi ~__context sr vdi |> fst in
 					Sm.call_sm_vdi_functions ~__context ~vdi:self
 						(fun device_config _type sr ->
 							f device_config _type sr self
@@ -284,14 +286,12 @@ module Builtin_impl = struct
 			try
 				Server_helpers.exec_with_new_task call_name ~subtask_of:(Ref.of_string task)
 					(fun __context ->
-						let sr = Ref.of_string sr in
-
 						let vi = for_vdi ~task ~sr ~vdi call_name
 							(fun device_config _type sr self ->
-								call_f device_config _type params sr (Db.VDI.get_by_uuid ~__context ~uuid:vdi);
+								call_f device_config _type params sr self
 							) in
 						(* PR-1255: modify clone, snapshot to take the same parameters as create? *)
-						let self, _ = vdi_of_location ~__context vi.Smint.vdi_info_location in
+						let self, _ = find_vdi ~__context sr vi.Smint.vdi_info_location in
 						Db.VDI.set_name_label ~__context ~self ~value:vdi_info.name_label;
 						Db.VDI.set_name_description ~__context ~self ~value:vdi_info.name_description;
 						for_vdi ~task ~sr ~vdi:vi.Smint.vdi_info_location "VDI.update"
@@ -344,7 +344,7 @@ module Builtin_impl = struct
 			(* PR-1255: the backend should do this for us *)
 			 Server_helpers.exec_with_new_task "VDI.set_content_id" ~subtask_of:(Ref.of_string task)
                 (fun __context ->
-					let vdi, _ = vdi_of_location ~__context vdi in
+					let vdi, _ = find_vdi ~__context sr vdi in
 					Db.VDI.remove_from_other_config ~__context ~self:vdi ~key:"content_id";
 					Db.VDI.add_to_other_config ~__context ~self:vdi ~key:"content_id" ~value:content_id;
 					Success Unit
@@ -355,13 +355,13 @@ module Builtin_impl = struct
             Server_helpers.exec_with_new_task "VDI.similar_content" ~subtask_of:(Ref.of_string task)
                 (fun __context ->
 					(* PR-1255: the backend should do this for us. *)
-					let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
+					let sr_ref = Db.SR.get_by_uuid ~__context ~uuid:sr in
 					(* Return a nearest-first list of similar VDIs. "near" should mean
 					   "has similar blocks" but we approximate this with distance in the tree *)
 					let module StringMap = Map.Make(struct type t = string let compare = compare end) in
 					let _vhdparent = "vhd-parent" in
 					let open Db_filter_types in
-					let all = Db.VDI.get_records_where ~__context ~expr:(Eq (Field "SR", Literal (Ref.string_of sr))) in
+					let all = Db.VDI.get_records_where ~__context ~expr:(Eq (Field "SR", Literal (Ref.string_of sr_ref))) in
 					let locations = List.fold_left
 						(fun acc (_, vdi_rec) -> StringMap.add vdi_rec.API.vDI_location vdi_rec acc)
 						StringMap.empty all in
@@ -394,7 +394,7 @@ module Builtin_impl = struct
 								let current = if IntMap.mem n acc then IntMap.find n acc else [] in
 								IntMap.add n (vdi :: current) acc
 							) map IntMap.empty in
-					let _, vdi_rec = vdi_of_location ~__context vdi in
+					let _, vdi_rec = find_vdi ~__context sr vdi in
 					let vdis = explore 0 StringMap.empty vdi_rec.API.vDI_location |> invert |> IntMap.bindings |> List.map snd |> List.concat in
 					let vdi_recs = List.map (fun l -> StringMap.find l locations) vdis in
 					Success(Vdis(List.map (fun x -> SR.vdi_info_of_vdi_rec __context x) vdi_recs))
@@ -532,7 +532,7 @@ let bind ~__context ~pbd =
         then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to XMLRPC query" (Ref.string_of pbd) (Ref.string_of driver));
         ip in
     let sr = Db.PBD.get_SR ~__context ~self:pbd in
-    let path = Xapi_services.path [ Xapi_services._services; Xapi_services._SM; Db.SR.get_type ~__context ~self:sr ] in
+    let path = Constants.path [ Constants._services; Constants._SM; Db.SR.get_type ~__context ~self:sr ] in
 
     let dom0 = Helpers.get_domain_zero ~__context in
     let module Impl = (val (if driver = dom0 then make_local path else make_remote (ip_of driver) path): SERVER) in

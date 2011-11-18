@@ -349,9 +349,11 @@ let snapshot_and_clone call_f ~__context ~vdi ~driver_params =
 			  name_label = a.Db_actions.vDI_name_label;
 			  name_description = a.Db_actions.vDI_name_description
 	  } in
+	  let sr' = Db.SR.get_uuid ~__context ~self:sR in
+	  let vdi' = Db.VDI.get_location ~__context ~self:vdi in
 	  expect_vdi (newvdi ~__context ~sr:sR)
-		  (call_f rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sR)
-			  ~vdi:(Ref.string_of vdi) ~vdi_info  ~params:driver_params) in
+		  (call_f rpc ~task:(Ref.string_of task) ~sr:sr'
+			  ~vdi:vdi' ~vdi_info  ~params:driver_params) in
 
   (* While we don't have blkback support for pause/unpause we only do this
      for .vhd-based backends. *)
@@ -571,13 +573,15 @@ let set_on_boot ~__context ~self ~value =
 	let open Storage_access in
 	let open Storage_interface in
 	let task = Context.get_task_id __context in
+	let sr' = Db.SR.get_uuid ~__context ~self:sr in
+	let vdi' = Db.VDI.get_location ~__context ~self in
 	expect_vdi 
 		(fun newvdi ->
 			expect_unit (fun () -> ())
-				(Client.VDI.destroy rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sr) ~vdi:newvdi.vdi)
+				(Client.VDI.destroy rpc ~task:(Ref.string_of task) ~sr:sr' ~vdi:newvdi.vdi)
 		)
-		(Client.VDI.clone rpc ~task:(Ref.string_of task) ~sr:(Ref.string_of sr)
-			~vdi:(Ref.string_of self) ~vdi_info:default_vdi_info ~params:[]);
+		(Client.VDI.clone rpc ~task:(Ref.string_of task) ~sr:sr'
+			~vdi:vdi' ~vdi_info:default_vdi_info ~params:[]);
 	Db.VDI.set_on_boot ~__context ~self ~value
 
 let set_allow_caching ~__context ~self ~value =
