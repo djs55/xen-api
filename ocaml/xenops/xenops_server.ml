@@ -58,7 +58,7 @@ type operation =
 	| VM_suspend of (Vm.id * disk)
 	| VM_resume of (Vm.id * disk)
 	| VM_restore of (Vm.id * disk)
-	| VM_migrate of (Vm.id * Unix.file_descr)
+	| VM_migrate of (Vm.id * string)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
 	| VM_create of Vm.id
@@ -277,12 +277,9 @@ let rec perform (op: operation) (t: TASK.t) : unit =
 			perform (VM_create_device_model id) t;
 			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
-		| VM_migrate (id, fd) ->
-			finally
-				(fun () ->
-					debug "VM.migrate %s" id;
-					raise (Exception Unimplemented)
-				) (fun () -> Unix.close fd)
+		| VM_migrate (id, url) ->
+			debug "VM.migrate %s -> %s" id url;
+			raise (Exception Unimplemented)
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
@@ -488,9 +485,7 @@ module VM = struct
 
 	let resume _ id disk = queue_operation id (VM_resume (id, disk)) |> return
 
-	let migrate context id = match context.transferred_fd with
-		| None -> raise (Exception Caller_must_pass_file_descriptor)
-		| Some fd -> queue_operation id (VM_migrate (id, fd)) |> return
+	let migrate context id url = queue_operation id (VM_migrate (id, url)) |> return
 
 end
 

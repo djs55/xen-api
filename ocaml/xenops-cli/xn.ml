@@ -29,7 +29,7 @@ let usage () =
 	Printf.fprintf stderr "%s reboot <name or id> - reboot a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s suspend <name or id> <disk> - suspend a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s resume <name or id> <disk> - resume a VM\n" Sys.argv.(0);
-	Printf.fprintf stderr "%s migrate <name or id> - migrate a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s migrate <name or id> <url> - migrate a VM to <url>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s vbd-list <name or id> - query the states of a VM's block devices\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-insert <id> <disk> - insert a CD into a VBD\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
@@ -312,48 +312,10 @@ let resume x disk =
 	let vm, _ = find_by_name x in
 	Client.VM.resume rpc vm.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
 
-let migrate x remotecmd =
+let migrate x url =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	let a, b = Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0 in
-	let toclose = ref [ a; b ] in
-	let close x = if List.mem x !toclose then (Unix.close x; toclose := List.filter (fun y -> x <> y) !toclose) in
-	finally
-		(fun () ->
-			let pid = Unix.create_process (List.hd remotecmd) (Array.of_list remotecmd) b b Unix.stderr in
-			close b;
-			(* Send 'a' as part of the VM.migrate operation *)
-			let local = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
-			Unix.connect local (Unix.ADDR_UNIX forwarded_path);
-			let jsonrpc_request = Rpc.call "VM.migrate" [ Vm.rpc_of_id vm.id ] |> Jsonrpc.string_of_call in
-			let buf = Xmlrpc_client.xmlrpc ~length:(String.length jsonrpc_request |> Int64.of_int) "/" |> Http.Request.rpc_of_t |> Jsonrpc.to_string in
-			let n = Unixext.send_fd local buf 0 (String.length buf) [] a in
-			close a;
-			Printf.fprintf stderr "sent message = [%s]\n%!" buf;
-			if n <> (String.length buf) then failwith "Failed to transmit fd";
-
-			let n = Unix.write local jsonrpc_request 0 (String.length jsonrpc_request) in
-			Printf.fprintf stderr "sent message = [%s]\n%!" jsonrpc_request;
-			Unix.shutdown local Unix.SHUTDOWN_SEND;
-			if n <> (String.length jsonrpc_request) then failwith "Failed to transmit fd";
-			let buf' = String.make 16384 '\000' in
-			let _ = Unix.read local buf' 0 (String.length buf') in
-			Printf.fprintf stderr "received [%s]\n%!" buf';
-			begin match Http_client.response_of_fd local with
-				| None -> failwith "Invalid HTTP response"
-				| Some resp ->
-					let buf' = String.make 16384 '\000' in
-					let n = Unix.recv local buf' 0 (String.length buf') [] in
-					if n = 0 then failwith "Received a zero-length response";
-					let resp = String.sub buf' 0 n |> Jsonrpc.response_of_string in
-					if not resp.Rpc.success then failwith "Received a failure";
-					Printf.fprintf stderr "Received [%s]\n%!" buf';
-					let resp' = Xenops_interface.string_response_of_rpc resp.Rpc.contents in
-					resp' |> success |> wait_for_task rpc |> success_task rpc;
-			end;
-			let _ = Unix.waitpid [] pid in
-			()
-		) (fun () -> close a; close b)
+	Client.VM.migrate rpc vm.id url |> success |> wait_for_task rpc |> success_task rpc
 
 let trim limit str =
 	let l = String.length str in
@@ -456,8 +418,8 @@ let _ =
 			suspend id disk
 		| [ "resume"; id; disk ] ->
 			resume id disk
-		| "migrate" :: id :: remotecmd ->
-			migrate id remotecmd
+		| [ "migrate"; id; url ] ->
+			migrate id url
 		| [ "vbd-list"; id ] ->
 			vbd_list id
 		| [ "cd-insert"; id; disk ] ->

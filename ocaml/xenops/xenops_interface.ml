@@ -272,8 +272,7 @@ module VM = struct
 	external suspend: Vm.id -> disk -> (Task.id option) * (error option) = ""
 	external resume: Vm.id -> disk -> (Task.id option) * (error option) = ""
 
-	external migrate: Vm.id -> (Task.id option) * (error option) = ""
-	(** NB can only be called with an out-of-band file descriptor *)
+	external migrate: Vm.id -> string -> (Task.id option) * (error option) = ""
 end
 
 module VBD = struct
