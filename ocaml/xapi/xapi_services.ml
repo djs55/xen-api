@@ -71,6 +71,8 @@ let post_handler (req: Http.Request.t) s _ =
 	Xapi_http.with_context ~dummy:true "Querying services" req s
 		(fun __context ->
 			match String.split '/' req.Http.Request.uri with
+				| [ ""; services; "xenops" ] when services = _services ->
+					hand_over_connection req s "/var/xapi/xenopsd.forwarded"
 				| [ ""; services; "SM" ] when services = _services ->
 					Storage_impl.Local_domain_socket.xmlrpc_handler Storage_mux.Server.process req (Buf_io.of_fd s) ()
 				| _ ->

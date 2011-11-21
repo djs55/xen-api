@@ -234,7 +234,7 @@ let add filename =
 let list () =
 	let open Vm in
 	let line name domid mem vcpus state time =
-		Printf.sprintf "%-45s%-5s%-4s%-5s     %-8s%-s" name domid mem vcpus state time in
+		Printf.sprintf "%-45s%-5s%-6s%-5s     %-8s%-s" name domid mem vcpus state time in
 	let header = line "Name" "ID" "Mem" "VCPUs" "State" "Time(s)" in
 	let string_of_vm (vm, state) =
 		let domid = match state.Vm.power_state with

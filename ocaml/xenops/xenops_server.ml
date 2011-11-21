@@ -279,7 +279,8 @@ let rec perform (op: operation) (t: TASK.t) : unit =
 			Updates.add (Dynamic.Vm id) updates
 		| VM_migrate (id, url) ->
 			debug "VM.migrate %s -> %s" id url;
-			raise (Exception Unimplemented)
+			Xenops_migrate.transmit (id |> VM_DB.key_of |> VM_DB.read |> unbox) url;
+			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
