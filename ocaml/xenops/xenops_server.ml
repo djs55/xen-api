@@ -279,7 +279,12 @@ let rec perform (op: operation) (t: TASK.t) : unit =
 			Updates.add (Dynamic.Vm id) updates
 		| VM_migrate (id, url) ->
 			debug "VM.migrate %s -> %s" id url;
-			Xenops_migrate.transmit (id |> VM_DB.key_of |> VM_DB.read |> unbox) url;
+			let open Xmlrpc_client in
+			let url = url |> Http.Url.of_string in
+			with_transport (transport_of_url url)
+				(fun fd ->
+					Xenops_migrate.transmit (id |> VM_DB.key_of |> VM_DB.read |> unbox) url fd;
+				);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in

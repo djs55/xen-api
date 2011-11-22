@@ -87,7 +87,7 @@ let receive req s _ =
 	let _, _ = receiver_loop req s Receiver.initial in
 	()
 
-let rpc url rpc fd =
+let remote_rpc url rpc fd =
 	let body = rpc |> Jsonrpc.string_of_call in
 	let length = body |> String.length |> Int64.of_int in
 	let req = Http.Request.make ~version:"1.1" ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" ~length ~body Http.Post (Http.Url.uri_of url) in
@@ -97,16 +97,9 @@ let rpc url rpc fd =
 		)
 
 
-let transmit vm_t url =
-	let open Xmlrpc_client in
-	debug "transmit %s to %s" vm_t.Vm.name url;
-	let url = Http.Url.of_string url in
-	let transport = transport_of_url url in
-	with_transport transport
-		(fun fd ->
-			let metadata = Client.VM.export_metadata local_rpc vm_t.Vm.id |> unwrap in
-			let _ = rpc url (Rpc.call _metadata [ Rpc.String metadata ]) fd in
-			let _ = rpc url (Rpc.call "hello" []) fd in
-			let _ = rpc url (Rpc.call "there" []) fd in
-			()
-		)
+let transmit vm_t url fd =
+	let metadata = Client.VM.export_metadata local_rpc vm_t.Vm.id |> unwrap in
+	let _ = remote_rpc url (Rpc.call _metadata [ Rpc.String metadata ]) fd in
+	let _ = remote_rpc url (Rpc.call "hello" []) fd in
+	let _ = remote_rpc url (Rpc.call "there" []) fd in
+	()
