@@ -221,6 +221,16 @@ module Vif = struct
 	}
 end
 
+module Metadata = struct
+	type t = {
+		vm: Vm.t;
+		vbds: Vbd.t list;
+		vifs: Vif.t list;
+		domains: string;
+		(** Opaque data describing per-domain state *)
+	}
+end
+
 module Task = struct
 	type id = string
 
@@ -273,6 +283,8 @@ module VM = struct
 	external resume: Vm.id -> disk -> (Task.id option) * (error option) = ""
 
 	external migrate: Vm.id -> string -> (Task.id option) * (error option) = ""
+
+	external get_metadata: Vm.id -> (Metadata.t option) * (error option) = ""
 end
 
 module VBD = struct

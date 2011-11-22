@@ -17,6 +17,8 @@ open Xenops_interface
 open Xenops_server_plugin
 open Xenops_utils
 
+let ( |> ) a b = b a
+
 module Domain = struct
 	type t = {
 		domid: int;
@@ -241,6 +243,9 @@ module VM = struct
 
 	let get_state vm = Mutex.execute m (get_state_nolock vm)
 	let get_domain_action_request vm = Mutex.execute m (get_domain_action_request_nolock vm)
+
+	let get_internal_state vm =
+		vm |> key_of |> DB.read |> Opt.unbox |> Domain.rpc_of_t |> Jsonrpc.to_string
 end
 
 module VBD = struct

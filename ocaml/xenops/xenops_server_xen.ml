@@ -658,6 +658,8 @@ module VM = struct
 						else None
 			)
 
+	let get_internal_state vm =
+		vm |> key_of |> DB.read |> Opt.unbox |> VmExtra.rpc_of_t |> Jsonrpc.to_string
 end
 
 let on_frontend f frontend =

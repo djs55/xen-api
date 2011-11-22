@@ -488,6 +488,18 @@ module VM = struct
 
 	let migrate context id url = queue_operation id (VM_migrate (id, url)) |> return
 
+	let get_metadata _ id =
+		let module B = (val get_backend () : S) in
+		let vm_t = id |> VM_DB.key_of |> VM_DB.read |> unbox in
+		let vbds = VBD_DB.list id |> List.map fst in
+		let vifs = VIF_DB.list id |> List.map fst in
+		let domains = B.VM.get_internal_state vm_t in
+		{
+			Metadata.vm = vm_t;
+			vbds = vbds;
+			vifs = vifs;
+			domains = domains;
+		} |> return
 end
 
 module DEBUG = struct
