@@ -26,6 +26,7 @@ let _metadata = "VM.import_metadata"
 module Receiver = struct
 	type created_object =
 		| Vm_metadata of Vm.id
+		| Vm_created of Vm.id
 
 	type state =
 		| Waiting_metadata
@@ -39,12 +40,18 @@ module Receiver = struct
 		| Vm_metadata id ->
 			debug "Removing VM metadata for VM id %s" id;
 			Client.VM.remove local_rpc id |> unwrap
+		| Vm_created id ->
+			debug "Destroying VM id %s" id;
+			Client.VM.destroy local_rpc id |> unwrap
 
 	let initial = Waiting_metadata, []
 	let next (state, created_objects) call = match state, call.Rpc.name, call.Rpc.params with
 		| Waiting_metadata, _metadata, [ Rpc.String md ] ->
 			let vm = md |> Client.VM.import_metadata local_rpc |> unwrap in
-			Received_metadata vm, Vm_metadata vm :: created_objects
+			let created_objects = Vm_metadata vm :: created_objects in
+			Client.VM.create local_rpc vm |> unwrap;
+			let created_objects = Vm_created vm :: created_objects in
+			Received_metadata vm, created_objects
 		| state, name, _ ->
 			List.iter cleanup created_objects;
 			Error (Printf.sprintf "Unexpected call. State = %s; Call = %s" (state |> rpc_of_state |> Jsonrpc.to_string) name), []
