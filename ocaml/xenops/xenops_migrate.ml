@@ -22,10 +22,23 @@ type prereqs = {
 	x: string;
 }
 
+let _metadata = "VM.import_metadata"
+
 module Receiver = struct
-	type state = unit
-	let initial = ()
-	let next state call = Rpc.success Rpc.Null, state
+	type state =
+		| Waiting_metadata
+		| Received_metadata
+		| Error of string
+	with rpc
+
+	let initial = Waiting_metadata
+	let next state call = match state, call.Rpc.name, call.Rpc.params with
+		| Waiting_metadata, _metadata, [ md ] ->
+			Received_metadata
+		| state, name, _ ->
+			Error (Printf.sprintf "Unexpected call. State = %s; Call = %s" (state |> rpc_of_state |> Jsonrpc.to_string) name)
+
+	let string_of_state x = x |> rpc_of_state |> Jsonrpc.to_string
 end
 
 type sender_state = unit
@@ -33,7 +46,9 @@ type sender_state = unit
 let rec receiver_loop req s state =
 	let next_req, next_state = try
 		let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
-		let response, next_state = Receiver.next state call in
+		let next_state = Receiver.next state call in
+		debug "previous state = %s; next state = %s" (Receiver.string_of_state state) (Receiver.string_of_state next_state);
+		let response = Rpc.success (next_state |> Receiver.rpc_of_state) in
 		let body = response |> Jsonrpc.string_of_response in
 		let length = body |> String.length |> Int64.of_int in
 		let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
@@ -62,6 +77,11 @@ let rpc url rpc fd =
 			Unixext.really_read_string fd (response.Http.Response.content_length |> Opt.unbox |> Int64.to_int)
 		)
 
+
+let local_rpc call =
+	let open Xmlrpc_client in
+	XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/xenopsd") ~http:(xmlrpc ~version:"1.0" "/") call
+
 let transmit vm_t url =
 	let open Xmlrpc_client in
 	debug "transmit %s to %s" vm_t.Vm.name url;
@@ -69,6 +89,8 @@ let transmit vm_t url =
 	let transport = transport_of_url url in
 	with_transport transport
 		(fun fd ->
+			let metadata = Client.VM.export_metadata local_rpc vm_t.Vm.id |> unwrap in
+			let _ = rpc url (Rpc.call _metadata [ Rpc.String metadata ]) fd in
 			let _ = rpc url (Rpc.call "hello" []) fd in
 			let _ = rpc url (Rpc.call "there" []) fd in
 			()
