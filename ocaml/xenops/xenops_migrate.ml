@@ -15,25 +15,50 @@
 open Xenops_interface
 open Xenops_utils
 
+let ( |> ) a b = b a
+
 (* Describes what we need on the remote end for this migration to work *)
 type prereqs = {
 	x: string;
 }
 
-let receive req s _ =
-	debug "receiving VM";
-	Http_svr.headers s (Http.http_200_ok ())
+let rec receive req s context =
+	let req = try
+		let body = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) in
+		let _ = body |> Jsonrpc.call_of_string in
+		let response = Rpc.success Rpc.Null in
+		let body = response |> Jsonrpc.string_of_response in
+		let length = body |> String.length |> Int64.of_int in
+		let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
+		response |> Http.Response.to_wire_string |> Unixext.really_write_string s;
+		(* We need to unmarshal the next HTTP request ourselves. *)
+		match Http_svr.request_of_bio (Buf_io.of_fd s) with
+			| None ->
+				debug "Failed to parse HTTP request";
+				failwith "Failed to parse HTTP request"
+			| Some req -> req
+	with e ->
+		debug "Receiver thread caught: %s" (Printexc.to_string e);
+		raise e in
+	receive req s context
+
+let rpc url rpc fd =
+	let body = rpc |> Jsonrpc.string_of_call in
+	let length = body |> String.length |> Int64.of_int in
+	let req = Http.Request.make ~version:"1.1" ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" ~length ~body Http.Post (Http.Url.uri_of url) in
+	Http_client.rpc fd req
+		(fun response _ ->
+			Unixext.really_read_string fd (response.Http.Response.content_length |> Opt.unbox |> Int64.to_int)
+		)
 
 let transmit vm_t url =
 	let open Xmlrpc_client in
 	debug "transmit %s to %s" vm_t.Vm.name url;
 	let url = Http.Url.of_string url in
 	let transport = transport_of_url url in
-	let req = Http.Request.make ~version:"1.0" ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" Http.Post (Http.Url.uri_of url) in
 	with_transport transport
 		(fun fd ->
-			Http_client.rpc fd req
-				(fun response _ ->
-					debug "Received %s" response.Http.Response.code
-				)
+			let _ = rpc url (Rpc.call "hello" []) fd in
+			let _ = rpc url (Rpc.call "there" []) fd in
+			()
 		)
