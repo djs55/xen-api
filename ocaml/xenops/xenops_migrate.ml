@@ -22,11 +22,18 @@ type prereqs = {
 	x: string;
 }
 
-let rec receive req s context =
-	let req = try
-		let body = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) in
-		let _ = body |> Jsonrpc.call_of_string in
-		let response = Rpc.success Rpc.Null in
+module Receiver = struct
+	type state = unit
+	let initial = ()
+	let next state call = Rpc.success Rpc.Null, state
+end
+
+type sender_state = unit
+
+let rec receiver_loop req s state =
+	let next_req, next_state = try
+		let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
+		let response, next_state = Receiver.next state call in
 		let body = response |> Jsonrpc.string_of_response in
 		let length = body |> String.length |> Int64.of_int in
 		let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
@@ -36,11 +43,15 @@ let rec receive req s context =
 			| None ->
 				debug "Failed to parse HTTP request";
 				failwith "Failed to parse HTTP request"
-			| Some req -> req
+			| Some req -> req, next_state
 	with e ->
 		debug "Receiver thread caught: %s" (Printexc.to_string e);
 		raise e in
-	receive req s context
+	receiver_loop next_req s next_state
+
+let receive req s _ =
+	let _, _ = receiver_loop req s Receiver.initial in
+	()
 
 let rpc url rpc fd =
 	let body = rpc |> Jsonrpc.string_of_call in
