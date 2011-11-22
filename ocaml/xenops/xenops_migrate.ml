@@ -17,24 +17,23 @@ open Xenops_utils
 
 let ( |> ) a b = b a
 
-(* Describes what we need on the remote end for this migration to work *)
-type prereqs = {
-	x: string;
-}
+let local_rpc call =
+	let open Xmlrpc_client in
+	XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/xenopsd") ~http:(xmlrpc ~version:"1.0" "/") call
 
 let _metadata = "VM.import_metadata"
 
 module Receiver = struct
 	type state =
 		| Waiting_metadata
-		| Received_metadata
+		| Received_metadata of Vm.id
 		| Error of string
 	with rpc
 
 	let initial = Waiting_metadata
 	let next state call = match state, call.Rpc.name, call.Rpc.params with
-		| Waiting_metadata, _metadata, [ md ] ->
-			Received_metadata
+		| Waiting_metadata, _metadata, [ Rpc.String md ] ->
+			Received_metadata (md |> Client.VM.import_metadata local_rpc |> unwrap)
 		| state, name, _ ->
 			Error (Printf.sprintf "Unexpected call. State = %s; Call = %s" (state |> rpc_of_state |> Jsonrpc.to_string) name)
 
@@ -77,10 +76,6 @@ let rpc url rpc fd =
 			Unixext.really_read_string fd (response.Http.Response.content_length |> Opt.unbox |> Int64.to_int)
 		)
 
-
-let local_rpc call =
-	let open Xmlrpc_client in
-	XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/xenopsd") ~http:(xmlrpc ~version:"1.0" "/") call
 
 let transmit vm_t url =
 	let open Xmlrpc_client in
