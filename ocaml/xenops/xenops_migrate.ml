@@ -30,11 +30,19 @@ module Receiver = struct
 		| Error of string
 	with rpc
 
+	let cleanup = function
+		| Waiting_metadata -> ()
+		| Received_metadata id ->
+			debug "Removing VM metadata for VM id %s" id;
+			Client.VM.remove local_rpc id |> unwrap
+		| Error _ -> ()
+
 	let initial = Waiting_metadata
 	let next state call = match state, call.Rpc.name, call.Rpc.params with
 		| Waiting_metadata, _metadata, [ Rpc.String md ] ->
 			Received_metadata (md |> Client.VM.import_metadata local_rpc |> unwrap)
 		| state, name, _ ->
+			cleanup state;
 			Error (Printf.sprintf "Unexpected call. State = %s; Call = %s" (state |> rpc_of_state |> Jsonrpc.to_string) name)
 
 	let string_of_state x = x |> rpc_of_state |> Jsonrpc.to_string
