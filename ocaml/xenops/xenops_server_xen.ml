@@ -660,6 +660,10 @@ module VM = struct
 
 	let get_internal_state vm =
 		vm |> key_of |> DB.read |> Opt.unbox |> VmExtra.rpc_of_t |> Jsonrpc.to_string
+
+	let set_internal_state vm state =
+		let k = key_of vm in
+		DB.write k (state |> Jsonrpc.of_string |> VmExtra.t_of_rpc)
 end
 
 let on_frontend f frontend =

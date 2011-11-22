@@ -209,6 +209,7 @@ module type S = sig
 		val get_domain_action_request: Vm.t -> domain_action_request option
 
 		val get_internal_state: Vm.t -> string
+		val set_internal_state: Vm.t -> string -> unit
 	end
 	module VBD : sig
 		val plug: Vm.id -> Vbd.t -> unit

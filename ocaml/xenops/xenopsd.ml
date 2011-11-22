@@ -44,6 +44,7 @@ let xmlrpc_handler process req bio context =
 		Http_svr.response_str req s str
 	| e ->
 		Xenops_utils.debug "Caught %s" (Printexc.to_string e);
+		Xenops_utils.debug "Backtrace: %s" (Printexc.get_backtrace ());
 		Http_svr.response_unauthorised ~req (Printf.sprintf "Go away: %s" (Printexc.to_string e)) s
 
 let get_handler req bio _ =

@@ -284,7 +284,8 @@ module VM = struct
 
 	external migrate: Vm.id -> string -> (Task.id option) * (error option) = ""
 
-	external get_metadata: Vm.id -> (Metadata.t option) * (error option) = ""
+	external export_metadata: Vm.id -> (string option) * (error option) = ""
+	external import_metadata: string -> (Vm.id option) * (error option) = ""
 end
 
 module VBD = struct

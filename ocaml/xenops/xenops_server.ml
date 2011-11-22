@@ -373,10 +373,11 @@ module VBD = struct
 	module DB = VBD_DB
 
 	let string_of_id (a, b) = a ^ "." ^ b
-	let add _ x =
+	let add' x =
 		debug "VBD.add %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
 		DB.add (DB.key_of x.id) x;
-		return x.id
+		x.id
+	let add _ x = add' x |> return
 
 	let plug _ id = queue_operation (DB.vm_of id) (VBD_plug id) |> return
 	let unplug _ id = queue_operation (DB.vm_of id) (VBD_unplug id) |> return
@@ -406,7 +407,7 @@ module VIF = struct
 	module DB = VIF_DB
 
 	let string_of_id (a, b) = a ^ "." ^ b
-	let add _ x =
+	let add' x =
 		debug "VIF.add %s" (Jsonrpc.to_string (rpc_of_t x));
 		(* Generate MAC if necessary *)
 		let mac = match x.mac with
@@ -414,7 +415,8 @@ module VIF = struct
 			| "" -> Device.Vif.hashchain_local_mac x.position (DB.vm_of x.id)
 			| mac -> mac in
 		DB.add (DB.key_of x.id) { x with mac = mac };
-		return x.id
+		x.id
+	let add _ x = add' x |> return
 
 	let plug _ id = queue_operation (DB.vm_of id) (VIF_plug id) |> return
 	let unplug _ id = queue_operation (DB.vm_of id) (VIF_unplug id) |> return
@@ -441,10 +443,11 @@ module VM = struct
 
 	module DB = VM_DB
 
-	let add _ x =
+	let add' x =
 		debug "VM.add %s" (Jsonrpc.to_string (rpc_of_t x));
 		DB.add (DB.key_of x.id) x;
-		return x.id
+		x.id
+	let add _ x = add' x |> return
 	let remove _ id =
 		debug "VM.remove %s" id;
 		let module B = (val get_backend () : S) in
@@ -488,7 +491,7 @@ module VM = struct
 
 	let migrate context id url = queue_operation id (VM_migrate (id, url)) |> return
 
-	let get_metadata _ id =
+	let export_metadata _ id =
 		let module B = (val get_backend () : S) in
 		let vm_t = id |> VM_DB.key_of |> VM_DB.read |> unbox in
 		let vbds = VBD_DB.list id |> List.map fst in
@@ -499,7 +502,18 @@ module VM = struct
 			vbds = vbds;
 			vifs = vifs;
 			domains = domains;
-		} |> return
+		} |> Metadata.rpc_of_t |> Jsonrpc.to_string |> return
+
+	let import_metadata _ s =
+		let module B = (val get_backend () : S) in
+		let md = s |> Jsonrpc.of_string |> Metadata.t_of_rpc in
+		let vm = add' md.Metadata.vm in
+		let vbds = List.map (fun x -> { x with Vbd.id = (vm, snd x.Vbd.id) }) md.Metadata.vbds in
+		let vifs = List.map (fun x -> { x with Vif.id = (vm, snd x.Vif.id) }) md.Metadata.vifs in
+		let (_: Vbd.id list) = List.map VBD.add' vbds in
+		let (_: Vif.id list) = List.map VIF.add' vifs in
+		B.VM.set_internal_state (vm |> VM_DB.key_of |> VM_DB.read |> unbox) md.Metadata.domains;
+		vm |> return
 end
 
 module DEBUG = struct

@@ -246,6 +246,9 @@ module VM = struct
 
 	let get_internal_state vm =
 		vm |> key_of |> DB.read |> Opt.unbox |> Domain.rpc_of_t |> Jsonrpc.to_string
+	let set_internal_state vm s =
+		let k = key_of vm in
+		DB.write k (s |> Jsonrpc.of_string |> Domain.t_of_rpc)
 end
 
 module VBD = struct

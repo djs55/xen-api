@@ -277,6 +277,17 @@ let remove x =
 		) vifs;
 	success (Client.VM.remove rpc vm.id)
 
+let export_metadata x filename =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	let txt = Client.VM.export_metadata rpc vm.id |> success in
+	Unixext.write_string_to_file filename txt
+
+let import_metadata filename =
+	let txt = Unixext.string_of_file filename in
+	let id = Client.VM.import_metadata rpc txt |> success in
+	Printf.printf "%s\n" id
+
 let start x =
 	let open Vm in
 	let vm, _ = find_by_name x in
@@ -402,6 +413,10 @@ let _ =
 			list ()
 		| [ "remove"; id ] ->
 			remove id
+		| [ "export-metadata"; id; filename ] ->
+			export_metadata id filename
+		| [ "import-metadata"; filename ] ->
+			import_metadata filename
 		| [ "start"; id ] ->
 			start id
 		| [ "pause"; id ] ->
