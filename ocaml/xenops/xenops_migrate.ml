@@ -24,28 +24,32 @@ let local_rpc call =
 let _metadata = "VM.import_metadata"
 
 module Receiver = struct
+	type created_object =
+		| Vm_metadata of Vm.id
+
 	type state =
 		| Waiting_metadata
 		| Received_metadata of Vm.id
 		| Error of string
 	with rpc
 
+	type t = state * created_object list
+
 	let cleanup = function
-		| Waiting_metadata -> ()
-		| Received_metadata id ->
+		| Vm_metadata id ->
 			debug "Removing VM metadata for VM id %s" id;
 			Client.VM.remove local_rpc id |> unwrap
-		| Error _ -> ()
 
-	let initial = Waiting_metadata
-	let next state call = match state, call.Rpc.name, call.Rpc.params with
+	let initial = Waiting_metadata, []
+	let next (state, created_objects) call = match state, call.Rpc.name, call.Rpc.params with
 		| Waiting_metadata, _metadata, [ Rpc.String md ] ->
-			Received_metadata (md |> Client.VM.import_metadata local_rpc |> unwrap)
+			let vm = md |> Client.VM.import_metadata local_rpc |> unwrap in
+			Received_metadata vm, Vm_metadata vm :: created_objects
 		| state, name, _ ->
-			cleanup state;
-			Error (Printf.sprintf "Unexpected call. State = %s; Call = %s" (state |> rpc_of_state |> Jsonrpc.to_string) name)
+			List.iter cleanup created_objects;
+			Error (Printf.sprintf "Unexpected call. State = %s; Call = %s" (state |> rpc_of_state |> Jsonrpc.to_string) name), []
 
-	let string_of_state x = x |> rpc_of_state |> Jsonrpc.to_string
+	let string_of_state x = x |> fst |> rpc_of_state |> Jsonrpc.to_string
 end
 
 type sender_state = unit
@@ -55,7 +59,7 @@ let rec receiver_loop req s state =
 		let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
 		let next_state = Receiver.next state call in
 		debug "previous state = %s; next state = %s" (Receiver.string_of_state state) (Receiver.string_of_state next_state);
-		let response = Rpc.success (next_state |> Receiver.rpc_of_state) in
+		let response = Rpc.success (next_state |> fst |> Receiver.rpc_of_state) in
 		let body = response |> Jsonrpc.string_of_response in
 		let length = body |> String.length |> Int64.of_int in
 		let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
