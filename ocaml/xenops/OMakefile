@@ -13,7 +13,7 @@ UseCamlp4(rpc-light.idl, xenops_interface)
 xenops_interface.mli: xenops_interface.ml
 	ocamlfind ocamlc -package rpc-light.idl -syntax camlp4o -i $< > $@
 
-LIBFILES = table xenops_helpers xenbus_utils balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom bootloader xenops_interface xenops_utils xenops_server_plugin ../xapi/storage_interface ../xapi/vdi_automaton xenops_server xenops_migrate xenops_server_xen xenops_server_simulator
+LIBFILES = table xenops_helpers xenbus_utils balloon xenguestHelper domain hotplug device io statdev xal netman memory watch device_common squeeze squeeze_xen squeezed_rpc squeezed_state squeezed_rpc device_number stubdom bootloader xenops_interface xenops_utils xenops_client xenops_server_plugin ../xapi/storage_interface ../xapi/vdi_automaton xenops_server xenops_migrate xenops_server_xen xenops_server_simulator
 
 StaticCLibrary(statdev_stubs, statdev_stubs)
 OCamlLibraryClib(xenops, $(LIBFILES), statdev_stubs)

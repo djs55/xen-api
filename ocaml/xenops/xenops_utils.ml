@@ -17,6 +17,8 @@ open Stringext
 open Fun
 open Xenops_interface
 
+let ( |> ) a b = b a
+
 let service_name = "xenops"
 
 module D = Debug.Debugger(struct let name = service_name end)
