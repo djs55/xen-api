@@ -103,9 +103,12 @@ module Storage = struct
 		params: string;
 	}
 
-	let attach_and_activate dp sr vdi read_write =
-		let result = Client.VDI.attach rpc "attach_and_activate" dp sr vdi read_write |> success |> params in
-		Client.VDI.activate rpc "attach_and_activate" dp sr vdi |> success |> unit;
+	let attach_and_activate task dp sr vdi read_write =
+		let result =
+			Xenops_task.with_subtask task (Printf.sprintf "VDI.attach %s" vdi)
+				(fun () -> Client.VDI.attach rpc "attach_and_activate" dp sr vdi read_write |> success |> params) in
+		Xenops_task.with_subtask task (Printf.sprintf "VDI.activate %s" vdi)
+			(fun () -> Client.VDI.activate rpc "attach_and_activate" dp sr vdi |> success |> unit);
 		(* XXX: we need to find out the backend domid *)
 		{ domid = 0; params = result }
 
@@ -118,7 +121,7 @@ module Storage = struct
 
 end
 
-let with_disk ~xc ~xs disk f = match disk with
+let with_disk ~xc ~xs task disk f = match disk with
 	| Local path -> f path
 	| VDI path ->
 		let open Storage in
@@ -127,7 +130,7 @@ let with_disk ~xc ~xs disk f = match disk with
 		let dp = Client.DP.create rpc "with_disk" "xenopsd" in
 		finally
 			(fun () ->
-				let vdi = attach_and_activate dp sr vdi false in
+				let vdi = attach_and_activate task dp sr vdi false in
 				let backend_vm_id = uuid_of_di (Xenctrl.domain_getinfo xc vdi.domid) |> Uuid.string_of_uuid in
 
 				let frontend_domid = this_domid ~xs in
@@ -454,7 +457,7 @@ module VM = struct
 						~boot_order:hvm_info.boot_order ~nics ())
 
 
-	let build_domain_exn xc xs domid vm vbds vifs =
+	let build_domain_exn xc xs domid task vm vbds vifs =
 		let open Memory in
 		let initial_target = get_initial_target ~xs domid in
 		let make_build_info kernel priv = {
@@ -485,7 +488,7 @@ module VM = struct
 					| PV { boot = Indirect { devices = [] } } ->
 						raise (Exception No_bootable_device)
 					| PV { boot = Indirect ( { devices = d :: _ } as i ) } ->
-						with_disk ~xc ~xs d
+						with_disk ~xc ~xs task d
 							(fun dev ->
 								let b = Bootloader.extract ~bootloader:i.bootloader 
 									~legacy_args:i.legacy_args ~extra_args:i.extra_args
@@ -512,9 +515,9 @@ module VM = struct
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
 
-	let build_domain vm vbds vifs xc xs _ di =
+	let build_domain task vm vbds vifs xc xs _ di =
 		try
-			build_domain_exn xc xs di.Xenctrl.domid vm vbds vifs
+			build_domain_exn xc xs di.Xenctrl.domid task vm vbds vifs
 		with
 			| Bootloader.Bad_sexpr x ->
 				let m = Printf.sprintf "Bootloader.Bad_sexpr %s" x in
@@ -537,7 +540,7 @@ module VM = struct
 				debug "%s" m;
 				raise (Exception (Internal_error m))
 
-	let build vm vbds vifs = on_domain (build_domain vm vbds vifs) vm
+	let build task vm vbds vifs = on_domain (build_domain task vm vbds vifs) vm
 
 	let create_device_model_exn vm xc xs _ di =
 		let vmextra = vm |> key_of |> DB.read |> Opt.unbox in
@@ -574,12 +577,12 @@ module VM = struct
 					debug "OTHER EVENT";
 					false)
 
-	let suspend vm disk =
+	let suspend task vm disk =
 		on_domain
 			(fun xc xs vm di ->
 				let hvm = di.Xenctrl.hvm_guest in
 				let domid = di.Xenctrl.domid in
-				with_disk ~xc ~xs disk
+				with_disk ~xc ~xs task disk
 					(fun path ->
 						(* Make a filesystem on the disk later *)
 						(* Do we really want to balloon the guest down? *)
@@ -615,12 +618,12 @@ module VM = struct
 					)
 			) vm
 
-	let restore vm disk =
+	let restore task vm disk =
 		let build_info = vm |> key_of |> DB.read |> Opt.unbox |> (fun x -> x.VmExtra.build_info) |> Opt.unbox in
 		on_domain
 			(fun xc xs vm di ->
 				let domid = di.Xenctrl.domid in
-				with_disk ~xc ~xs disk
+				with_disk ~xc ~xs task disk
 					(fun path ->
 						Unixext.with_file path [ Unix.O_RDONLY ] 0o644
 							(fun fd ->
@@ -700,7 +703,7 @@ module VBD = struct
 
 	let id_of vbd = snd vbd.id
 
-	let attach_and_activate xc xs frontend_domid vbd =
+	let attach_and_activate task xc xs frontend_domid vbd =
 		match vbd.backend with
 			| None ->
 				(* XXX: do something better with CDROMs *)
@@ -710,7 +713,7 @@ module VBD = struct
 			| Some (VDI path) ->
 				let sr, vdi = Storage.get_disk_by_name path in
 				let dp = Storage.id_of frontend_domid vbd.id in
-				Storage.attach_and_activate dp sr vdi (vbd.mode = ReadWrite)
+				Storage.attach_and_activate task dp sr vdi (vbd.mode = ReadWrite)
 
 	let frontend_domid_of_device device = device.Device_common.frontend.Device_common.domid
 
@@ -721,10 +724,10 @@ module VBD = struct
 	let device_number_of_device d =
 		Device_number.of_xenstore_key d.Device_common.frontend.Device_common.devid
 
-	let plug vm vbd =
+	let plug task vm vbd =
 		on_frontend
 			(fun xc xs frontend_domid hvm ->
-				let vdi = attach_and_activate xc xs frontend_domid vbd in
+				let vdi = attach_and_activate task xc xs frontend_domid vbd in
 				(* Remember the VBD id with the device *)
 				let id = _device_id Device_common.Vbd, id_of vbd in
 				let x = {
@@ -763,12 +766,12 @@ module VBD = struct
 					debug "Ignoring missing device: %s" (id_of vbd)
 			)
 
-	let insert vm vbd disk =
+	let insert task vm vbd disk =
 		with_xc_and_xs
 			(fun xc xs ->
 				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
 				let frontend_domid = frontend_domid_of_device device in
-				let vdi = attach_and_activate xc xs frontend_domid vbd in
+				let vdi = attach_and_activate task xc xs frontend_domid vbd in
 				let device_number = device_number_of_device device in
 				let phystype = Device.Vbd.Phys in
 				Device.Vbd.media_insert ~xs ~device_number ~params:vdi.Storage.params ~phystype frontend_domid

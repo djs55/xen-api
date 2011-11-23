@@ -193,7 +193,7 @@ module type S = sig
 	val init: unit -> unit
 	module VM : sig
 		val create: Vm.t -> unit
-		val build: Vm.t -> Vbd.t list -> Vif.t list -> unit
+		val build: Xenops_task.t -> Vm.t -> Vbd.t list -> Vif.t list -> unit
 		val create_device_model: Vm.t -> unit
 		val destroy: Vm.t -> unit
 		val pause: Vm.t -> unit
@@ -201,8 +201,8 @@ module type S = sig
 		val request_shutdown: Vm.t -> shutdown_request -> float -> bool
 		val wait_shutdown: Vm.t -> shutdown_request -> float -> bool
 
-		val suspend: Vm.t -> disk -> unit
-		val restore: Vm.t -> disk -> unit
+		val suspend: Xenops_task.t -> Vm.t -> disk -> unit
+		val restore: Xenops_task.t -> Vm.t -> disk -> unit
 
 		val get_state: Vm.t -> Vm.state
 
@@ -212,9 +212,9 @@ module type S = sig
 		val set_internal_state: Vm.t -> string -> unit
 	end
 	module VBD : sig
-		val plug: Vm.id -> Vbd.t -> unit
+		val plug: Xenops_task.t -> Vm.id -> Vbd.t -> unit
 		val unplug: Vm.id -> Vbd.t -> unit
-		val insert: Vm.id -> Vbd.t -> disk -> unit
+		val insert: Xenops_task.t -> Vm.id -> Vbd.t -> disk -> unit
 		val eject: Vm.id -> Vbd.t -> unit
 
 		val get_state: Vm.id -> Vbd.t -> Vbd.state

@@ -229,12 +229,12 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			Updates.add (Dynamic.Vm id) updates
 		| VM_suspend (id, disk) ->
 			debug "VM.suspend %s" id;
-			B.VM.suspend (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
+			B.VM.suspend t (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
 			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_restore (id, disk) ->
 			debug "VM.restore %s" id;
-			B.VM.restore (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk
+			B.VM.restore t (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk
 		| VM_resume (id, disk) ->
 			debug "VM.resume %s" id;
 			perform ~subtask:"VM_create" (VM_create id) t;
@@ -281,7 +281,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			debug "VM.build %s" id;
 			let vbds : Vbd.t list = VBD_DB.list id |> List.map fst in
 			let vifs : Vif.t list = VIF_DB.list id |> List.map fst in
-			B.VM.build (id |> VM_DB.key_of |> VM_DB.read |> unbox) vbds vifs
+			B.VM.build t (id |> VM_DB.key_of |> VM_DB.read |> unbox) vbds vifs
 		| VM_create_device_model id ->
 			debug "VM.create_device_model %s" id;
 			B.VM.create_device_model (id |> VM_DB.key_of |> VM_DB.read |> unbox)
@@ -312,7 +312,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			List.iter (fun x -> perform x t) operations
 		| VBD_plug id ->
 			debug "VBD.plug %s" (VBD_DB.string_of_id id);
-			B.VBD.plug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
+			B.VBD.plug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
 		| VBD_unplug id ->
 			debug "VBD.unplug %s" (VBD_DB.string_of_id id);
 			B.VBD.unplug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
@@ -323,7 +323,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			if state.Vbd.media_present
 			then raise (Exception Media_present)
 			else begin
-				B.VBD.insert (VBD_DB.vm_of id) vbd_t disk;
+				B.VBD.insert t (VBD_DB.vm_of id) vbd_t disk;
 				VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = Some disk };
 			end
 		| VBD_eject id ->
