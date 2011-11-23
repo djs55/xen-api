@@ -20,6 +20,7 @@ open Fun
 open Xenops_interface
 open Xenops_server_plugin
 open Xenops_utils
+open Xenops_task
 
 type context = {
 	transferred_fd: Unix.file_descr option;
@@ -75,45 +76,6 @@ type operation =
 	| VIF_unplug of Vif.id
 
 module TASK = struct
-	type t = {
-		id: string;
-		mutable result: Task.result;
-		mutable subtasks: (string * Task.result) list;
-		f: t -> unit;
-		cancel: unit -> unit;
-	}
-
-	module SMap = Map.Make(struct type t = string let compare = compare end)
-
-	let tasks = ref SMap.empty
-	let m = Mutex.create ()
-	let c = Condition.create ()
-
-	let next_task_id =
-		let counter = ref 0 in
-		fun () ->
-			let result = string_of_int !counter in
-			incr counter;
-			result
-
-	let add (f: t -> unit) =
-		let t = {
-			id = next_task_id ();
-			result = Task.Pending 0.;
-			subtasks = [];
-			f = f;
-			cancel = (fun () -> ());
-		} in
-		Mutex.execute m
-			(fun () ->
-				tasks := SMap.add t.id t !tasks
-			);
-		t
-
-	let find_locked id =
-		if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);
-		SMap.find id !tasks
-
 	let cancel _ id =
 		Mutex.execute m
 			(fun () ->
@@ -131,16 +93,6 @@ module TASK = struct
 				}
 			)
 	let stat _ id = stat' id |> return
-
-	let with_subtask t name f =
-		let start = Unix.gettimeofday () in
-		try
-			let result = f () in
-			t.subtasks <- (name, Task.Completed (Unix.gettimeofday () -. start)) :: t.subtasks;
-			result
-		with e ->
-			t.subtasks <- (name, Task.Failed (Internal_error (Printexc.to_string e))) :: t.subtasks;
-			raise e
 end
 
 module Per_VM_queues = struct
@@ -167,22 +119,22 @@ module Per_VM_queues = struct
 		begin
 			try
 				let start = Unix.gettimeofday () in
-				item.TASK.f item;
+				item.Xenops_task.f item;
 				let duration = Unix.gettimeofday () -. start in
-				item.TASK.result <- Task.Completed duration;
-				debug "Triggering event on task id %s" item.TASK.id;
-				Updates.add (Dynamic.Task item.TASK.id) updates;
+				item.Xenops_task.result <- Task.Completed duration;
+				debug "Triggering event on task id %s" item.Xenops_task.id;
+				Updates.add (Dynamic.Task item.Xenops_task.id) updates;
 			with
 				| Exception e ->
 					debug "Caught exception while processing queue: %s" (e |> rpc_of_error |> Jsonrpc.to_string);
-					item.TASK.result <- Task.Failed e;
-					debug "Triggering event on task id %s" item.TASK.id;
-					Updates.add (Dynamic.Task item.TASK.id) updates;
+					item.Xenops_task.result <- Task.Failed e;
+					debug "Triggering event on task id %s" item.Xenops_task.id;
+					Updates.add (Dynamic.Task item.Xenops_task.id) updates;
 				| e ->
 					debug "Caught exception while processing queue: %s" (Printexc.to_string e);
-					item.TASK.result <- Task.Failed (Internal_error (Printexc.to_string e));
-					debug "Triggering event on task id %s" item.TASK.id;
-					Updates.add (Dynamic.Task item.TASK.id) updates;
+					item.Xenops_task.result <- Task.Failed (Internal_error (Printexc.to_string e));
+					debug "Triggering event on task id %s" item.Xenops_task.id;
+					Updates.add (Dynamic.Task item.Xenops_task.id) updates;
 		end;
 		process_queue q
 
@@ -241,7 +193,7 @@ module VIF_DB = struct
 		List.combine vifs states
 end
 
-let rec perform ?subtask (op: operation) (t: TASK.t) : unit =
+let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 	let module B = (val get_backend () : S) in
 	
 	let one = function
@@ -392,13 +344,13 @@ let rec perform ?subtask (op: operation) (t: TASK.t) : unit =
 	in
 	match subtask with
 		| None -> one op
-		| Some name -> TASK.with_subtask t name (fun () -> one op)
+		| Some name -> Xenops_task.with_subtask t name (fun () -> one op)
 
 let queue_operation id op =
-	let task = TASK.add (fun t -> perform op t) in
+	let task = Xenops_task.add (fun t -> perform op t) in
 	Per_VM_queues.add id task;
-	debug "Pushed task with id %s" task.TASK.id;
-	task.TASK.id
+	debug "Pushed task with id %s" task.Xenops_task.id;
+	task.Xenops_task.id
 
 module VBD = struct
 	open Vbd
