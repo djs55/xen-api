@@ -327,22 +327,26 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 		| VBD_insert (id, disk) ->
 			debug "VBD.insert %s" (VBD_DB.string_of_id id);
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
-			let state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
-			if state.Vbd.media_present
-			then raise (Exception Media_present)
-			else begin
-				B.VBD.insert t (VBD_DB.vm_of id) vbd_t disk;
-				VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = Some disk };
-			end
+			let vm_state = B.VM.get_state (VBD_DB.vm_of id |> VM_DB.key_of |> VM_DB.read |> unbox) in
+			let vbd_state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
+			if vm_state.Vm.power_state = Running
+			then
+				if vbd_state.Vbd.media_present
+				then B.VBD.insert t (VBD_DB.vm_of id) vbd_t disk
+				else raise (Exception Media_not_present);			
+			VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = Some disk };
 		| VBD_eject id ->
 			debug "VBD.eject %s" (VBD_DB.string_of_id id);
 			let module B = (val get_backend () : S) in
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
-			let state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
-			if state.Vbd.media_present then begin
-				B.VBD.eject t (VBD_DB.vm_of id) vbd_t;
-				VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = None }
-			end else raise (Exception Media_not_present)
+			let vm_state = B.VM.get_state (VBD_DB.vm_of id |> VM_DB.key_of |> VM_DB.read |> unbox) in
+			let vbd_state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
+			if vm_state.Vm.power_state = Running
+			then
+				if vbd_state.Vbd.media_present
+				then B.VBD.eject t (VBD_DB.vm_of id) vbd_t
+				else raise (Exception Media_not_present);			
+			VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = None }
 		| VIF_plug id ->
 			debug "VIF.plug %s" (VIF_DB.string_of_id id);
 			B.VIF.plug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
