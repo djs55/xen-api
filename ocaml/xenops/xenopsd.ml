@@ -57,6 +57,7 @@ let start path process =
     let domain_sock = Http_svr.bind (Unix.ADDR_UNIX(path)) "unix_rpc" in
     Http_svr.Server.add_handler server Http.Post "/" (Http_svr.BufIO (xmlrpc_handler process));
 	Http_svr.Server.add_handler server Http.Post "/services/xenops" (Http_svr.FdIO Xenops_migrate.receive);
+	Http_svr.Server.add_handler server Http.Put  "/services/xenops/memory" (Http_svr.FdIO Xenops_migrate.receive_memory);
     Http_svr.Server.add_handler server Http.Get "/" (Http_svr.BufIO get_handler);
     Http_svr.start server domain_sock;
 	socket := Some domain_sock;
@@ -76,23 +77,27 @@ let start path process =
 				debug "Calling Unix.accept()";
 				let this_connection, _ = Unix.accept forwarded_sock in
 				debug "Unix.accept() ok";
-				finally
+				let (_: Thread.t) = Thread.create
 					(fun () ->
-						debug "Calling Unixext.recv_fd()";
-						let len, _, received_fd = Unixext.recv_fd this_connection buf 0 msg_size [] in
-						debug "Unixext.recv_fd ok (len = %d)" len;
 						finally
 							(fun () ->
-								let req = String.sub buf 0 len |> Jsonrpc.of_string |> Http.Request.t_of_rpc in
-								debug "Received request = [%s]\n%!" (req |> Http.Request.rpc_of_t |> Jsonrpc.to_string);
-								req.Http.Request.close <- true;
-								let context = {
-									Xenops_server.transferred_fd = Some received_fd
-								} in
-								let (_: bool) = Http_svr.handle_one server received_fd context req in
-								()
-							) (fun () -> Unix.close received_fd)
-					) (fun () -> Unix.close this_connection)
+								debug "Calling Unixext.recv_fd()";
+								let len, _, received_fd = Unixext.recv_fd this_connection buf 0 msg_size [] in
+								debug "Unixext.recv_fd ok (len = %d)" len;
+								finally
+									(fun () ->
+										let req = String.sub buf 0 len |> Jsonrpc.of_string |> Http.Request.t_of_rpc in
+										debug "Received request = [%s]\n%!" (req |> Http.Request.rpc_of_t |> Jsonrpc.to_string);
+										req.Http.Request.close <- true;
+										let context = {
+											Xenops_server.transferred_fd = Some received_fd
+										} in
+										let (_: bool) = Http_svr.handle_one server received_fd context req in
+										()
+									) (fun () -> Unix.close received_fd)
+							) (fun () -> Unix.close this_connection)
+					) () in
+				()
 			done
 		) () in
 	()

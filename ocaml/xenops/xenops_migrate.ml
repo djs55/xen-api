@@ -23,6 +23,7 @@ let local_rpc call =
 	XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/xenopsd") ~http:(xmlrpc ~version:"1.0" "/") call
 
 let _metadata = "VM.import_metadata"
+let _failure = "VM.client_migrate_failed"
 
 module Receiver = struct
 	type created_object =
@@ -47,7 +48,7 @@ module Receiver = struct
 
 	let initial = Waiting_metadata, []
 	let next (state, created_objects) call = match state, call.Rpc.name, call.Rpc.params with
-		| Waiting_metadata, _metadata, [ Rpc.String md ] ->
+		| Waiting_metadata, call, [ Rpc.String md ] when call = _metadata ->
 			let vm = md |> Client.VM.import_metadata local_rpc |> unwrap in
 			let created_objects = Vm_metadata vm :: created_objects in
 			Client.VM.create local_rpc vm |> success |> wait_for_task local_rpc |> success_task local_rpc |> ignore_task;
@@ -87,19 +88,34 @@ let receive req s _ =
 	let _, _ = receiver_loop req s Receiver.initial in
 	()
 
+let receive_memory req s _ =
+	debug "XXX receive memory";
+	let response = Http.Response.make ~version:"1.1" "200" "OK" in
+	response |> Http.Response.to_wire_string |> Unixext.really_write_string s
+
+
+let http_post url length body =
+	Http.Request.make ~version:"1.1" ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" ~length ~body Http.Post (Http.Url.uri_of url)
+
+let http_put url =
+	Http.Request.make ~version:"1.1" ~keep_alive:false ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" Http.Put (Http.Url.uri_of url)
+
 let remote_rpc url rpc fd =
 	let body = rpc |> Jsonrpc.string_of_call in
 	let length = body |> String.length |> Int64.of_int in
-	let req = Http.Request.make ~version:"1.1" ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" ~length ~body Http.Post (Http.Url.uri_of url) in
-	Http_client.rpc fd req
+	Http_client.rpc fd (http_post url length body)
 		(fun response _ ->
-			Unixext.really_read_string fd (response.Http.Response.content_length |> Opt.unbox |> Int64.to_int)
+			let body = Unixext.really_read_string fd (response.Http.Response.content_length |> Opt.unbox |> Int64.to_int) in
+		debug "body = [%s]" body;
+		body |> Jsonrpc.response_of_string |> (fun x -> x.Rpc.contents) |> Receiver.state_of_rpc
 		)
 
+let send_metadata url metadata fd =
+	let open Receiver in
+	match remote_rpc url (Rpc.call _metadata [ Rpc.String metadata ]) fd with
+		| Received_metadata id -> id
+		| x -> failwith (Printf.sprintf "Unexpected response: %s" (x |> rpc_of_state |> Jsonrpc.to_string))
 
-let transmit vm_t url fd =
-	let metadata = Client.VM.export_metadata local_rpc vm_t.Vm.id |> unwrap in
-	let _ = remote_rpc url (Rpc.call _metadata [ Rpc.String metadata ]) fd in
-	let _ = remote_rpc url (Rpc.call "hello" []) fd in
-	let _ = remote_rpc url (Rpc.call "there" []) fd in
+let send_failure url fd =
+	let _ = remote_rpc url (Rpc.call _failure []) fd in
 	()

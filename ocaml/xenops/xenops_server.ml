@@ -193,6 +193,19 @@ module VIF_DB = struct
 		List.combine vifs states
 end
 
+let export_metadata id =
+	let module B = (val get_backend () : S) in
+	let vm_t = id |> VM_DB.key_of |> VM_DB.read |> unbox in
+	let vbds = VBD_DB.list id |> List.map fst in
+	let vifs = VIF_DB.list id |> List.map fst in
+	let domains = B.VM.get_internal_state vm_t in
+	{
+		Metadata.vm = vm_t;
+		vbds = vbds;
+		vifs = vifs;
+		domains = domains;
+	} |> Metadata.rpc_of_t |> Jsonrpc.to_string
+
 let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 	let module B = (val get_backend () : S) in
 	
@@ -253,12 +266,22 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			let url = url |> Http.Url.of_string in
 			with_transport (transport_of_url url)
 				(fun fd ->
-					Xenops_migrate.transmit (id |> VM_DB.key_of |> VM_DB.read |> unbox) url fd;
-					(* Move the 'transmit' function inline *)
-					(* Make a parallel connection to push the memory image *)
-					(* Call suspend *)
-					(* Flush blocks *)
-					(* Signal resume *)
+					let id = Xenops_migrate.send_metadata url (export_metadata id) fd in
+					debug "Received id = %s" id;
+					let suffix = Printf.sprintf "/memory/%s" id in
+					let memory_url = match url with
+						| Http.Url.Http(a, b) -> Http.Url.Http(a, b ^ suffix)
+						| Http.Url.File(a, b) -> Http.Url.File(a, b ^ suffix) in
+					with_transport (transport_of_url memory_url)
+						(fun mfd ->
+							Http_client.rpc mfd (Xenops_migrate.http_put memory_url)
+								(fun response _ ->
+									debug "XXX transmit memory";
+								)
+						);
+					debug "XXX flush blocks";
+					debug "XXX signal";
+					Xenops_migrate.send_failure url fd
 				);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
@@ -475,18 +498,7 @@ module VM = struct
 
 	let migrate context id url = queue_operation id (VM_migrate (id, url)) |> return
 
-	let export_metadata _ id =
-		let module B = (val get_backend () : S) in
-		let vm_t = id |> VM_DB.key_of |> VM_DB.read |> unbox in
-		let vbds = VBD_DB.list id |> List.map fst in
-		let vifs = VIF_DB.list id |> List.map fst in
-		let domains = B.VM.get_internal_state vm_t in
-		{
-			Metadata.vm = vm_t;
-			vbds = vbds;
-			vifs = vifs;
-			domains = domains;
-		} |> Metadata.rpc_of_t |> Jsonrpc.to_string |> return
+	let export_metadata _ id = export_metadata id |> return
 
 	let import_metadata _ s =
 		let module B = (val get_backend () : S) in

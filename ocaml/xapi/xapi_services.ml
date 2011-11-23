@@ -48,6 +48,7 @@ let respond req rpc s =
 (* Transmits [req] and [s] to the service listening on [path] *)
 let hand_over_connection req s path =
 	try
+		debug "hand_over_connection %s %s to %s" (Http.string_of_method_t req.Http.Request.m) req.Http.Request.uri path;
 		let control_fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
 		finally
 			(fun () ->
@@ -71,7 +72,7 @@ let post_handler (req: Http.Request.t) s _ =
 	Xapi_http.with_context ~dummy:true "Querying services" req s
 		(fun __context ->
 			match String.split '/' req.Http.Request.uri with
-				| [ ""; services; "xenops" ] when services = _services ->
+				| "" :: services :: "xenops" :: _ when services = _services ->
 					hand_over_connection req s "/var/xapi/xenopsd.forwarded"
 				| [ ""; services; "SM" ] when services = _services ->
 					Storage_impl.Local_domain_socket.xmlrpc_handler Storage_mux.Server.process req (Buf_io.of_fd s) ()
@@ -84,6 +85,8 @@ let put_handler (req: Http.Request.t) s _ =
 	Xapi_http.with_context ~dummy:true "Querying services" req s
 		(fun __context ->
 			match String.split '/' req.Http.Request.uri with
+				| "" :: services :: "xenops" :: _ when services = _services ->
+					hand_over_connection req s "/var/xapi/xenopsd.forwarded"
 				| [ ""; services; "SM"; "data"; sr; vdi ] when services = _services ->
 					let vdi, _ = Storage_access.find_vdi ~__context sr vdi in
 					Import_raw_vdi.import vdi req s ()

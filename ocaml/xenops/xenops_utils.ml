@@ -141,3 +141,6 @@ let unplugged_vif = {
 	kthread_pid = 0;
 	media_present = false;
 }
+
+
+
