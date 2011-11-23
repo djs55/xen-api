@@ -220,8 +220,8 @@ module type S = sig
 		val get_state: Vm.id -> Vbd.t -> Vbd.state
 	end
 	module VIF : sig
-		val plug: Vm.id -> Vif.t -> unit
-		val unplug: Vm.id -> Vif.t -> unit
+		val plug: Xenops_task.t -> Vm.id -> Vif.t -> unit
+		val unplug: Xenops_task.t -> Vm.id -> Vif.t -> unit
 
 		val get_state: Vm.id -> Vif.t -> Vif.state
 	end

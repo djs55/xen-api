@@ -153,14 +153,18 @@ let with_disk ~xc ~xs task disk f = match disk with
 							extra_private_keys = [];
 							backend_domid = backend_domid;
 						} in
-						let device = Device.Vbd.add ~xs ~hvm:false t frontend_domid in
+						let device =
+							Xenops_task.with_subtask task "Vbd.add"
+								(fun () -> Device.Vbd.add ~xs ~hvm:false t frontend_domid) in
 						let open Device_common in
 						finally
 							(fun () ->
 								device.frontend.devid 
 							|> Device_number.of_xenstore_key |> Device_number.to_linux_device 
 							|> f)
-							(fun () -> Device.clean_shutdown ~xs device)
+							(fun () ->
+								Xenops_task.with_subtask task "Vbd.clean_shutdown"
+									(fun () -> Device.clean_shutdown ~xs device))
 				end
 			)
 			(fun () -> deactivate_and_detach task dp)
@@ -751,7 +755,9 @@ module VBD = struct
 					backend_domid = vdi.Storage.domid
 				} in
 				(* Store the VBD ID -> actual frontend ID for unplug *)
-				let (_: Device_common.device) = Device.Vbd.add ~xs ~hvm x frontend_domid in
+				let (_: Device_common.device) =
+					Xenops_task.with_subtask task (Printf.sprintf "Vbd.add %s" (id_of vbd))
+						(fun () -> Device.Vbd.add ~xs ~hvm x frontend_domid) in
 				()
 			) vm
 
@@ -761,8 +767,10 @@ module VBD = struct
 				try
 					(* If the device is gone then this is ok *)
 					let device = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
-					Device.clean_shutdown ~xs device;
-					Device.Vbd.release ~xs device;
+					Xenops_task.with_subtask task (Printf.sprintf "Vbd.clean_shutdown %s" (id_of vbd))
+						(fun () -> Device.clean_shutdown ~xs device);
+					Xenops_task.with_subtask task (Printf.sprintf "Vbd.release %s" (id_of vbd))
+						(fun () -> Device.Vbd.release ~xs device);
 					deactivate_and_detach task device vbd;
 				with (Exception Does_not_exist) ->
 					debug "Ignoring missing device: %s" (id_of vbd)
@@ -823,43 +831,48 @@ module VIF = struct
 			| VSwitch _ -> this_domid ~xs
 			| Netback (vm, _) -> vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs |> unbox
 
-	let plug_exn vm vif =
+	let plug_exn task vm vif =
 		on_frontend
 			(fun xc xs frontend_domid hvm ->
 				let backend_domid = backend_domid_of xc xs vif in
 				(* Remember the VIF id with the device *)
 				let id = _device_id Device_common.Vif, id_of vif in
 
-				let (_: Device_common.device) = Device.Vif.add ~xs ~devid:vif.position
-					~netty:(match vif.backend with
-						| VSwitch x -> Netman.Vswitch x
-						| Bridge x -> Netman.Bridge x
-						| Netback (_, _) -> failwith "Unsupported")
-					~mac:vif.mac ~carrier:vif.carrier ~mtu:vif.mtu
-					~rate:vif.rate ~backend_domid
-					~other_config:vif.other_config
-					~extra_private_keys:(id :: vif.extra_private_keys)
-					frontend_domid in
+				let (_: Device_common.device) =
+					Xenops_task.with_subtask task (Printf.sprintf "Vif.add %s" (id_of vif))
+						(fun () ->
+							Device.Vif.add ~xs ~devid:vif.position
+								~netty:(match vif.backend with
+									| VSwitch x -> Netman.Vswitch x
+									| Bridge x -> Netman.Bridge x
+									| Netback (_, _) -> failwith "Unsupported")
+								~mac:vif.mac ~carrier:vif.carrier ~mtu:vif.mtu
+								~rate:vif.rate ~backend_domid
+								~other_config:vif.other_config
+								~extra_private_keys:(id :: vif.extra_private_keys)
+								frontend_domid) in
 				()
 			) vm
 
-	let plug vm = plug_exn vm
+	let plug task vm = plug_exn task vm
 
-	let unplug_exn vm vif =
+	let unplug_exn task vm vif =
 		with_xc_and_xs
 			(fun xc xs ->
 				try
 					(* If the device is gone then this is ok *)
 					let device = device_by_id xc xs vm Device_common.Vif (id_of vif) in
 					(* NB different from the VBD case to make the test pass for now *)
-					Device.hard_shutdown ~xs device;
-					Device.Vif.release ~xs device
+					Xenops_task.with_subtask task (Printf.sprintf "Vif.hard_shutdown %s" (id_of vif))
+						(fun () -> Device.hard_shutdown ~xs device);
+					Xenops_task.with_subtask task (Printf.sprintf "Vif.release %s" (id_of vif))
+						(fun () -> Device.Vif.release ~xs device);
 				with (Exception Does_not_exist) ->
 					debug "Ignoring missing device: %s" (id_of vif)
 			);
 		()
 
-	let unplug vm = unplug_exn vm
+	let unplug task vm = unplug_exn task vm
 
 	let get_state vm vif =
 		with_xc_and_xs

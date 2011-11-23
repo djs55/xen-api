@@ -337,10 +337,10 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			end else raise (Exception Media_not_present)
 		| VIF_plug id ->
 			debug "VIF.plug %s" (VIF_DB.string_of_id id);
-			B.VIF.plug (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+			B.VIF.plug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
 		| VIF_unplug id ->
 			debug "VIF.unplug %s" (VIF_DB.string_of_id id);
-			B.VIF.unplug (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+			B.VIF.unplug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
 	in
 	match subtask with
 		| None -> one op
