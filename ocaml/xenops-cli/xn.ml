@@ -356,8 +356,18 @@ let slave () =
 			Thread.join outgoing;
 		) (fun () -> Unix.close fd)
 
+let verbose_task t = match t.Task.result with
+	| Task.Completed t -> Printf.printf "Duration: %.2f secs" t
+	| Task.Failed x -> Printf.fprintf stderr "Error: %s" (x |> rpc_of_error |> Jsonrpc.to_string)
+	| Task.Pending _ -> Printf.fprintf stderr "Error: still pending"
+
+
 let _ =
-	match List.tl (Array.to_list Sys.argv) with
+	let args = Sys.argv |> Array.to_list |> List.tl in
+	let verbose = List.mem "-v" args in
+	let args = List.filter (fun x -> x <> "-v") args in
+	let task = if verbose then verbose_task else ignore_task in
+	match args with
 		| [ "help" ] | [] ->
 			usage ();
 			exit 0
@@ -372,29 +382,29 @@ let _ =
 		| [ "import-metadata"; filename ] ->
 			import_metadata filename
 		| [ "start"; id ] ->
-			start id
+			start id |> task
 		| [ "pause"; id ] ->
-			pause id
+			pause id |> task
 		| [ "unpause"; id ] ->
-			unpause id
+			unpause id |> task
 		| [ "shutdown"; id ] ->
-			shutdown id
+			shutdown id |> task
 		| [ "reboot"; id ] ->
-			reboot id None
+			reboot id None |> task
 		| [ "reboot"; id; timeout ] ->
-			reboot id (Some (float_of_string timeout))
+			reboot id (Some (float_of_string timeout)) |> task
 		| [ "suspend"; id; disk ] ->
-			suspend id disk
+			suspend id disk |> task
 		| [ "resume"; id; disk ] ->
-			resume id disk
+			resume id disk |> task
 		| [ "migrate"; id; url ] ->
-			migrate id url
+			migrate id url |> task
 		| [ "vbd-list"; id ] ->
 			vbd_list id
 		| [ "cd-insert"; id; disk ] ->
-			cd_insert id disk
+			cd_insert id disk |> task
 		| [ "cd-eject"; id ] ->
-			cd_eject id
+			cd_eject id |> task
 		| [ "slave" ] ->
 			slave ()
 		| cmd :: _ ->

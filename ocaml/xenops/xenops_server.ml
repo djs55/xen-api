@@ -151,8 +151,10 @@ module Per_VM_queues = struct
 				) in
 		begin
 			try
+				let start = Unix.gettimeofday () in
 				item.TASK.f item;
-				item.TASK.result <- Task.Completed;
+				let duration = Unix.gettimeofday () -. start in
+				item.TASK.result <- Task.Completed duration;
 				debug "Triggering event on task id %s" item.TASK.id;
 				Updates.add (Dynamic.Task item.TASK.id) updates;
 			with

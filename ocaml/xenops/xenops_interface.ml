@@ -236,7 +236,7 @@ module Task = struct
 
 	type result =
 		| Pending of float
-		| Completed
+		| Completed of float
 		| Failed of error
 
 	type t = {

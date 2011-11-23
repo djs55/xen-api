@@ -46,7 +46,7 @@ let wait_for_task rpc id =
 			if t.Task.id = id then begin
 				match t.Task.result with
 				| Task.Pending _ -> false
-				| Task.Completed -> true
+				| Task.Completed _ -> true
 				| Task.Failed _ -> true
 			end else false
 		| x ->
@@ -58,7 +58,9 @@ let wait_for_task rpc id =
 let success_task rpc id =
 	let t = Client.TASK.stat rpc id |> success in
 	match t.Task.result with
-	| Task.Completed -> ()
+	| Task.Completed _ -> t
 	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
 	| Task.Pending _ -> failwith "task pending"
+
+let ignore_task (t: Task.t) = ()
 
