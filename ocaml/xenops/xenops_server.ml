@@ -56,9 +56,9 @@ type operation =
 	| VM_start of Vm.id
 	| VM_shutdown of Vm.id
 	| VM_reboot of (Vm.id * float option)
-	| VM_suspend of (Vm.id * disk)
-	| VM_resume of (Vm.id * disk)
-	| VM_restore of (Vm.id * disk)
+	| VM_suspend of (Vm.id * data)
+	| VM_resume of (Vm.id * data)
+	| VM_restore of (Vm.id * data)
 	| VM_migrate of (Vm.id * string)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
@@ -116,26 +116,9 @@ module Per_VM_queues = struct
 					done;
 					Queue.pop q
 				) in
-		begin
-			try
-				let start = Unix.gettimeofday () in
-				item.Xenops_task.f item;
-				let duration = Unix.gettimeofday () -. start in
-				item.Xenops_task.result <- Task.Completed duration;
-				debug "Triggering event on task id %s" item.Xenops_task.id;
-				Updates.add (Dynamic.Task item.Xenops_task.id) updates;
-			with
-				| Exception e ->
-					debug "Caught exception while processing queue: %s" (e |> rpc_of_error |> Jsonrpc.to_string);
-					item.Xenops_task.result <- Task.Failed e;
-					debug "Triggering event on task id %s" item.Xenops_task.id;
-					Updates.add (Dynamic.Task item.Xenops_task.id) updates;
-				| e ->
-					debug "Caught exception while processing queue: %s" (Printexc.to_string e);
-					item.Xenops_task.result <- Task.Failed (Internal_error (Printexc.to_string e));
-					debug "Triggering event on task id %s" item.Xenops_task.id;
-					Updates.add (Dynamic.Task item.Xenops_task.id) updates;
-		end;
+		Xenops_task.run item;
+		debug "Triggering event on task id %s" item.Xenops_task.id;
+		Updates.add (Dynamic.Task item.Xenops_task.id) updates;
 		process_queue q
 
 	let start () =
@@ -240,18 +223,18 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			perform ~subtask:"VM_start" (VM_start id) t;
 			perform ~subtask:"VM_unpause" (VM_unpause id) t;
 			Updates.add (Dynamic.Vm id) updates
-		| VM_suspend (id, disk) ->
+		| VM_suspend (id, data) ->
 			debug "VM.suspend %s" id;
-			B.VM.suspend t (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
+			B.VM.suspend t (id |> VM_DB.key_of |> VM_DB.read |> unbox) data;
 			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
 			Updates.add (Dynamic.Vm id) updates
-		| VM_restore (id, disk) ->
+		| VM_restore (id, data) ->
 			debug "VM.restore %s" id;
-			B.VM.restore t (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk
-		| VM_resume (id, disk) ->
+			B.VM.restore t (id |> VM_DB.key_of |> VM_DB.read |> unbox) data
+		| VM_resume (id, data) ->
 			debug "VM.resume %s" id;
 			perform ~subtask:"VM_create" (VM_create id) t;
-			perform ~subtask:"VM_restore" (VM_restore (id, disk)) t;
+			perform ~subtask:"VM_restore" (VM_restore (id, data)) t;
 			List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_plug %s" (snd vbd.Vbd.id)) (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
 			List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_plug %s" (snd vif.Vif.id)) (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 			(* Unfortunately this has to be done after the devices have been created since
@@ -277,11 +260,13 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 							Http_client.rpc mfd (Xenops_migrate.http_put memory_url)
 								(fun response _ ->
 									debug "XXX transmit memory";
+									perform ~subtask:"memory transfer" (VM_suspend(id, FD mfd)) t;
 								)
 						);
 					debug "XXX flush blocks";
 					debug "XXX signal";
-					Xenops_migrate.send_failure url fd
+					(* Xenops_migrate.send_failure url fd *)
+					()
 				);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
@@ -374,6 +359,10 @@ let queue_operation id op =
 	Per_VM_queues.add id task;
 	debug "Pushed task with id %s" task.Xenops_task.id;
 	task.Xenops_task.id
+
+let immediate_operation id op =
+	let task = Xenops_task.add (fun t -> perform op t) in
+	Xenops_task.run task
 
 module VBD = struct
 	open Vbd
@@ -492,9 +481,9 @@ module VM = struct
 
 	let reboot _ id timeout = queue_operation id (VM_reboot (id, timeout)) |> return
 
-	let suspend _ id disk = queue_operation id (VM_suspend (id, disk)) |> return
+	let suspend _ id disk = queue_operation id (VM_suspend (id, Disk disk)) |> return
 
-	let resume _ id disk = queue_operation id (VM_resume (id, disk)) |> return
+	let resume _ id disk = queue_operation id (VM_resume (id, Disk disk)) |> return
 
 	let migrate context id url = queue_operation id (VM_migrate (id, url)) |> return
 
@@ -510,6 +499,22 @@ module VM = struct
 		let (_: Vif.id list) = List.map VIF.add' vifs in
 		B.VM.set_internal_state (vm |> VM_DB.key_of |> VM_DB.read |> unbox) md.Metadata.domains;
 		vm |> return
+
+	let receive_memory req s _ =
+		debug "VM.receive_memory";
+		req.Http.Request.close <- true;
+		(* The URI is /service/xenops/memory/id *)
+		let bits = String.split '/' req.Http.Request.uri in
+		let id = bits |> List.rev |> List.hd in
+		debug "VM.receive_memory id = %s" id;
+		let module B = (val get_backend () : S) in
+		let state = B.VM.get_state (id |> DB.key_of |> DB.read |> unbox) in
+		debug "VM.receive_memory id = %s; power_state = %s" id (state.Vm.power_state |> rpc_of_power_state |> Jsonrpc.to_string);
+		let response = Http.Response.make ~version:"1.1" "200" "OK" in
+		response |> Http.Response.to_wire_string |> Unixext.really_write_string s;
+		debug "VM.receive_memory calling restore";
+		immediate_operation id (VM_resume(id, FD s));
+		debug "VM.receive_memory restore complete"
 end
 
 module DEBUG = struct

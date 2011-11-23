@@ -189,6 +189,10 @@ type shutdown_request =
 	| Suspend
 with rpc
 
+type data =
+	| Disk of disk
+	| FD of Unix.file_descr
+
 module type S = sig
 	val init: unit -> unit
 	module VM : sig
@@ -201,8 +205,8 @@ module type S = sig
 		val request_shutdown: Xenops_task.t -> Vm.t -> shutdown_request -> float -> bool
 		val wait_shutdown: Xenops_task.t -> Vm.t -> shutdown_request -> float -> bool
 
-		val suspend: Xenops_task.t -> Vm.t -> disk -> unit
-		val restore: Xenops_task.t -> Vm.t -> disk -> unit
+		val suspend: Xenops_task.t -> Vm.t -> data -> unit
+		val restore: Xenops_task.t -> Vm.t -> data -> unit
 
 		val get_state: Vm.t -> Vm.state
 

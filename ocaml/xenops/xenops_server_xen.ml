@@ -583,58 +583,65 @@ module VM = struct
 					debug "OTHER EVENT";
 					false)
 
-	let suspend task vm disk =
+	let with_data ~xc ~xs task data flags f = match data with
+		| Disk disk ->
+			with_disk ~xc ~xs task disk
+				(fun path ->
+					(* Make a filesystem on the disk later *)
+					(* Do we really want to balloon the guest down? *)
+					Unixext.with_file path flags 0o644
+						(fun fd ->
+							finally
+								(fun () -> f fd)
+								(fun () ->
+									try
+										Unixext.fsync fd;
+									with Unix.Unix_error(Unix.EIO, _, _) ->
+										debug "Caught EIO in fsync after suspend; suspend image may be corrupt";
+										raise (Exception IO_error)
+								)
+						)
+				)
+		| FD fd -> f fd
+
+	let suspend task vm data =
 		on_domain
 			(fun xc xs (task:Xenops_task.t) vm di ->
 				let hvm = di.Xenctrl.hvm_guest in
 				let domid = di.Xenctrl.domid in
-				with_disk ~xc ~xs task disk
-					(fun path ->
-						(* Make a filesystem on the disk later *)
-						(* Do we really want to balloon the guest down? *)
-						Unixext.with_file path [ Unix.O_WRONLY ] 0o644
-							(fun fd ->
-								debug "Invoking Domain.suspend";
-								Domain.suspend ~xc ~xs ~hvm domid fd []
-									(fun () ->
-										debug "In callback";
-										if not(request_shutdown task vm Suspend 30.)
-										then raise (Exception Failed_to_acknowledge_shutdown_request);
-										debug "Waiting for shutdown";
-										if not(wait_shutdown task vm Suspend 1200.)
-										then raise (Exception Failed_to_shutdown);
-									);
-								begin try
-									Unixext.fsync fd;
-								with Unix.Unix_error(Unix.EIO, _, _) ->
-									debug "Caught EIO in fsync after suspend; suspend image may be corrupt";
-									raise (Exception IO_error)
-								end;
-								(* Record the final memory usage of the domain so we know how
-								   much to allocate for the resume *)
-								let di = Xenctrl.domain_getinfo xc domid in
-								let pages = Int64.of_nativeint di.Xenctrl.total_memory_pages in
-								debug "Final memory usage of the domain = %Ld pages" pages;
-								let k = key_of vm in
-								let d = Opt.unbox (DB.read k) in
-								DB.write k { d with
-									VmExtra.suspend_memory_bytes = Memory.bytes_of_pages pages;
-								}
-							)
+				with_data ~xc ~xs task data [ Unix.O_WRONLY ]
+					(fun fd ->
+						debug "Invoking Domain.suspend";
+						Domain.suspend ~xc ~xs ~hvm domid fd []
+							(fun () ->
+								debug "In callback";
+								if not(request_shutdown task vm Suspend 30.)
+								then raise (Exception Failed_to_acknowledge_shutdown_request);
+								debug "Waiting for shutdown";
+								if not(wait_shutdown task vm Suspend 1200.)
+								then raise (Exception Failed_to_shutdown);
+							);
+						(* Record the final memory usage of the domain so we know how
+						   much to allocate for the resume *)
+						let di = Xenctrl.domain_getinfo xc domid in
+						let pages = Int64.of_nativeint di.Xenctrl.total_memory_pages in
+						debug "Final memory usage of the domain = %Ld pages" pages;
+						let k = key_of vm in
+						let d = Opt.unbox (DB.read k) in
+						DB.write k { d with
+							VmExtra.suspend_memory_bytes = Memory.bytes_of_pages pages;
+						}
 					)
 			) task vm
 
-	let restore task vm disk =
+	let restore task vm data =
 		let build_info = vm |> key_of |> DB.read |> Opt.unbox |> (fun x -> x.VmExtra.build_info) |> Opt.unbox in
 		on_domain
 			(fun xc xs task vm di ->
 				let domid = di.Xenctrl.domid in
-				with_disk ~xc ~xs task disk
-					(fun path ->
-						Unixext.with_file path [ Unix.O_RDONLY ] 0o644
-							(fun fd ->
-								Domain.restore ~xc ~xs build_info domid fd
-							)
+				with_data ~xc ~xs task data [ Unix.O_RDONLY ]
+					(fun fd ->
+						Domain.restore ~xc ~xs build_info domid fd
 					)
 			) task vm
 

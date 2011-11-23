@@ -137,11 +137,11 @@ let request_shutdown_nolock vm reason () =
 	Updates.add (Dynamic.Vm vm.Vm.id) updates;
 	true
 
-let suspend_nolock vm disk () =
+let suspend_nolock vm data () =
 	let k = key_of vm in
 	DB.write k { read k with Domain.suspended = true }
 
-let restore_nolock vm disk () =
+let restore_nolock vm data () =
 	let k = key_of vm in
 	DB.write k { read k with Domain.built = true }
 
@@ -238,8 +238,8 @@ module VM = struct
 	let request_shutdown _ vm reason ack_delay = Mutex.execute m (request_shutdown_nolock vm reason)
 	let wait_shutdown _ vm reason timeout = true
 
-	let suspend _ vm disk = Mutex.execute m (suspend_nolock vm disk)
-	let restore _ vm disk = Mutex.execute m (restore_nolock vm disk)
+	let suspend _ vm data = Mutex.execute m (suspend_nolock vm data)
+	let restore _ vm data = Mutex.execute m (restore_nolock vm data)
 
 	let get_state vm = Mutex.execute m (get_state_nolock vm)
 	let get_domain_action_request vm = Mutex.execute m (get_domain_action_request_nolock vm)

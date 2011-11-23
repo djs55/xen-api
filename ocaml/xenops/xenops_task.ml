@@ -41,6 +41,7 @@ let next_task_id =
 		incr counter;
 		result
 
+(* XXX: when are these ever removed? *)
 let add (f: t -> unit) =
 	let t = {
 		id = next_task_id ();
@@ -54,6 +55,20 @@ let add (f: t -> unit) =
 			tasks := SMap.add t.id t !tasks
 		);
 	t
+
+let run item =
+	try
+		let start = Unix.gettimeofday () in
+		item.f item;
+		let duration = Unix.gettimeofday () -. start in
+		item.result <- Task.Completed duration;
+	with
+		| Exception e ->
+			debug "Caught exception while processing queue: %s" (e |> rpc_of_error |> Jsonrpc.to_string);
+			item.result <- Task.Failed e
+		| e ->
+			debug "Caught exception while processing queue: %s" (Printexc.to_string e);
+			item.result <- Task.Failed (Internal_error (Printexc.to_string e))
 
 let find_locked id =
 	if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);

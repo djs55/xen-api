@@ -47,6 +47,7 @@ let xmlrpc_handler process req bio context =
 		Xenops_utils.debug "Backtrace: %s" (Printexc.get_backtrace ());
 		Http_svr.response_unauthorised ~req (Printf.sprintf "Go away: %s" (Printexc.to_string e)) s
 
+
 let get_handler req bio _ =
 	let s = Buf_io.fd_of bio in
 	Http_svr.response_str req s "<html><body>Hello there</body></html>"
@@ -57,7 +58,7 @@ let start path process =
     let domain_sock = Http_svr.bind (Unix.ADDR_UNIX(path)) "unix_rpc" in
     Http_svr.Server.add_handler server Http.Post "/" (Http_svr.BufIO (xmlrpc_handler process));
 	Http_svr.Server.add_handler server Http.Post "/services/xenops" (Http_svr.FdIO Xenops_migrate.receive);
-	Http_svr.Server.add_handler server Http.Put  "/services/xenops/memory" (Http_svr.FdIO Xenops_migrate.receive_memory);
+	Http_svr.Server.add_handler server Http.Put  "/services/xenops/memory" (Http_svr.FdIO Xenops_server.VM.receive_memory);
     Http_svr.Server.add_handler server Http.Get "/" (Http_svr.BufIO get_handler);
     Http_svr.start server domain_sock;
 	socket := Some domain_sock;

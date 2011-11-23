@@ -51,8 +51,10 @@ module Receiver = struct
 		| Waiting_metadata, call, [ Rpc.String md ] when call = _metadata ->
 			let vm = md |> Client.VM.import_metadata local_rpc |> unwrap in
 			let created_objects = Vm_metadata vm :: created_objects in
+(*
 			Client.VM.create local_rpc vm |> success |> wait_for_task local_rpc |> success_task local_rpc |> ignore_task;
 			let created_objects = Vm_created vm :: created_objects in
+*)
 			Received_metadata vm, created_objects
 		| state, name, _ ->
 			List.iter cleanup created_objects;
@@ -87,12 +89,6 @@ let rec receiver_loop req s state =
 let receive req s _ =
 	let _, _ = receiver_loop req s Receiver.initial in
 	()
-
-let receive_memory req s _ =
-	debug "XXX receive memory";
-	let response = Http.Response.make ~version:"1.1" "200" "OK" in
-	response |> Http.Response.to_wire_string |> Unixext.really_write_string s
-
 
 let http_post url length body =
 	Http.Request.make ~version:"1.1" ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" ~length ~body Http.Post (Http.Url.uri_of url)
