@@ -192,14 +192,14 @@ with rpc
 module type S = sig
 	val init: unit -> unit
 	module VM : sig
-		val create: Vm.t -> unit
+		val create: Xenops_task.t -> Vm.t -> unit
 		val build: Xenops_task.t -> Vm.t -> Vbd.t list -> Vif.t list -> unit
-		val create_device_model: Vm.t -> unit
-		val destroy: Vm.t -> unit
-		val pause: Vm.t -> unit
-		val unpause: Vm.t -> unit
-		val request_shutdown: Vm.t -> shutdown_request -> float -> bool
-		val wait_shutdown: Vm.t -> shutdown_request -> float -> bool
+		val create_device_model: Xenops_task.t -> Vm.t -> unit
+		val destroy: Xenops_task.t -> Vm.t -> unit
+		val pause: Xenops_task.t -> Vm.t -> unit
+		val unpause: Xenops_task.t -> Vm.t -> unit
+		val request_shutdown: Xenops_task.t -> Vm.t -> shutdown_request -> float -> bool
+		val wait_shutdown: Xenops_task.t -> Vm.t -> shutdown_request -> float -> bool
 
 		val suspend: Xenops_task.t -> Vm.t -> disk -> unit
 		val restore: Xenops_task.t -> Vm.t -> disk -> unit
@@ -213,9 +213,9 @@ module type S = sig
 	end
 	module VBD : sig
 		val plug: Xenops_task.t -> Vm.id -> Vbd.t -> unit
-		val unplug: Vm.id -> Vbd.t -> unit
+		val unplug: Xenops_task.t -> Vm.id -> Vbd.t -> unit
 		val insert: Xenops_task.t -> Vm.id -> Vbd.t -> disk -> unit
-		val eject: Vm.id -> Vbd.t -> unit
+		val eject: Xenops_task.t -> Vm.id -> Vbd.t -> unit
 
 		val get_state: Vm.id -> Vbd.t -> Vbd.state
 	end

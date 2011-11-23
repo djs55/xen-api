@@ -105,15 +105,17 @@ module Storage = struct
 
 	let attach_and_activate task dp sr vdi read_write =
 		let result =
-			Xenops_task.with_subtask task (Printf.sprintf "VDI.attach %s" vdi)
+			Xenops_task.with_subtask task (Printf.sprintf "VDI.attach %s" dp)
 				(fun () -> Client.VDI.attach rpc "attach_and_activate" dp sr vdi read_write |> success |> params) in
-		Xenops_task.with_subtask task (Printf.sprintf "VDI.activate %s" vdi)
+		Xenops_task.with_subtask task (Printf.sprintf "VDI.activate %s" dp)
 			(fun () -> Client.VDI.activate rpc "attach_and_activate" dp sr vdi |> success |> unit);
 		(* XXX: we need to find out the backend domid *)
 		{ domid = 0; params = result }
 
-	let deactivate_and_detach dp =
-		Client.DP.destroy rpc "deactivate_and_detach" dp false |> success |> unit
+	let deactivate_and_detach task dp =
+		Xenops_task.with_subtask task (Printf.sprintf "DP.destroy %s" dp)
+			(fun () ->
+				Client.DP.destroy rpc "deactivate_and_detach" dp false |> success |> unit)
 
 	let get_disk_by_name path = match List.filter (fun x -> x <> "") (String.split '/' path) with
 		| [ sr; vdi ] -> sr, vdi
@@ -161,7 +163,7 @@ let with_disk ~xc ~xs task disk f = match disk with
 							(fun () -> Device.clean_shutdown ~xs device)
 				end
 			)
-			(fun () -> deactivate_and_detach dp)
+			(fun () -> deactivate_and_detach task dp)
 
 module Mem = struct
 	let call_daemon xs fn args = Squeezed_rpc.Rpc.client ~xs ~service:Squeezed_rpc._service ~fn ~args
@@ -303,7 +305,7 @@ module VM = struct
 	let get_initial_target ~xs domid =
 		Int64.of_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/initial-target" domid))
 
-	let create_exn vm =
+	let create_exn (task: Xenops_task.t) vm =
 		let k = key_of vm in
 		let vmextra =
 			if DB.exists k then begin
@@ -361,16 +363,16 @@ module VM = struct
 			)
 	let create = create_exn
 
-	let on_domain f vm =
+	let on_domain f (task: Xenops_task.t) vm =
 		let uuid = uuid_of_vm vm in
 		with_xc_and_xs
 			(fun xc xs ->
 				match di_of_uuid ~xc ~xs uuid with
 					| None -> raise (Exception Does_not_exist)
-					| Some di -> f xc xs vm di
+					| Some di -> f xc xs task vm di
 			)
 
-	let destroy = on_domain (fun xc xs vm di ->
+	let destroy = on_domain (fun xc xs task vm di ->
 		let domid = di.Xenctrl.domid in
 
 		let vbds = Opt.default [] (Opt.map (fun d -> d.VmExtra.vbds) (DB.read (key_of vm))) in
@@ -385,15 +387,15 @@ module VM = struct
 		end;
 		Domain.destroy ~preserve_xs_vm:false ~xc ~xs domid;
 		(* Detach any remaining disks *)
-		List.iter (fun vbd -> Storage.deactivate_and_detach (Storage.id_of domid vbd.Vbd.id)) vbds
+		List.iter (fun vbd -> Storage.deactivate_and_detach task (Storage.id_of domid vbd.Vbd.id)) vbds
 	)
 
-	let pause = on_domain (fun xc xs _ di ->
+	let pause = on_domain (fun xc xs _ _ di ->
 		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
 		Domain.pause ~xc di.Xenctrl.domid
 	)
 
-	let unpause = on_domain (fun xc xs _ di ->
+	let unpause = on_domain (fun xc xs _ _ di ->
 		if di.Xenctrl.total_memory_pages = 0n then raise (Exception Domain_not_built);
 		Domain.unpause ~xc di.Xenctrl.domid
 	)
@@ -515,7 +517,7 @@ module VM = struct
 		) (fun () -> Opt.iter Bootloader.delete !kernel_to_cleanup)
 
 
-	let build_domain task vm vbds vifs xc xs _ di =
+	let build_domain vm vbds vifs xc xs task _ di =
 		try
 			build_domain_exn xc xs di.Xenctrl.domid task vm vbds vifs
 		with
@@ -540,20 +542,20 @@ module VM = struct
 				debug "%s" m;
 				raise (Exception (Internal_error m))
 
-	let build task vm vbds vifs = on_domain (build_domain task vm vbds vifs) vm
+	let build task vm vbds vifs = on_domain (build_domain vm vbds vifs) task vm
 
-	let create_device_model_exn vm xc xs _ di =
+	let create_device_model_exn xc xs task vm di =
 		let vmextra = vm |> key_of |> DB.read |> Opt.unbox in
 		Opt.iter (fun info ->
 			(if vmextra.VmExtra.suspend_memory_bytes = 0L then Device.Dm.start else Device.Dm.restore)
 			~xs ~dmpath info di.Xenctrl.domid) (vmextra |> create_device_model_config)
 
-	let create_device_model vm = on_domain (create_device_model_exn vm) vm
+	let create_device_model = on_domain create_device_model_exn
 
-	let request_shutdown vm reason ack_delay =
+	let request_shutdown task vm reason ack_delay =
 		let reason = shutdown_reason reason in
 		on_domain
-			(fun xc xs vm di ->
+			(fun xc xs vm task di ->
 				let domid = di.Xenctrl.domid in
 				try
 					Domain.shutdown ~xs domid reason;
@@ -562,14 +564,14 @@ module VM = struct
 					true
 				with Watch.Timeout _ ->
 					false
-			) vm
+			) task vm
 
-	let wait_shutdown vm reason timeout =
+	let wait_shutdown task vm reason timeout =
 		event_wait (Some (timeout |> ceil |> int_of_float))
 			(function
 				| Dynamic.Vm id when id = vm.Vm.id ->
 					debug "EVENT on our VM: %s" id;
-					on_domain (fun xc xs vm di -> di.Xenctrl.shutdown) vm
+					on_domain (fun xc xs _ vm di -> di.Xenctrl.shutdown) task vm
 				| Dynamic.Vm id ->
 					debug "EVENT on other VM: %s" id;
 					false
@@ -579,7 +581,7 @@ module VM = struct
 
 	let suspend task vm disk =
 		on_domain
-			(fun xc xs vm di ->
+			(fun xc xs (task:Xenops_task.t) vm di ->
 				let hvm = di.Xenctrl.hvm_guest in
 				let domid = di.Xenctrl.domid in
 				with_disk ~xc ~xs task disk
@@ -592,10 +594,10 @@ module VM = struct
 								Domain.suspend ~xc ~xs ~hvm domid fd []
 									(fun () ->
 										debug "In callback";
-										if not(request_shutdown vm Suspend 30.)
+										if not(request_shutdown task vm Suspend 30.)
 										then raise (Exception Failed_to_acknowledge_shutdown_request);
 										debug "Waiting for shutdown";
-										if not(wait_shutdown vm Suspend 1200.)
+										if not(wait_shutdown task vm Suspend 1200.)
 										then raise (Exception Failed_to_shutdown);
 									);
 								begin try
@@ -616,12 +618,12 @@ module VM = struct
 								}
 							)
 					)
-			) vm
+			) task vm
 
 	let restore task vm disk =
 		let build_info = vm |> key_of |> DB.read |> Opt.unbox |> (fun x -> x.VmExtra.build_info) |> Opt.unbox in
 		on_domain
-			(fun xc xs vm di ->
+			(fun xc xs task vm di ->
 				let domid = di.Xenctrl.domid in
 				with_disk ~xc ~xs task disk
 					(fun path ->
@@ -630,7 +632,7 @@ module VM = struct
 								Domain.restore ~xc ~xs build_info domid fd
 							)
 					)
-			) vm
+			) task vm
 
 	let get_state vm =
 		let uuid = uuid_of_vm vm in
@@ -717,9 +719,9 @@ module VBD = struct
 
 	let frontend_domid_of_device device = device.Device_common.frontend.Device_common.domid
 
-	let deactivate_and_detach device vbd =
+	let deactivate_and_detach task device vbd =
 		let dp = Storage.id_of (frontend_domid_of_device device) vbd.id in
-		Storage.deactivate_and_detach dp
+		Storage.deactivate_and_detach task dp
 
 	let device_number_of_device d =
 		Device_number.of_xenstore_key d.Device_common.frontend.Device_common.devid
@@ -753,7 +755,7 @@ module VBD = struct
 				()
 			) vm
 
-	let unplug vm vbd =
+	let unplug task vm vbd =
 		with_xc_and_xs
 			(fun xc xs ->
 				try
@@ -761,7 +763,7 @@ module VBD = struct
 					let device = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
 					Device.clean_shutdown ~xs device;
 					Device.Vbd.release ~xs device;
-					deactivate_and_detach device vbd;
+					deactivate_and_detach task device vbd;
 				with (Exception Does_not_exist) ->
 					debug "Ignoring missing device: %s" (id_of vbd)
 			)
@@ -777,14 +779,14 @@ module VBD = struct
 				Device.Vbd.media_insert ~xs ~device_number ~params:vdi.Storage.params ~phystype frontend_domid
 			)
 
-	let eject vm vbd =
+	let eject task vm vbd =
 		with_xc_and_xs
 			(fun xc xs ->
 				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
 				let frontend_domid = frontend_domid_of_device device in
 				let device_number = device_number_of_device device in
 				Device.Vbd.media_eject ~xs ~device_number frontend_domid;
-				deactivate_and_detach device vbd;
+				deactivate_and_detach task device vbd;
 			)
 
 	let get_state vm vbd =

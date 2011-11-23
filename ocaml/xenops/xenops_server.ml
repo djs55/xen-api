@@ -266,17 +266,17 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
 			(* Spend at most the first minute waiting for a clean shutdown ack. This allows
 			   us to abort early. *)
-			if not (B.VM.request_shutdown vm reason (max 60. timeout))
+			if not (B.VM.request_shutdown t vm reason (max 60. timeout))
 			then raise (Exception Failed_to_acknowledge_shutdown_request);		
 			let remaining_timeout = max 0. (timeout -. (Unix.gettimeofday () -. start)) in
-			if not (B.VM.wait_shutdown vm reason remaining_timeout)
+			if not (B.VM.wait_shutdown t vm reason remaining_timeout)
 			then raise (Exception Failed_to_shutdown)
 		| VM_destroy id ->
 			debug "VM.destroy %s" id;
-			B.VM.destroy (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+			B.VM.destroy t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
 		| VM_create id ->
 			debug "VM.create %s" id;
-			B.VM.create (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+			B.VM.create t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
 		| VM_build id ->
 			debug "VM.build %s" id;
 			let vbds : Vbd.t list = VBD_DB.list id |> List.map fst in
@@ -284,13 +284,13 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			B.VM.build t (id |> VM_DB.key_of |> VM_DB.read |> unbox) vbds vifs
 		| VM_create_device_model id ->
 			debug "VM.create_device_model %s" id;
-			B.VM.create_device_model (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+			B.VM.create_device_model t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
 		| VM_pause id ->
 			debug "VM.pause %s" id;
-			B.VM.pause (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+			B.VM.pause t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
 		| VM_unpause id ->
 			debug "VM.unpause %s" id;
-			B.VM.unpause (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+			B.VM.unpause t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
 		| VM_check_state id ->
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
 			let actions = match B.VM.get_domain_action_request vm with
@@ -315,7 +315,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			B.VBD.plug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
 		| VBD_unplug id ->
 			debug "VBD.unplug %s" (VBD_DB.string_of_id id);
-			B.VBD.unplug (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
+			B.VBD.unplug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
 		| VBD_insert (id, disk) ->
 			debug "VBD.insert %s" (VBD_DB.string_of_id id);
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
@@ -332,7 +332,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
 			let state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
 			if state.Vbd.media_present then begin
-				B.VBD.eject (VBD_DB.vm_of id) vbd_t;
+				B.VBD.eject t (VBD_DB.vm_of id) vbd_t;
 				VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = None }
 			end else raise (Exception Media_not_present)
 		| VIF_plug id ->

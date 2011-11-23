@@ -229,14 +229,14 @@ let remove_vbd vm vbd () =
 	else DB.write k { d with Domain.vbds = List.filter (fun x -> not (this_one x)) d.Domain.vbds }
 	
 module VM = struct
-	let create vm = Mutex.execute m (create_nolock vm)
-	let destroy vm = Mutex.execute m (destroy_nolock vm)
-	let pause vm = Mutex.execute m (do_pause_unpause_nolock vm true)
-	let unpause vm = Mutex.execute m (do_pause_unpause_nolock vm false)
+	let create _ vm = Mutex.execute m (create_nolock vm)
+	let destroy _ vm = Mutex.execute m (destroy_nolock vm)
+	let pause _ vm = Mutex.execute m (do_pause_unpause_nolock vm true)
+	let unpause _ vm = Mutex.execute m (do_pause_unpause_nolock vm false)
 	let build _ vm vbds vifs = Mutex.execute m (build_nolock vm vbds vifs)
-	let create_device_model vm = Mutex.execute m (create_device_model_nolock vm)
-	let request_shutdown vm reason ack_delay = Mutex.execute m (request_shutdown_nolock vm reason)
-	let wait_shutdown vm reason timeout = true
+	let create_device_model _ vm = Mutex.execute m (create_device_model_nolock vm)
+	let request_shutdown _ vm reason ack_delay = Mutex.execute m (request_shutdown_nolock vm reason)
+	let wait_shutdown _ vm reason timeout = true
 
 	let suspend _ vm disk = Mutex.execute m (suspend_nolock vm disk)
 	let restore _ vm disk = Mutex.execute m (restore_nolock vm disk)
@@ -253,10 +253,10 @@ end
 
 module VBD = struct
 	let plug _ (vm: Vm.id) (vbd: Vbd.t) = Mutex.execute m (add_vbd vm vbd)
-	let unplug vm vbd = Mutex.execute m (remove_vbd vm vbd)
+	let unplug _ vm vbd = Mutex.execute m (remove_vbd vm vbd)
 
 	let insert _ vm vbd disk = ()
-	let eject vm vbd = ()
+	let eject _ vm vbd = ()
 
 	let get_state vm vbd = Mutex.execute m (vbd_state vm vbd)
 end
