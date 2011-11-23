@@ -149,11 +149,6 @@ let domain_get_uuid ~xc ~domid =
 	with _ ->
 		()
 
-let print_table (rows: string list list) =
-	let widths = Table.compute_col_widths rows in
-	let sll = List.map (List.map2 Table.right widths) rows in
-	List.iter (fun line -> print_endline (String.concat " | " line)) sll
-
 let list_domains ~xc ~verbose =
 	let header () =
 		if verbose then
@@ -195,7 +190,7 @@ let list_domains ~xc ~verbose =
 	let l = Xenctrl.domain_getinfolist xc 0 in
 	let header = header () in
 	let infos = List.map sl_of_domaininfo l in
-	print_table (header :: infos)
+	Table.print (header :: infos)
 
 (*
    backend                  frontend
@@ -271,7 +266,7 @@ let list_devices ~xc ~xs =
 			)
 		) in
 	let infos = List.map of_device devices in
-	print_table (header :: infos)
+	Table.print (header :: infos)
 
 let find_device ~xs (frontend: endpoint) (backend: endpoint) = 
   let all = list_devices_between ~xs backend.domid frontend.domid in

@@ -242,6 +242,7 @@ module Task = struct
 	type t = {
 		id: id;
 		result: result;
+		subtasks: (string * result) list;
 	}
 end
 

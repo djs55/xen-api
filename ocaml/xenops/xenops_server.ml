@@ -78,6 +78,7 @@ module TASK = struct
 	type t = {
 		id: string;
 		mutable result: Task.result;
+		mutable subtasks: (string * Task.result) list;
 		f: t -> unit;
 		cancel: unit -> unit;
 	}
@@ -99,6 +100,7 @@ module TASK = struct
 		let t = {
 			id = next_task_id ();
 			result = Task.Pending 0.;
+			subtasks = [];
 			f = f;
 			cancel = (fun () -> ());
 		} in
@@ -108,24 +110,37 @@ module TASK = struct
 			);
 		t
 
+	let find_locked id =
+		if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);
+		SMap.find id !tasks
+
 	let cancel _ id =
 		Mutex.execute m
 			(fun () ->
-				if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);
-				let x = SMap.find id !tasks in
+				let x = find_locked id in
 				x.cancel ()
 			) |> return
 	let stat' id =
 		Mutex.execute m
 			(fun () ->
-				if not (SMap.mem id !tasks) then raise (Exception Does_not_exist);
-				let x = SMap.find id !tasks in
+				let x = find_locked id in
 				{
 					Task.id = x.id;
 					Task.result = x.result;
+					Task.subtasks = x.subtasks;
 				}
 			)
 	let stat _ id = stat' id |> return
+
+	let with_subtask t name f =
+		let start = Unix.gettimeofday () in
+		try
+			let result = f () in
+			t.subtasks <- (name, Task.Completed (Unix.gettimeofday () -. start)) :: t.subtasks;
+			result
+		with e ->
+			t.subtasks <- (name, Task.Failed (Internal_error (Printexc.to_string e))) :: t.subtasks;
+			raise e
 end
 
 module Per_VM_queues = struct
@@ -226,57 +241,58 @@ module VIF_DB = struct
 		List.combine vifs states
 end
 
-let rec perform (op: operation) (t: TASK.t) : unit =
+let rec perform ?subtask (op: operation) (t: TASK.t) : unit =
 	let module B = (val get_backend () : S) in
-	match op with
+	
+	let one = function
 		| VM_start id ->
 			debug "VM.start %s" id;
 			begin try
-				perform (VM_create id) t;
-				perform (VM_build id) t;
-				List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
-				List.iter (fun vif -> perform (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
+				perform ~subtask:"VM_create" (VM_create id) t;
+				perform ~subtask:"VM_build" (VM_build id) t;
+				List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_plug %s" (snd vbd.Vbd.id)) (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
+				List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_plug %s" (snd vif.Vif.id)) (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 				(* Unfortunately this has to be done after the devices have been created since
 				   qemu reads xenstore keys in preference to its own commandline. After this is
 				   fixed we can consider creating qemu as a part of the 'build' *)
-				perform (VM_create_device_model id) t;
+				perform ~subtask:"VM_create_device_model" (VM_create_device_model id) t;
 				Updates.add (Dynamic.Vm id) updates
 			with e ->
 				debug "VM.start threw error: %s. Calling VM.destroy" (Printexc.to_string e);
-				perform (VM_destroy id) t;
+				perform ~subtask:"VM_destroy" (VM_destroy id) t;
 				raise e
 			end
 		| VM_shutdown id ->
 			debug "VM.shutdown %s" id;
-			perform (VM_destroy id) t;
-			List.iter (fun vbd -> perform (VBD_unplug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
-			List.iter (fun vif -> perform (VIF_unplug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
+			perform ~subtask:"VM_destroy" (VM_destroy id) t;
+			List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_unplug %s" (snd vbd.Vbd.id)) (VBD_unplug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_unplug %s" (snd vif.Vif.id)) (VIF_unplug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_reboot (id, timeout) ->
 			debug "VM.reboot %s" id;
-			Opt.iter (fun x -> perform (VM_shutdown_domain(id, Reboot, x)) t) timeout;
-			perform (VM_shutdown id) t;
-			perform (VM_start id) t;
-			perform (VM_unpause id) t;
+			Opt.iter (fun x -> perform ~subtask:"VM_shutdown_domain(Reboot)" (VM_shutdown_domain(id, Reboot, x)) t) timeout;
+			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+			perform ~subtask:"VM_start" (VM_start id) t;
+			perform ~subtask:"VM_unpause" (VM_unpause id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_suspend (id, disk) ->
 			debug "VM.suspend %s" id;
 			B.VM.suspend (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk;
-			perform (VM_shutdown id) t;
+			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_restore (id, disk) ->
 			debug "VM.restore %s" id;
 			B.VM.restore (id |> VM_DB.key_of |> VM_DB.read |> unbox) disk
 		| VM_resume (id, disk) ->
 			debug "VM.resume %s" id;
-			perform (VM_create id) t;
-			perform (VM_restore (id, disk)) t;
-			List.iter (fun vbd -> perform (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
-			List.iter (fun vif -> perform (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
+			perform ~subtask:"VM_create" (VM_create id) t;
+			perform ~subtask:"VM_restore" (VM_restore (id, disk)) t;
+			List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_plug %s" (snd vbd.Vbd.id)) (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
+			List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_plug %s" (snd vif.Vif.id)) (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 			(* Unfortunately this has to be done after the devices have been created since
 			   qemu reads xenstore keys in preference to its own commandline. After this is
 			   fixed we can consider creating qemu as a part of the 'build' *)
-			perform (VM_create_device_model id) t;
+			perform ~subtask:"VM_create_device_model" (VM_create_device_model id) t;
 			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
 		| VM_migrate (id, url) ->
@@ -373,6 +389,10 @@ let rec perform (op: operation) (t: TASK.t) : unit =
 		| VIF_unplug id ->
 			debug "VIF.unplug %s" (VIF_DB.string_of_id id);
 			B.VIF.unplug (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+	in
+	match subtask with
+		| None -> one op
+		| Some name -> TASK.with_subtask t name (fun () -> one op)
 
 let queue_operation id op =
 	let task = TASK.add (fun t -> perform op t) in

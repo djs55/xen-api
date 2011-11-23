@@ -356,10 +356,15 @@ let slave () =
 			Thread.join outgoing;
 		) (fun () -> Unix.close fd)
 
-let verbose_task t = match t.Task.result with
-	| Task.Completed t -> Printf.printf "Duration: %.2f secs" t
-	| Task.Failed x -> Printf.fprintf stderr "Error: %s" (x |> rpc_of_error |> Jsonrpc.to_string)
-	| Task.Pending _ -> Printf.fprintf stderr "Error: still pending"
+let verbose_task t =
+	let string_of_result = function
+		| Task.Completed t -> Printf.sprintf "%.2f" t
+		| Task.Failed x -> Printf.sprintf "Error: %s" (x |> rpc_of_error |> Jsonrpc.to_string)
+		| Task.Pending _ -> Printf.sprintf "Error: still pending" in
+	let rows = List.map (fun (name, result) -> [ name;  string_of_result result ]) t.Task.subtasks in
+	Table.print rows;
+	Printf.printf "\n";
+	Printf.printf "Overall: %s\n" (string_of_result t.Task.result)
 
 
 let _ =
