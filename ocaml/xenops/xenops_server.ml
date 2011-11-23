@@ -284,6 +284,11 @@ let rec perform (op: operation) (t: TASK.t) : unit =
 			with_transport (transport_of_url url)
 				(fun fd ->
 					Xenops_migrate.transmit (id |> VM_DB.key_of |> VM_DB.read |> unbox) url fd;
+					(* Move the 'transmit' function inline *)
+					(* Make a parallel connection to push the memory image *)
+					(* Call suspend *)
+					(* Flush blocks *)
+					(* Signal resume *)
 				);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
