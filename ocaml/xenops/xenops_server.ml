@@ -58,6 +58,7 @@ type operation =
 	| VM_reboot of (Vm.id * float option)
 	| VM_suspend of (Vm.id * data)
 	| VM_resume of (Vm.id * data)
+	| VM_save of (Vm.id * data)
 	| VM_restore of (Vm.id * data)
 	| VM_migrate of (Vm.id * string)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
@@ -223,14 +224,17 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			perform ~subtask:"VM_start" (VM_start id) t;
 			perform ~subtask:"VM_unpause" (VM_unpause id) t;
 			Updates.add (Dynamic.Vm id) updates
-		| VM_suspend (id, data) ->
-			debug "VM.suspend %s" id;
-			B.VM.suspend t (id |> VM_DB.key_of |> VM_DB.read |> unbox) data;
-			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
-			Updates.add (Dynamic.Vm id) updates
+		| VM_save (id, data) ->
+			debug "VM.save %s" id;
+			B.VM.save t (id |> VM_DB.key_of |> VM_DB.read |> unbox) data
 		| VM_restore (id, data) ->
 			debug "VM.restore %s" id;
 			B.VM.restore t (id |> VM_DB.key_of |> VM_DB.read |> unbox) data
+		| VM_suspend (id, data) ->
+			debug "VM.suspend %s" id;
+			perform ~subtask:"VM_save" (VM_save (id, data)) t;
+			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+			Updates.add (Dynamic.Vm id) updates
 		| VM_resume (id, data) ->
 			debug "VM.resume %s" id;
 			perform ~subtask:"VM_create" (VM_create id) t;
@@ -260,7 +264,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 							Http_client.rpc mfd (Xenops_migrate.http_put memory_url)
 								(fun response _ ->
 									debug "XXX transmit memory";
-									perform ~subtask:"memory transfer" (VM_suspend(id, FD mfd)) t;
+									perform ~subtask:"memory transfer" (VM_save(id, FD mfd)) t;
 								)
 						);
 					debug "XXX flush blocks";

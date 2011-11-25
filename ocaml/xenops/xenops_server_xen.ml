@@ -604,7 +604,7 @@ module VM = struct
 				)
 		| FD fd -> f fd
 
-	let suspend task vm data =
+	let save task vm data =
 		on_domain
 			(fun xc xs (task:Xenops_task.t) vm di ->
 				let hvm = di.Xenctrl.hvm_guest in
