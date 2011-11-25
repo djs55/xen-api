@@ -573,13 +573,13 @@ module VM = struct
 
 	let build task vm vbds vifs = on_domain (build_domain vm vbds vifs) task vm
 
-	let create_device_model_exn xc xs task vm di =
+	let create_device_model_exn saved_state xc xs task vm di =
 		let vmextra = vm |> key_of |> DB.read |> Opt.unbox in
 		Opt.iter (fun info ->
-			(if vmextra.VmExtra.suspend_memory_bytes = 0L then Device.Dm.start else Device.Dm.restore)
+			(if saved_state then Device.Dm.restore else Device.Dm.start)
 			~xs ~dmpath info di.Xenctrl.domid) (vmextra |> create_device_model_config)
 
-	let create_device_model = on_domain create_device_model_exn
+	let create_device_model task vm saved_state = on_domain (create_device_model_exn saved_state) task vm
 
 	let request_shutdown task vm reason ack_delay =
 		let reason = shutdown_reason reason in

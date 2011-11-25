@@ -198,7 +198,7 @@ module type S = sig
 	module VM : sig
 		val create: Xenops_task.t -> Vm.t -> unit
 		val build: Xenops_task.t -> Vm.t -> Vbd.t list -> Vif.t list -> unit
-		val create_device_model: Xenops_task.t -> Vm.t -> unit
+		val create_device_model: Xenops_task.t -> Vm.t -> bool -> unit
 		val destroy: Xenops_task.t -> Vm.t -> unit
 		val pause: Xenops_task.t -> Vm.t -> unit
 		val unpause: Xenops_task.t -> Vm.t -> unit

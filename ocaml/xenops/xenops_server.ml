@@ -60,12 +60,13 @@ type operation =
 	| VM_resume of (Vm.id * data)
 	| VM_save of (Vm.id * data)
 	| VM_restore of (Vm.id * data)
+	| VM_restore_devices of Vm.id
 	| VM_migrate of (Vm.id * string)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
 	| VM_create of Vm.id
 	| VM_build of Vm.id
-	| VM_create_device_model of Vm.id
+	| VM_create_device_model of (Vm.id * bool)
 	| VM_pause of Vm.id
 	| VM_unpause of Vm.id
 	| VM_check_state of Vm.id
@@ -204,7 +205,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				(* Unfortunately this has to be done after the devices have been created since
 				   qemu reads xenstore keys in preference to its own commandline. After this is
 				   fixed we can consider creating qemu as a part of the 'build' *)
-				perform ~subtask:"VM_create_device_model" (VM_create_device_model id) t;
+				perform ~subtask:"VM_create_device_model" (VM_create_device_model (id, false)) t;
 				Updates.add (Dynamic.Vm id) updates
 			with e ->
 				debug "VM.start threw error: %s. Calling VM.destroy" (Printexc.to_string e);
@@ -235,16 +236,19 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			perform ~subtask:"VM_save" (VM_save (id, data)) t;
 			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
 			Updates.add (Dynamic.Vm id) updates
-		| VM_resume (id, data) ->
-			debug "VM.resume %s" id;
-			perform ~subtask:"VM_create" (VM_create id) t;
-			perform ~subtask:"VM_restore" (VM_restore (id, data)) t;
+		| VM_restore_devices id -> (* XXX: this is delayed due to the 'attach'/'activate' behaviour *)
+			debug "VM_restore_devices %s" id;
 			List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_plug %s" (snd vbd.Vbd.id)) (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
 			List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_plug %s" (snd vif.Vif.id)) (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
 			(* Unfortunately this has to be done after the devices have been created since
 			   qemu reads xenstore keys in preference to its own commandline. After this is
 			   fixed we can consider creating qemu as a part of the 'build' *)
-			perform ~subtask:"VM_create_device_model" (VM_create_device_model id) t;
+			perform ~subtask:"VM_create_device_model" (VM_create_device_model (id, true)) t;
+		| VM_resume (id, data) ->
+			debug "VM.resume %s" id;
+			perform ~subtask:"VM_create" (VM_create id) t;
+			perform ~subtask:"VM_restore" (VM_restore (id, data)) t;
+			perform ~subtask:"VM_restore_devices" (VM_restore_devices id) t;
 			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
 		| VM_migrate (id, url) ->
@@ -265,12 +269,12 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 								(fun response _ ->
 									debug "XXX transmit memory";
 									perform ~subtask:"memory transfer" (VM_save(id, FD mfd)) t;
+									debug "XXX sending completed signal";
+									Xenops_migrate.send_complete url id mfd;
+									debug "XXX completed signal ok";
 								)
 						);
-					debug "XXX flush blocks";
-					debug "XXX signal";
-					(* Xenops_migrate.send_failure url fd *)
-					()
+					perform ~subtask:"VM_shutdown" (VM_shutdown id) t
 				);
 			Updates.add (Dynamic.Vm id) updates
 		| VM_shutdown_domain (id, reason, timeout) ->
@@ -294,9 +298,9 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			let vbds : Vbd.t list = VBD_DB.list id |> List.map fst in
 			let vifs : Vif.t list = VIF_DB.list id |> List.map fst in
 			B.VM.build t (id |> VM_DB.key_of |> VM_DB.read |> unbox) vbds vifs
-		| VM_create_device_model id ->
+		| VM_create_device_model (id, save_state) ->
 			debug "VM.create_device_model %s" id;
-			B.VM.create_device_model t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
+			B.VM.create_device_model t (id |> VM_DB.key_of |> VM_DB.read |> unbox) save_state
 		| VM_pause id ->
 			debug "VM.pause %s" id;
 			B.VM.pause t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
@@ -475,7 +479,7 @@ module VM = struct
 
 	let build _ id = queue_operation id (VM_build id) |> return
 
-	let create_device_model _ id = queue_operation id (VM_create_device_model id) |> return
+	let create_device_model _ id save_state = queue_operation id (VM_create_device_model (id, save_state)) |> return
 
 	let destroy _ id = queue_operation id (VM_destroy id) |> return
 
@@ -520,9 +524,36 @@ module VM = struct
 		debug "VM.receive_memory id = %s; power_state = %s" id (state.Vm.power_state |> rpc_of_power_state |> Jsonrpc.to_string);
 		let response = Http.Response.make ~version:"1.1" "200" "OK" in
 		response |> Http.Response.to_wire_string |> Unixext.really_write_string s;
+		debug "VM.receive_memory calling create";
+		immediate_operation id (VM_create id);
 		debug "VM.receive_memory calling restore";
-		immediate_operation id (VM_resume(id, FD s));
-		debug "VM.receive_memory restore complete"
+		immediate_operation id (VM_restore(id, FD s));
+		debug "VM.receive_memory restore complete";
+		(* Receive the all-clear to unpause *)
+		(* We need to unmarshal the next HTTP request ourselves. *)
+		match Http_svr.request_of_bio (Buf_io.of_fd s) with
+			| None ->
+				debug "Failed to parse HTTP request";
+				failwith "Failed to parse HTTP request"
+			| Some req ->
+				let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
+				let failure = Rpc.failure Rpc.Null in
+				let success = Rpc.success (Xenops_migrate.Receiver.rpc_of_state Xenops_migrate.Receiver.Completed) in
+				let response =
+					if call.Rpc.name = Xenops_migrate._complete then begin
+						debug "Got VM.migrate_complete";
+						immediate_operation id (VM_restore_devices id);
+						immediate_operation id (VM_unpause id);
+						success
+					end else begin
+						debug "Something went wrong";
+						immediate_operation id (VM_shutdown id);
+						failure
+					end in
+				let body = response |> Jsonrpc.string_of_response in
+				let length = body |> String.length |> Int64.of_int in
+				let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
+				response |> Http.Response.to_wire_string |> Unixext.really_write_string s
 end
 
 module DEBUG = struct

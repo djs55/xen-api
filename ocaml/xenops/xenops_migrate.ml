@@ -24,6 +24,7 @@ let local_rpc call =
 
 let _metadata = "VM.import_metadata"
 let _failure = "VM.client_migrate_failed"
+let _complete = "VM.migrate_complete"
 
 module Receiver = struct
 	type created_object =
@@ -33,6 +34,7 @@ module Receiver = struct
 	type state =
 		| Waiting_metadata
 		| Received_metadata of Vm.id
+		| Completed
 		| Error of string
 	with rpc
 
@@ -115,3 +117,10 @@ let send_metadata url metadata fd =
 let send_failure url fd =
 	let _ = remote_rpc url (Rpc.call _failure []) fd in
 	()
+
+let send_complete url i fd =
+	let open Receiver in
+	match remote_rpc url (Rpc.call _complete [ ]) fd with
+		| Completed -> ()
+		| x -> failwith (Printf.sprintf "Unexpected response: %s" (x |> rpc_of_state |> Jsonrpc.to_string))
+
