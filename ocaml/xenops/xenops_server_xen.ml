@@ -112,6 +112,10 @@ module Storage = struct
 		(* XXX: we need to find out the backend domid *)
 		{ domid = 0; params = result }
 
+	let deactivate task dp sr vdi =
+		Xenops_task.with_subtask task (Printf.sprintf "VDI.deactivate %s" dp)
+			(fun () -> Client.VDI.deactivate rpc "deactivate" dp sr vdi |> success |> unit)
+
 	let deactivate_and_detach task dp =
 		Xenops_task.with_subtask task (Printf.sprintf "DP.destroy %s" dp)
 			(fun () ->
@@ -279,6 +283,27 @@ module Mem = struct
 		ignore_results (call_daemon xs Squeezed_rpc._balance_memory [])
 
 end
+
+(* We store away the device name so we can lookup devices by name later *)
+let _device_id kind = Device_common.string_of_kind kind ^ "-id"
+
+(* Return the xenstore device with [kind] corresponding to [id] *)
+let device_by_id xc xs vm kind id =
+	match vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs with
+		| None ->
+			debug "VM %s does not exist in domain list" vm;
+			raise (Exception Does_not_exist)
+		| Some frontend_domid ->
+			let devices = Device_common.list_frontends ~xs frontend_domid in
+			let key = _device_id kind in
+			let id_of_device device =
+				let path = Hotplug.get_private_data_path_of_device device in
+				try Some (xs.Xs.read (Printf.sprintf "%s/%s" path key))
+				with _ -> None in
+			try
+				List.find (fun device -> id_of_device device = Some id) devices
+			with Not_found ->
+				raise (Exception Device_not_connected)
 
 module VM = struct
 	open Vm
@@ -626,8 +651,21 @@ module VM = struct
 						let di = Xenctrl.domain_getinfo xc domid in
 						let pages = Int64.of_nativeint di.Xenctrl.total_memory_pages in
 						debug "Final memory usage of the domain = %Ld pages" pages;
+						(* Flush all outstanding disk blocks *)
+
 						let k = key_of vm in
 						let d = Opt.unbox (DB.read k) in
+						
+						let devices = List.map (fun vbd -> vbd.Vbd.id |> snd |> device_by_id xc xs vm.id Device_common.Vbd) d.VmExtra.vbds in
+						Domain.hard_shutdown_all_vbds ~xc ~xs devices;
+						List.iter (fun vbd -> match vbd.Vbd.backend with
+							| None
+							| Some (Local _) -> ()
+							| Some (VDI path) ->
+								let sr, vdi = Storage.get_disk_by_name path in
+								Storage.deactivate task (Storage.id_of domid vbd.Vbd.id) sr vdi
+						) d.VmExtra.vbds;
+
 						DB.write k { d with
 							VmExtra.suspend_memory_bytes = Memory.bytes_of_pages pages;
 						}
@@ -688,28 +726,6 @@ let on_frontend f frontend =
 			let frontend_di = frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs |> unbox in
 			f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest
 		)
-
-(* We store away the device name so we can lookup devices by name later *)
-let _device_id kind = Device_common.string_of_kind kind ^ "-id"
-
-(* Return the xenstore device with [kind] corresponding to [id] *)
-let device_by_id xc xs vm kind id =
-	match vm |> Uuid.uuid_of_string |> domid_of_uuid ~xc ~xs with
-		| None ->
-			debug "VM %s does not exist in domain list" vm;
-			raise (Exception Does_not_exist)
-		| Some frontend_domid ->
-			let devices = Device_common.list_frontends ~xs frontend_domid in
-			let key = _device_id kind in
-			let id_of_device device =
-				let path = Hotplug.get_private_data_path_of_device device in
-				try Some (xs.Xs.read (Printf.sprintf "%s/%s" path key))
-				with _ -> None in
-			try
-				List.find (fun device -> id_of_device device = Some id) devices
-			with Not_found ->
-				raise (Exception Device_not_connected)
-
 
 module VBD = struct
 	open Vbd
