@@ -193,6 +193,9 @@ type data =
 	| Disk of disk
 	| FD of Unix.file_descr
 
+type flag =
+	| Live
+
 module type S = sig
 	val init: unit -> unit
 	module VM : sig
@@ -205,7 +208,7 @@ module type S = sig
 		val request_shutdown: Xenops_task.t -> Vm.t -> shutdown_request -> float -> bool
 		val wait_shutdown: Xenops_task.t -> Vm.t -> shutdown_request -> float -> bool
 
-		val save: Xenops_task.t -> Vm.t -> data -> unit
+		val save: Xenops_task.t -> Vm.t -> flag list -> data -> unit
 		val restore: Xenops_task.t -> Vm.t -> data -> unit
 
 		val get_state: Vm.t -> Vm.state

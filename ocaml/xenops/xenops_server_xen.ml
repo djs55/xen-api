@@ -629,7 +629,12 @@ module VM = struct
 				)
 		| FD fd -> f fd
 
-	let save task vm data =
+	let save task vm flags data =
+		let flags' =
+			List.map
+				(function
+					| Live -> Domain.Live
+				) flags in
 		on_domain
 			(fun xc xs (task:Xenops_task.t) vm di ->
 				let hvm = di.Xenctrl.hvm_guest in
@@ -637,7 +642,7 @@ module VM = struct
 				with_data ~xc ~xs task data [ Unix.O_WRONLY ]
 					(fun fd ->
 						debug "Invoking Domain.suspend";
-						Domain.suspend ~xc ~xs ~hvm domid fd []
+						Domain.suspend ~xc ~xs ~hvm domid fd flags'
 							(fun () ->
 								debug "In callback";
 								if not(request_shutdown task vm Suspend 30.)
