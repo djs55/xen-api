@@ -255,37 +255,34 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 		| VM_migrate (id, url') ->
 			debug "VM.migrate %s -> %s" id url';
 			let open Xmlrpc_client in
+			let open Xenops_client in
 			let url = url' |> Http.Url.of_string in
 			(* We need to perform version exchange here *)
 			begin
 				try
-					let q = Xenops_client.query url in
-					debug "Remote system is: %s" (q |> Query.rpc_of_t |> Jsonrpc.to_string)
+					debug "Remote system is: %s" (query url |> Query.rpc_of_t |> Jsonrpc.to_string)
 				with e ->
 					debug "Failed to contact remote system on %s: is it running? (%s)" url' (Printexc.to_string e);
 					raise (Exception(Failed_to_contact_remote_service (url |> transport_of_url |> string_of_transport)))
 			end;
-			with_transport (transport_of_url url)
-				(fun fd ->
-					let id = Xenops_migrate.send_metadata url (export_metadata id) fd in
-					debug "Received id = %s" id;
-					let suffix = Printf.sprintf "/memory/%s" id in
-					let memory_url = match url with
-						| Http.Url.Http(a, b) -> Http.Url.Http(a, b ^ suffix)
-						| Http.Url.File(a, b) -> Http.Url.File(a, b ^ suffix) in
-					with_transport (transport_of_url memory_url)
-						(fun mfd ->
-							Http_client.rpc mfd (Xenops_migrate.http_put memory_url)
-								(fun response _ ->
-									debug "XXX transmit memory";
-									perform ~subtask:"memory transfer" (VM_save(id, FD mfd)) t;
-									debug "XXX sending completed signal";
-									Xenops_migrate.send_complete url id mfd;
-									debug "XXX completed signal ok";
-								)
-						);
-					perform ~subtask:"VM_shutdown" (VM_shutdown id) t
+			let id = Client.VM.import_metadata (rpc url) (export_metadata id) |> success in
+			debug "Received id = %s" id;
+			let suffix = Printf.sprintf "/memory/%s" id in
+			let memory_url = match url with
+				| Http.Url.Http(a, b) -> Http.Url.Http(a, b ^ suffix)
+				| Http.Url.File(a, b) -> Http.Url.File(a, b ^ suffix) in
+			with_transport (transport_of_url memory_url)
+				(fun mfd ->
+					Http_client.rpc mfd (Xenops_migrate.http_put memory_url)
+						(fun response _ ->
+							debug "XXX transmit memory";
+							perform ~subtask:"memory transfer" (VM_save(id, FD mfd)) t;
+							debug "XXX sending completed signal";
+							Xenops_migrate.send_complete url id mfd;
+							debug "XXX completed signal ok";
+						)
 				);
+			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_receive_memory (id, s) ->
 			debug "VM.receive_memory %s" id;

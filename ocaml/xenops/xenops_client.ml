@@ -16,13 +16,17 @@ open Xenops_interface
 open Xmlrpc_client
 let default_path = "/var/xapi/xenopsd"
 let forwarded_path = default_path ^ ".forwarded"
-let transport = ref (Unix default_path)
+
+let default_uri = "file:" ^ default_path
 
 let ( |> ) a b = b a
 
-let rpc call =
-	XMLRPC_protocol.rpc ~transport:!transport
-		~http:(xmlrpc ~version:"1.0" "/") call
+let http_request url meth =
+	Http.Request.make ~version:"1.1" ~keep_alive:false ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" meth (Http.Url.uri_of url)
+
+let rpc url call =
+	let transport = transport_of_url url in
+	XMLRPC_protocol.rpc ~transport ~http:(http_request url Http.Post) call
 
 let success = function
 	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
@@ -30,10 +34,7 @@ let success = function
 	| None, None -> failwith "protocol error"
 
 let query url =
-	let transport = transport_of_url url in
-	let rpc call =
-		XMLRPC_protocol.rpc ~transport ~http:(xmlrpc ~version:"1.0" (Http.Url.uri_of url)) call in
-	Client.query rpc () |> success
+	Client.query (rpc url) () |> success
 
 let event_wait rpc p =
 	let finished = ref false in

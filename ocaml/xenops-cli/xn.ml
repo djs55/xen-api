@@ -37,6 +37,8 @@ let usage () =
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
 	()
 
+let rpc = rpc (Http.Url.of_string default_uri)
+
 let success_task rpc id =
 	let t = Client.TASK.stat rpc id |> success in
 	match t.Task.result with
