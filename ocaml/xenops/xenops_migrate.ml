@@ -124,3 +124,36 @@ let send_complete url i fd =
 		| Completed -> ()
 		| x -> failwith (Printf.sprintf "Unexpected response: %s" (x |> rpc_of_state |> Jsonrpc.to_string))
 
+
+let serve_rpc s f =
+	let sent_response = ref false in
+	try
+		match Http_svr.request_of_bio (Buf_io.of_fd s) with
+			| None ->
+				debug "Failed to parse HTTP request";
+				failwith "Failed to parse HTTP request"
+			| Some req ->
+				let body = match req.Http.Request.content_length with
+					| Some x -> Unixext.really_read_string s (Int64.to_int x)
+					| None -> Unixext.string_of_fd s in
+				let body = f body in
+				let length = body |> String.length |> Int64.of_int in
+				let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
+				sent_response := true;
+				response |> Http.Response.to_wire_string |> Unixext.really_write_string s
+	with e ->
+		debug "%s" (Printexc.to_string e);
+		debug "%s" (Printexc.get_backtrace ());
+		if not !sent_response then begin
+			let body = String.concat "\n" [
+				"The following information may be useful for debugging:";
+				"";
+				Printf.sprintf "Exception: %s" (Printexc.to_string e);
+				"";
+				"Stacktrace:";
+				(Printexc.get_backtrace ())
+			] in
+			let length = body |> String.length |> Int64.of_int in
+			let response = Http.Response.make ~version:"1.1" ~length ~body "500" "Not so good" in
+			response |> Http.Response.to_wire_string |> Unixext.really_write_string s
+		end

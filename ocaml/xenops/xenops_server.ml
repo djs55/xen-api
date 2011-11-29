@@ -286,7 +286,6 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			Updates.add (Dynamic.Vm id) updates
 		| VM_receive_memory (id, s) ->
 			debug "VM.receive_memory %s" id;
-			let module B = (val get_backend () : S) in
 			let state = B.VM.get_state (id |> VM_DB.key_of |> VM_DB.read |> unbox) in
 			debug "VM.receive_memory %s power_state = %s" id (state.Vm.power_state |> rpc_of_power_state |> Jsonrpc.to_string);
 			let response = Http.Response.make ~version:"1.1" "200" "OK" in
@@ -297,30 +296,22 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			debug "VM.receive_memory restore complete";
 			(* Receive the all-clear to unpause *)
 			(* We need to unmarshal the next HTTP request ourselves. *)
-			begin match Http_svr.request_of_bio (Buf_io.of_fd s) with
-				| None ->
-					debug "Failed to parse HTTP request";
-					failwith "Failed to parse HTTP request"
-				| Some req ->
-					let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
+			Xenops_migrate.serve_rpc s
+				(fun body ->
+					let call = Jsonrpc.call_of_string body in
 					let failure = Rpc.failure Rpc.Null in
 					let success = Rpc.success (Xenops_migrate.Receiver.rpc_of_state Xenops_migrate.Receiver.Completed) in
-					let response =
-						if call.Rpc.name = Xenops_migrate._complete then begin
-							debug "Got VM.migrate_complete";
-							perform ~subtask:"VM_restore_devices" (VM_restore_devices id) t;
-							perform ~subtask:"VM_unpause" (VM_unpause id) t;
-							success
-						end else begin
-							debug "Something went wrong";
-							perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
-							failure
-						end in
-					let body = response |> Jsonrpc.string_of_response in
-					let length = body |> String.length |> Int64.of_int in
-					let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
-					response |> Http.Response.to_wire_string |> Unixext.really_write_string s
-			end
+					if call.Rpc.name = Xenops_migrate._complete then begin
+						debug "Got VM.migrate_complete";
+						perform ~subtask:"VM_restore_devices" (VM_restore_devices id) t;
+						perform ~subtask:"VM_unpause" (VM_unpause id) t;
+						success |> Jsonrpc.string_of_response
+					end else begin
+						debug "Something went wrong";
+						perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+						failure |> Jsonrpc.string_of_response
+					end
+				)
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
@@ -389,7 +380,6 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = Some disk };
 		| VBD_eject id ->
 			debug "VBD.eject %s" (VBD_DB.string_of_id id);
-			let module B = (val get_backend () : S) in
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
 			let vm_state = B.VM.get_state (VBD_DB.vm_of id |> VM_DB.key_of |> VM_DB.read |> unbox) in
 			let vbd_state = B.VBD.get_state (VBD_DB.vm_of id) vbd_t in
