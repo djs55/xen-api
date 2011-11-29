@@ -252,10 +252,19 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			perform ~subtask:"VM_restore_devices" (VM_restore_devices id) t;
 			(* XXX: special flag? *)
 			Updates.add (Dynamic.Vm id) updates
-		| VM_migrate (id, url) ->
-			debug "VM.migrate %s -> %s" id url;
+		| VM_migrate (id, url') ->
+			debug "VM.migrate %s -> %s" id url';
 			let open Xmlrpc_client in
-			let url = url |> Http.Url.of_string in
+			let url = url' |> Http.Url.of_string in
+			(* We need to perform version exchange here *)
+			begin
+				try
+					let q = Xenops_client.query url in
+					debug "Remote system is: %s" (q |> Query.rpc_of_t |> Jsonrpc.to_string)
+				with e ->
+					debug "Failed to contact remote system on %s: is it running? (%s)" url' (Printexc.to_string e);
+					raise (Exception(Failed_to_contact_remote_service (url |> transport_of_url |> string_of_transport)))
+			end;
 			with_transport (transport_of_url url)
 				(fun fd ->
 					let id = Xenops_migrate.send_metadata url (export_metadata id) fd in

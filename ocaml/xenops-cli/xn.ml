@@ -37,6 +37,16 @@ let usage () =
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
 	()
 
+let success_task rpc id =
+	let t = Client.TASK.stat rpc id |> success in
+	match t.Task.result with
+	| Task.Completed _ -> t
+	| Task.Failed (Failed_to_contact_remote_service x) ->
+		Printf.printf "Failed to contact remote service on: %s\n" x;
+		Printf.printf "Check the address and credentials.\n";
+		exit 1;
+	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| Task.Pending _ -> failwith "task pending"
 
 let add filename =
 	Unixext.with_input_channel filename

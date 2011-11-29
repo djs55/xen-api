@@ -29,6 +29,12 @@ let success = function
 	| (Some x, _) -> x
 	| None, None -> failwith "protocol error"
 
+let query url =
+	let transport = transport_of_url url in
+	let rpc call =
+		XMLRPC_protocol.rpc ~transport ~http:(xmlrpc ~version:"1.0" (Http.Url.uri_of url)) call in
+	Client.query rpc () |> success
+
 let event_wait rpc p =
 	let finished = ref false in
 	let event_id = ref None in
