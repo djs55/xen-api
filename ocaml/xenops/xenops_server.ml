@@ -62,6 +62,7 @@ type operation =
 	| VM_restore of (Vm.id * data)
 	| VM_restore_devices of Vm.id
 	| VM_migrate of (Vm.id * string)
+	| VM_receive_memory of (Vm.id * Unix.file_descr)
 	| VM_shutdown_domain of (Vm.id * shutdown_request * float)
 	| VM_destroy of Vm.id
 	| VM_create of Vm.id
@@ -277,6 +278,43 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 					perform ~subtask:"VM_shutdown" (VM_shutdown id) t
 				);
 			Updates.add (Dynamic.Vm id) updates
+		| VM_receive_memory (id, s) ->
+			debug "VM.receive_memory %s" id;
+			let module B = (val get_backend () : S) in
+			let state = B.VM.get_state (id |> VM_DB.key_of |> VM_DB.read |> unbox) in
+			debug "VM.receive_memory %s power_state = %s" id (state.Vm.power_state |> rpc_of_power_state |> Jsonrpc.to_string);
+			let response = Http.Response.make ~version:"1.1" "200" "OK" in
+			response |> Http.Response.to_wire_string |> Unixext.really_write_string s;
+			debug "VM.receive_memory calling create";
+			perform ~subtask:"VM_create" (VM_create id) t;
+			perform ~subtask:"VM_restore" (VM_restore(id, FD s)) t;
+			debug "VM.receive_memory restore complete";
+			(* Receive the all-clear to unpause *)
+			(* We need to unmarshal the next HTTP request ourselves. *)
+			begin match Http_svr.request_of_bio (Buf_io.of_fd s) with
+				| None ->
+					debug "Failed to parse HTTP request";
+					failwith "Failed to parse HTTP request"
+				| Some req ->
+					let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
+					let failure = Rpc.failure Rpc.Null in
+					let success = Rpc.success (Xenops_migrate.Receiver.rpc_of_state Xenops_migrate.Receiver.Completed) in
+					let response =
+						if call.Rpc.name = Xenops_migrate._complete then begin
+							debug "Got VM.migrate_complete";
+							perform ~subtask:"VM_restore_devices" (VM_restore_devices id) t;
+							perform ~subtask:"VM_unpause" (VM_unpause id) t;
+							success
+						end else begin
+							debug "Something went wrong";
+							perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+							failure
+						end in
+					let body = response |> Jsonrpc.string_of_response in
+					let length = body |> String.length |> Int64.of_int in
+					let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
+					response |> Http.Response.to_wire_string |> Unixext.really_write_string s
+			end
 		| VM_shutdown_domain (id, reason, timeout) ->
 			let start = Unix.gettimeofday () in
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
@@ -519,41 +557,7 @@ module VM = struct
 		let bits = String.split '/' req.Http.Request.uri in
 		let id = bits |> List.rev |> List.hd in
 		debug "VM.receive_memory id = %s" id;
-		let module B = (val get_backend () : S) in
-		let state = B.VM.get_state (id |> DB.key_of |> DB.read |> unbox) in
-		debug "VM.receive_memory id = %s; power_state = %s" id (state.Vm.power_state |> rpc_of_power_state |> Jsonrpc.to_string);
-		let response = Http.Response.make ~version:"1.1" "200" "OK" in
-		response |> Http.Response.to_wire_string |> Unixext.really_write_string s;
-		debug "VM.receive_memory calling create";
-		immediate_operation id (VM_create id);
-		debug "VM.receive_memory calling restore";
-		immediate_operation id (VM_restore(id, FD s));
-		debug "VM.receive_memory restore complete";
-		(* Receive the all-clear to unpause *)
-		(* We need to unmarshal the next HTTP request ourselves. *)
-		match Http_svr.request_of_bio (Buf_io.of_fd s) with
-			| None ->
-				debug "Failed to parse HTTP request";
-				failwith "Failed to parse HTTP request"
-			| Some req ->
-				let call = Unixext.really_read_string s (req.Http.Request.content_length |> Opt.unbox |> Int64.to_int) |> Jsonrpc.call_of_string in
-				let failure = Rpc.failure Rpc.Null in
-				let success = Rpc.success (Xenops_migrate.Receiver.rpc_of_state Xenops_migrate.Receiver.Completed) in
-				let response =
-					if call.Rpc.name = Xenops_migrate._complete then begin
-						debug "Got VM.migrate_complete";
-						immediate_operation id (VM_restore_devices id);
-						immediate_operation id (VM_unpause id);
-						success
-					end else begin
-						debug "Something went wrong";
-						immediate_operation id (VM_shutdown id);
-						failure
-					end in
-				let body = response |> Jsonrpc.string_of_response in
-				let length = body |> String.length |> Int64.of_int in
-				let response = Http.Response.make ~version:"1.1" ~length ~body "200" "OK" in
-				response |> Http.Response.to_wire_string |> Unixext.really_write_string s
+		immediate_operation id (VM_receive_memory(id, s))
 end
 
 module DEBUG = struct
