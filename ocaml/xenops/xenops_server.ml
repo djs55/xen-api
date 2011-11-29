@@ -71,6 +71,7 @@ type operation =
 	| VM_pause of Vm.id
 	| VM_unpause of Vm.id
 	| VM_check_state of Vm.id
+	| VM_remove of Vm.id
 	| VBD_plug of Vbd.id
 	| VBD_unplug of Vbd.id
 	| VBD_insert of Vbd.id * disk
@@ -283,6 +284,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 						)
 				);
 			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+			perform ~subtask:"VM_remove" (VM_remove id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_receive_memory (id, s) ->
 			debug "VM.receive_memory %s" id;
@@ -361,6 +363,14 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				| Vm.Delay    -> [] in
 			let operations = List.concat (List.map operations_of_action actions) in
 			List.iter (fun x -> perform x t) operations
+		| VM_remove id ->
+			debug "VM.remove %s" id;
+			let power = (B.VM.get_state (id |> VM_DB.key_of |> VM_DB.read |> unbox)).Vm.power_state in
+			begin match power with
+				| Running _ | Suspended | Paused -> raise (Exception (Bad_power_state(power, Halted)))
+				| Halted ->
+					VM_DB.remove [ id ]
+			end
 		| VBD_plug id ->
 			debug "VBD.plug %s" (VBD_DB.string_of_id id);
 			B.VBD.plug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
@@ -490,15 +500,7 @@ module VM = struct
 		DB.add (DB.key_of x.id) x;
 		x.id
 	let add _ x = add' x |> return
-	let remove _ id =
-		debug "VM.remove %s" id;
-		let module B = (val get_backend () : S) in
-		let power = (B.VM.get_state (id |> DB.key_of |> DB.read |> unbox)).Vm.power_state in
-		match power with
-			| Running _ | Suspended | Paused -> raise (Exception (Bad_power_state(power, Halted)))
-			| Halted ->
-				DB.remove [ id ];
-				return ()
+	let remove _ id = immediate_operation id (VM_remove id) |> return
 
 	let stat' x =
 		let module B = (val get_backend () : S) in
