@@ -28,24 +28,27 @@ let rpc url call =
 	let transport = transport_of_url url in
 	XMLRPC_protocol.rpc ~transport ~http:(http_request url Http.Post) call
 
+module Client = Client(struct let rpc = default_path |> Http.Url.of_string |> rpc end)
+
 let success = function
 	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
 	| (Some x, _) -> x
 	| None, None -> failwith "protocol error"
 
 let query url =
-	Client.query (rpc url) () |> success
+	let module Remote = Xenops_interface.Client(struct let rpc = rpc url end) in
+	Remote.query () |> success
 
-let event_wait rpc p =
+let event_wait p =
 	let finished = ref false in
 	let event_id = ref None in
 	while not !finished do
-		let deltas, next_id = Client.UPDATES.get rpc !event_id (Some 30) |> success in
+		let deltas, next_id = Client.UPDATES.get !event_id (Some 30) |> success in
 		event_id := next_id;
 		List.iter (fun d -> if p d then finished := true) deltas;
 	done
 
-let wait_for_task rpc id =
+let wait_for_task id =
 	Printf.fprintf stderr "wait_for id = %s\n%!" id;
 	let finished = function
 		| Dynamic.Task_t t ->
@@ -59,11 +62,11 @@ let wait_for_task rpc id =
 		| x ->
 			Printf.fprintf stderr "ignore event on %s\n%!" (x |> Dynamic.rpc_of_t |> Jsonrpc.to_string);
 			false in 
-	event_wait rpc finished;
+	event_wait finished;
 	id
 
-let success_task rpc id =
-	let t = Client.TASK.stat rpc id |> success in
+let success_task id =
+	let t = Client.TASK.stat id |> success in
 	match t.Task.result with
 	| Task.Completed _ -> t
 	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))

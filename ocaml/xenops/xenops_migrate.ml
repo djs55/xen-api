@@ -40,14 +40,16 @@ module Receiver = struct
 
 	type t = state * created_object list
 
-	let cleanup = function
+	let cleanup _ = ()
+(*
+		= function
 		| Vm_metadata id ->
 			debug "Removing VM metadata for VM id %s" id;
 			Client.VM.remove local_rpc id |> unwrap
 		| Vm_created id ->
 			debug "Destroying VM id %s" id;
 			Client.VM.destroy local_rpc id |> success |> wait_for_task local_rpc |> success_task local_rpc |> ignore_task
-
+*)
 	let initial = Waiting_metadata, []
 	let next (state, created_objects) call = match state, call.Rpc.name, call.Rpc.params with
 		| Waiting_metadata, call, [ Rpc.String md ] when call = _metadata ->
