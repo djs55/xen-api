@@ -128,7 +128,6 @@ module Vm = struct
 		| Coredump
 		| Shutdown
 		| Start
-		| Delay
 
 	type t = {
 		id: id;
@@ -166,6 +165,7 @@ module Vm = struct
 		rtc_timeoffset: string;
 		uncooperative_balloon_driver: bool;
 		guest_agent: (string * string) list;
+		last_start_time: float;
 	}
 
 end

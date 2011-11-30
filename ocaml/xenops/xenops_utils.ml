@@ -127,7 +127,8 @@ let halted_vm = {
 	memory_target = 0L;
 	rtc_timeoffset = "";
 	uncooperative_balloon_driver = false;
-	guest_agent = []
+	guest_agent = [];
+	last_start_time = 0.;
 }
 
 let unplugged_vbd = {

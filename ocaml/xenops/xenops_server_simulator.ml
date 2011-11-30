@@ -31,6 +31,7 @@ module Domain = struct
 		suspended: bool;
 		vbds: Vbd.t list;
 		vifs: Vif.t list;
+		last_create_time: float;
 	} with rpc
 end
 
@@ -88,6 +89,7 @@ let create_nolock vm () =
 			suspended = false;
 			vifs = [];
 			vbds = [];
+			last_create_time = Unix.gettimeofday ();
 		} in
 		DB.write k domain
 	end
@@ -99,6 +101,7 @@ let get_state_nolock vm () =
 		{ halted_vm with
 			Vm.power_state = Running;
 			domids = [ d.Domain.domid ];
+			last_start_time = d.Domain.last_create_time;
 		}
 	end else halted_vm
 

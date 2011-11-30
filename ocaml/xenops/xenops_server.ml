@@ -56,6 +56,7 @@ type operation =
 	| VM_start of Vm.id
 	| VM_shutdown of Vm.id
 	| VM_reboot of (Vm.id * float option)
+	| VM_delay of (Vm.id * float) (** used to suppress fast reboot loops *)
 	| VM_suspend of (Vm.id * data)
 	| VM_resume of (Vm.id * data)
 	| VM_save of (Vm.id * flag list * data)
@@ -227,6 +228,9 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			perform ~subtask:"VM_start" (VM_start id) t;
 			perform ~subtask:"VM_unpause" (VM_unpause id) t;
 			Updates.add (Dynamic.Vm id) updates
+		| VM_delay (id, t) ->
+			debug "VM %s: waiting for %.2f before next VM action" id t;
+			Thread.delay t
 		| VM_save (id, flags, data) ->
 			debug "VM.save %s" id;
 			B.VM.save t (id |> VM_DB.key_of |> VM_DB.read |> unbox) flags data
@@ -347,10 +351,18 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			B.VM.unpause t (id |> VM_DB.key_of |> VM_DB.read |> unbox)
 		| VM_check_state id ->
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
+			let state = B.VM.get_state vm in
+			let run_time = Unix.gettimeofday () -. state.Vm.last_start_time in
+			debug "VM %s ran for %.2f seconds" id run_time;
 			let actions = match B.VM.get_domain_action_request vm with
 				| Some Needs_reboot -> vm.Vm.on_reboot
 				| Some Needs_poweroff -> vm.Vm.on_shutdown
-				| Some Needs_crashdump -> vm.Vm.on_crash
+				| Some Needs_crashdump ->
+					(* A VM which crashes too quickly should be shutdown *)
+					if run_time < 120.0 then begin
+						debug "VM %s crashed too quickly; shutting down" id;
+						[ Vm.Shutdown ]
+					end else vm.Vm.on_crash
 				| Some Needs_suspend ->
 					debug "VM %s has unexpectedly suspended" id;
 					[]
@@ -360,8 +372,14 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			let operations_of_action = function
 				| Vm.Coredump -> []
 				| Vm.Shutdown -> [ VM_shutdown id ]
-				| Vm.Start    -> [ VM_shutdown id; VM_start id; VM_unpause id ]
-				| Vm.Delay    -> [] in
+				| Vm.Start    ->
+					let delay = if run_time < 60. then begin
+						debug "VM %s rebooted too quickly; inserting delay" id;
+						[ VM_delay (id, 15.) ]
+					end else [] in
+					let restart = [ VM_shutdown id; VM_start id; VM_unpause id ] in
+					delay @ restart
+			in
 			let operations = List.concat (List.map operations_of_action actions) in
 			List.iter (fun x -> perform x t) operations
 		| VM_remove id ->

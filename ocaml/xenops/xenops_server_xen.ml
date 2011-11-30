@@ -41,6 +41,7 @@ module VmExtra = struct
 		ty: Vm.builder_info option;
 		vbds: Vbd.t list; (* needed to regenerate qemu IDE config *)
 		vifs: Vif.t list;
+		last_create_time: float;
 	} with rpc
 end
 
@@ -364,6 +365,7 @@ module VM = struct
 					ty = None;
 					vbds = [];
 					vifs = [];
+					last_create_time = Unix.gettimeofday ();
 				}
 			end in
 		with_xc_and_xs
@@ -692,6 +694,7 @@ module VM = struct
 
 	let get_state vm =
 		let uuid = uuid_of_vm vm in
+		let vme = vm |> key_of |> DB.read in (* may not exist *)
 		with_xc_and_xs
 			(fun xc xs ->
 				match domid_of_uuid ~xc ~xs uuid with
@@ -699,6 +702,9 @@ module VM = struct
 					| Some d -> { halted_vm with
 						Vm.power_state = Running;
 						domids = [ d ];
+						last_start_time = match vme with
+							| Some x -> x.VmExtra.last_create_time
+							| None -> 0.
 					}
 			)
 
