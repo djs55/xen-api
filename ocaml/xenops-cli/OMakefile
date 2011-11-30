@@ -11,6 +11,8 @@ section
 	OCamlProgram(xenopstest, test $(COMMON_FILES))
 	OCamlDocProgram(xenopstest, test $(COMMON_FILES))
 
+	OCamlGeneratedFiles(xn_cfg_parser.ml xn_cfg_parser.mli xn_cfg_lexer.ml)
+
 	OCamlProgram(xn, xn xn_cfg_types xn_cfg_parser xn_cfg_lexer $(COMMON_FILES))
 	OCamlDocProgram(xn, xn xn_cfg_types xn_cfg_parser xn_cfg_lexer $(COMMON_FILES))
 
