@@ -14,6 +14,13 @@ section
 	OCamlProgram(xn, xn xn_cfg_types xn_cfg_parser xn_cfg_lexer $(COMMON_FILES))
 	OCamlDocProgram(xn, xn xn_cfg_types xn_cfg_parser xn_cfg_lexer $(COMMON_FILES))
 
+.PHONY: install
+install:
+	mkdir -p $(BIN_PATH)
+	$(IPROG) xn $(BIN_PATH)
+	mkdir -p $(DESTDIR)/usr/bin
+	ln -sf $(BIN_DIR)/xn $(DESTDIR)/usr/bin/xn
+
 .PHONY: clean
 clean:
 	rm -f $(CLEAN_OBJS)

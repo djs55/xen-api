@@ -301,6 +301,9 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 @BASE_PATH@/libexec/xenopsd
 /etc/rc.d/init.d/xenopsd
+@BASE_PATH@/bin/xe
+@BASE_PATH@/debug/sm
+/usr/bin/xe
 
 %files v6d
 %defattr(-,root,root,-)
