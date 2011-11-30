@@ -24,7 +24,7 @@ let usage () =
 	Printf.fprintf stderr "%s add <config> - add a VM from <config>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s list - query the states of known VMs\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s remove <name or id> - forget about a VM\n" Sys.argv.(0);
-	Printf.fprintf stderr "%s start <name or id> - start a VM\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s start <name or id> [paused] - start a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s pause <name or id> - pause a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s unpause <name or id> - unpause a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s shutdown <name or id> - shutdown a VM\n" Sys.argv.(0);
@@ -252,10 +252,12 @@ let import_metadata filename =
 	let id = Client.VM.import_metadata txt |> success in
 	Printf.printf "%s\n" id
 
-let start x =
+let start x paused =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.start vm.id |> success |> wait_for_task |> success_task
+	Client.VM.start vm.id |> success |> wait_for_task |> success_task |> ignore_task;
+	if not paused
+	then Client.VM.unpause vm.id |> success |> wait_for_task |> success_task |> ignore_task
 
 let shutdown x =
 	let open Vm in
@@ -396,8 +398,10 @@ let _ =
 			export_metadata id filename
 		| [ "import-metadata"; filename ] ->
 			import_metadata filename
+		| [ "start"; id; "paused" ] ->
+			start id true
 		| [ "start"; id ] ->
-			start id |> task
+			start id false
 		| [ "pause"; id ] ->
 			pause id |> task
 		| [ "unpause"; id ] ->
