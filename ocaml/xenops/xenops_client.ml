@@ -28,7 +28,7 @@ let rpc url call =
 	let transport = transport_of_url url in
 	XMLRPC_protocol.rpc ~transport ~http:(http_request url Http.Post) call
 
-module Client = Client(struct let rpc = default_path |> Http.Url.of_string |> rpc end)
+module Client = Client(struct let rpc = default_uri |> Http.Url.of_string |> rpc end)
 
 let success = function
 	| (_, Some x) -> failwith (Jsonrpc.to_string (rpc_of_error x))
