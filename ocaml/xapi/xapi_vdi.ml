@@ -354,7 +354,7 @@ let snapshot_and_clone call_f ~__context ~vdi ~driver_params =
 	  let sr' = Db.SR.get_uuid ~__context ~self:sR in
 	  let vdi' = Db.VDI.get_location ~__context ~self:vdi in
 	  expect_vdi (newvdi ~__context ~sr:sR)
-		  (call_f rpc ~task:(Ref.string_of task) ~sr:sr'
+		  (call_f ~task:(Ref.string_of task) ~sr:sr'
 			  ~vdi:vdi' ~vdi_info  ~params:driver_params) in
 
   (* While we don't have blkback support for pause/unpause we only do this
@@ -373,7 +373,8 @@ let snapshot_and_clone call_f ~__context ~vdi ~driver_params =
   newvdi
 
 let snapshot ~__context ~vdi ~driver_params =
-	let newvdi = snapshot_and_clone Storage_interface.Client.VDI.snapshot ~__context ~vdi ~driver_params in
+	let module C = Storage_interface.Client(struct let rpc = Storage_access.rpc end) in
+	let newvdi = snapshot_and_clone C.VDI.snapshot ~__context ~vdi ~driver_params in
   (* Record the fact this is a snapshot *)
  
   (*(try Db.VDI.remove_from_other_config ~__context ~self:newvdi ~key:Xapi_globs.snapshot_of with _ -> ());
@@ -453,7 +454,8 @@ let generate_config ~__context ~host ~vdi =
 
 let clone ~__context ~vdi ~driver_params =
 	try
-		snapshot_and_clone Storage_interface.Client.VDI.clone ~__context ~vdi ~driver_params
+		let module C = Storage_interface.Client(struct let rpc = Storage_access.rpc end) in
+		snapshot_and_clone C.VDI.clone ~__context ~vdi ~driver_params
 	with Smint.Not_implemented_in_backend ->
     debug "Backend does not implement VDI clone: doing it ourselves";
 	let a = Db.VDI.get_record_internal ~__context ~self:vdi in
@@ -578,12 +580,13 @@ let set_on_boot ~__context ~self ~value =
 	let task = Context.get_task_id __context in
 	let sr' = Db.SR.get_uuid ~__context ~self:sr in
 	let vdi' = Db.VDI.get_location ~__context ~self in
+	let module C = Storage_interface.Client(struct let rpc = Storage_access.rpc end) in
 	expect_vdi 
 		(fun newvdi ->
 			expect_unit (fun () -> ())
-				(Client.VDI.destroy rpc ~task:(Ref.string_of task) ~sr:sr' ~vdi:newvdi.vdi)
+				(C.VDI.destroy ~task:(Ref.string_of task) ~sr:sr' ~vdi:newvdi.vdi)
 		)
-		(Client.VDI.clone rpc ~task:(Ref.string_of task) ~sr:sr'
+		(C.VDI.clone ~task:(Ref.string_of task) ~sr:sr'
 			~vdi:vdi' ~vdi_info:default_vdi_info ~params:[]);
 	Db.VDI.set_on_boot ~__context ~self ~value
 

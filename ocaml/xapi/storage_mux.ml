@@ -118,10 +118,10 @@ module Mux = struct
 		let stat context ~task ~sr ~vdi =
 			let module C = Client(struct let rpc = of_sr sr end) in
 			C.VDI.stat ~task ~sr ~vdi
-		let snapshot =
+		let snapshot context ~task ~sr ~vdi ~vdi_info ~params =
 			let module C = Client(struct let rpc = of_sr sr end) in
 			C.VDI.snapshot ~task ~sr ~vdi ~vdi_info ~params
-		let clone =
+		let clone context ~task ~sr ~vdi ~vdi_info ~params =
 			let module C = Client(struct let rpc = of_sr sr end) in
 			C.VDI.clone ~task ~sr ~vdi ~vdi_info ~params
 		let destroy context ~task ~sr ~vdi =

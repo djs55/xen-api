@@ -113,21 +113,21 @@ let _ =
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
 		| [ "vdi-get-by-content"; sr; content_id ] ->
-			begin match Client.VDI.get_by_content rpc ~task ~sr ~content_id with
+			begin match Client.VDI.get_by_content ~task ~sr ~content_id with
 				| Success (Vdi v) ->
 					Printf.printf "%s\n" (string_of_vdi_info v)
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
 		| [ "vdi-set-content-id"; sr; vdi; content_id ] ->
-			begin match Client.VDI.set_content_id rpc ~task ~sr ~vdi~content_id with
+			begin match Client.VDI.set_content_id ~task ~sr ~vdi~content_id with
 				| Success Unit ->
 					()
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
 		| [ "vdi-similar-content"; sr; vdi ] ->
-			begin match Client.VDI.similar_content rpc ~task ~sr ~vdi with
+			begin match Client.VDI.similar_content ~task ~sr ~vdi with
 				| Success (Vdis vs) ->
 					List.iter
 						(fun v ->
@@ -137,7 +137,7 @@ let _ =
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
 		| [ "vdi-export"; sr; vdi; url; dest ] ->
-			begin match Client.VDI.export rpc ~task ~sr ~vdi ~url ~dest with
+			begin match Client.VDI.export ~task ~sr ~vdi ~url ~dest with
 				| Success (Vdi v) ->
 					Printf.printf "Created VDI %s\n" v.vdi
 				| x ->

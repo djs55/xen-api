@@ -21,14 +21,15 @@ open Stringext
 open Pervasiveext
 open Xmlrpc_client
 
-let local_url = ref (Http.Url.File ({ Http.Url.path = "/var/xapi/storage" }, "/"))
+let local_url = Http.Url.File ({ Http.Url.path = "/var/xapi/storage" }, "/")
+
+open Storage_interface
 
 let rpc url call =
 	XMLRPC_protocol.rpc ~transport:(transport_of_url url)
 		~http:(xmlrpc ~version:"1.0" ?auth:(Http.Url.auth_of url) (Http.Url.uri_of url)) call
 
-
-open Storage_interface
+module Local = Client(struct let rpc = rpc local_url end)
 
 let success = function
 	| Success x -> x
@@ -53,38 +54,40 @@ let unit = function
 let with_activated_disk ~task ~sr ~vdi f =
 	let path =
 		Opt.map (fun vdi -> 
-			let path = Client.VDI.attach (rpc !local_url) ~task ~dp:"migrate" ~sr ~vdi ~read_write:false |> success |> params in
-			Client.VDI.activate (rpc !local_url) ~task ~dp:"migrate" ~sr ~vdi |> success |> unit;
+			let path = Local.VDI.attach ~task ~dp:"migrate" ~sr ~vdi ~read_write:false |> success |> params in
+			Local.VDI.activate ~task ~dp:"migrate" ~sr ~vdi |> success |> unit;
 			path) vdi in
 	finally
 		(fun () -> f path)
 		(fun () ->
 			Opt.iter
 				(fun vdi ->
-					Client.VDI.deactivate (rpc !local_url) ~task ~dp:"migrate" ~sr ~vdi |> success |> unit;
-					Client.VDI.detach (rpc !local_url) ~task ~dp:"migrate" ~sr ~vdi |> success |> unit)
+					Local.VDI.deactivate ~task ~dp:"migrate" ~sr ~vdi |> success |> unit;
+					Local.VDI.detach ~task ~dp:"migrate" ~sr ~vdi |> success |> unit)
 				vdi)
 
 let export ~task ~sr ~vdi ~url ~dest =
 	let remote_url = Http.Url.of_string url in
+	let module Remote = Client(struct let rpc = rpc remote_url end) in
+
 	(* Check the remote SR exists *)
-	let srs = Client.SR.list (rpc remote_url) ~task in
+	let srs = Remote.SR.list ~task in
 	if not(List.mem dest srs)
 	then failwith (Printf.sprintf "Remote SR %s not found" dest);
 	(* Find the local VDI *)
-	let vdis = Client.SR.scan (rpc !local_url) ~task ~sr |> success |> _vdis in
+	let vdis = Local.SR.scan ~task ~sr |> success |> _vdis in
 	let local_vdi =
 		try List.find (fun x -> x.vdi = vdi) vdis
 		with Not_found -> failwith (Printf.sprintf "Local VDI %s not found" vdi) in
 	(* Finding VDIs which are similar to [vdi] *)
-	let vdis = Client.VDI.similar_content (rpc !local_url) ~task ~sr ~vdi |> success |> _vdis in
+	let vdis = Local.VDI.similar_content ~task ~sr ~vdi |> success |> _vdis in
 	(* Choose the "nearest" one *)
 	let nearest = List.fold_left
 		(fun acc vdi -> match acc with
 			| Some x -> Some x
 			| None ->
 				try
-					let remote_vdi = Client.VDI.get_by_content (rpc remote_url) ~task ~sr:dest ~content_id:vdi.content_id |> success |> _vdi in
+					let remote_vdi = Remote.VDI.get_by_content ~task ~sr:dest ~content_id:vdi.content_id |> success |> _vdi in
 					debug "Local VDI %s has same content_id (%s) as remote VDI %s" vdi.vdi vdi.content_id remote_vdi.vdi;
 					Some (vdi, remote_vdi)
 				with _ -> None) None vdis in
@@ -93,10 +96,10 @@ let export ~task ~sr ~vdi ~url ~dest =
 		match nearest with
 			| Some (_, remote_vdi) ->
 				debug "Cloning remote VDI %s" remote_vdi.vdi;
-				Client.VDI.clone (rpc remote_url) ~task ~sr:dest ~vdi:remote_vdi.vdi ~vdi_info:local_vdi ~params:[] |> success |> _vdi
+				Remote.VDI.clone ~task ~sr:dest ~vdi:remote_vdi.vdi ~vdi_info:local_vdi ~params:[] |> success |> _vdi
 			| None ->
 				debug "Creating a blank remote VDI";
-				Client.VDI.create (rpc remote_url) ~task ~sr:dest ~vdi_info:local_vdi ~params:[] |> success |> _vdi in
+				Remote.VDI.create ~task ~sr:dest ~vdi_info:local_vdi ~params:[] |> success |> _vdi in
 	let dest_vdi_url = Printf.sprintf "%s/data/%s/%s" url dest dest_vdi.vdi in
 	debug "Will copy into new remote VDI: %s (%s)" dest_vdi.vdi dest_vdi_url;
 
@@ -118,8 +121,8 @@ let export ~task ~sr ~vdi ~url ~dest =
 				)
 		);
 	debug "Updating remote content_id";
-	Client.VDI.set_content_id (rpc remote_url) ~task ~sr:dest ~vdi:dest_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
+	Remote.VDI.set_content_id ~task ~sr:dest ~vdi:dest_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
 	(* XXX: this is useful because we don't have content_ids by default *)
-	Client.VDI.set_content_id (rpc !local_url) ~task ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
+	Local.VDI.set_content_id ~task ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
 	Success (Vdi dest_vdi)
 

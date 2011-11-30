@@ -266,7 +266,8 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 					debug "Failed to contact remote system on %s: is it running? (%s)" url' (Printexc.to_string e);
 					raise (Exception(Failed_to_contact_remote_service (url |> transport_of_url |> string_of_transport)))
 			end;
-			let id = Client.VM.import_metadata (rpc url) (export_metadata id) |> success in
+			let module Remote = Xenops_interface.Client(struct let rpc = rpc url end) in
+			let id = Remote.VM.import_metadata (export_metadata id) |> success in
 			debug "Received id = %s" id;
 			let suffix = Printf.sprintf "/memory/%s" id in
 			let memory_url = match url with

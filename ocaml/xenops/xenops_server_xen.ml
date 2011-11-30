@@ -132,10 +132,10 @@ end
 let with_disk ~xc ~xs task disk f = match disk with
 	| Local path -> f path
 	| VDI path ->
-		let open Storage in
 		let open Storage_interface in
+		let open Storage in
 		let sr, vdi = get_disk_by_name path in
-		let dp = Client.DP.create rpc "with_disk" "xenopsd" in
+		let dp = Client.DP.create "with_disk" "xenopsd" in
 		finally
 			(fun () ->
 				let vdi = attach_and_activate task dp sr vdi false in

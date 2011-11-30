@@ -16,8 +16,8 @@ open Stringext
 open Threadext
 open Pervasiveext
 open Fun
-open Xenops_client
 open Xenops_interface
+open Xenops_client
 
 let usage () =
 	Printf.fprintf stderr "%s <command> [args] - send commands to the xenops daemon\n" Sys.argv.(0);
@@ -37,10 +37,8 @@ let usage () =
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
 	()
 
-let rpc = rpc (Http.Url.of_string default_uri)
-
-let success_task rpc id =
-	let t = Client.TASK.stat rpc id |> success in
+let success_task id =
+	let t = Client.TASK.stat id |> success in
 	match t.Task.result with
 	| Task.Completed _ -> t
 	| Task.Failed (Failed_to_contact_remote_service x) ->
@@ -132,7 +130,7 @@ let add filename =
 				on_shutdown = [ Vm.Shutdown ];
 				on_reboot = [ Vm.Start ];
 			} in
-			let (id: Vm.id) = success (Client.VM.add rpc vm) in
+			let (id: Vm.id) = success (Client.VM.add vm) in
 			let disks = if mem _disk then find _disk |> list string else [] in
 			let parse_disk x = match String.split ',' x with
 				| [ source; device_number; rw ] ->
@@ -170,7 +168,7 @@ let add filename =
 				| _ ->
 					Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,xvda,w'\n" x;
 					exit 2 in
-			let one x = x |> parse_disk |> Client.VBD.add rpc |> success in
+			let one x = x |> parse_disk |> Client.VBD.add |> success in
 			let (_: Vbd.id list) = List.map one disks in
 			let vifs = if mem _vif then find _vif |> list string else [] in
 			let vifs = List.combine vifs (Range.to_list (Range.make 0 (List.length vifs))) in
@@ -192,7 +190,7 @@ let add filename =
 					other_config = [];
 					extra_private_keys = [];
 				} in
-			let one x = x |> parse_vif |> Client.VIF.add rpc |> success in
+			let one x = x |> parse_vif |> Client.VIF.add |> success in
 			let (_: Vif.id list) = List.map one vifs in
 			Printf.printf "%s\n" id
 		)
@@ -214,13 +212,13 @@ let list () =
 			| Halted    -> "Halted "
 			| Paused    -> "Paused " in
 		line vm.name domid mem vcpus state "" in
-	let vms = success (Client.VM.list rpc ()) in
+	let vms = success (Client.VM.list ()) in
 	let lines = header :: (List.map string_of_vm vms) in
 	List.iter (Printf.printf "%s\n") lines
 
 let find_by_name x =
 	let open Vm in
-	let all = success (Client.VM.list rpc ()) in
+	let all = success (Client.VM.list ()) in
 	let this_one (y, _) = y.id = x || y.name = x in
 	try
 		List.find this_one all
@@ -231,68 +229,68 @@ let find_by_name x =
 let remove x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	let vbds = success (Client.VBD.list rpc vm.id) in
+	let vbds = success (Client.VBD.list vm.id) in
 	List.iter
 		(fun (vbd, _) ->
-			success (Client.VBD.remove rpc vbd.Vbd.id)
+			success (Client.VBD.remove vbd.Vbd.id)
 		) vbds;
-	let vifs = success (Client.VIF.list rpc vm.id) in
+	let vifs = success (Client.VIF.list vm.id) in
 	List.iter
 		(fun (vif, _) ->
-			success (Client.VIF.remove rpc vif.Vif.id)
+			success (Client.VIF.remove vif.Vif.id)
 		) vifs;
-	success (Client.VM.remove rpc vm.id)
+	success (Client.VM.remove vm.id)
 
 let export_metadata x filename =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	let txt = Client.VM.export_metadata rpc vm.id |> success in
+	let txt = Client.VM.export_metadata vm.id |> success in
 	Unixext.write_string_to_file filename txt
 
 let import_metadata filename =
 	let txt = Unixext.string_of_file filename in
-	let id = Client.VM.import_metadata rpc txt |> success in
+	let id = Client.VM.import_metadata txt |> success in
 	Printf.printf "%s\n" id
 
 let start x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.start rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.start vm.id |> success |> wait_for_task |> success_task
 
 let shutdown x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.shutdown rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.shutdown vm.id |> success |> wait_for_task |> success_task
 
 let pause x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.pause rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.pause vm.id |> success |> wait_for_task |> success_task
 
 let unpause x =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.unpause rpc vm.id |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.unpause vm.id |> success |> wait_for_task |> success_task
 
 let reboot x timeout =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.reboot rpc vm.id timeout |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.reboot vm.id timeout |> success |> wait_for_task |> success_task
 
 let suspend x disk =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.suspend rpc vm.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.suspend vm.id (Local disk) |> success |> wait_for_task |> success_task
 
 let resume x disk =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.resume rpc vm.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.resume vm.id (Local disk) |> success |> wait_for_task |> success_task
 
 let migrate x url =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.migrate rpc vm.id url |> success |> wait_for_task rpc |> success_task rpc
+	Client.VM.migrate vm.id url |> success |> wait_for_task |> success_task
 
 let trim limit str =
 	let l = String.length str in
@@ -302,7 +300,7 @@ let trim limit str =
 
 let vbd_list x =
 	let vm, _ = find_by_name x in
-	let vbds = success (Client.VBD.list rpc vm.Vm.id) in
+	let vbds = success (Client.VBD.list vm.Vm.id) in
 	let line id position mode ty plugged disk =
 		Printf.sprintf "%-10s %-8s %-4s %-5s %-7s %s" id position mode ty plugged disk in
 	let header = line "id" "position" "mode" "type" "plugged" "disk" in
@@ -329,7 +327,7 @@ let find_vbd id =
 			exit 1 in
 	let vm_id = fst vbd_id in
 	let vm, _ = find_by_name vm_id in
-	let vbds = success (Client.VBD.list rpc vm.Vm.id) in
+	let vbds = success (Client.VBD.list vm.Vm.id) in
 	let this_one (y, _) = snd y.Vbd.id = snd vbd_id in
 	try
 		List.find this_one vbds
@@ -339,11 +337,11 @@ let find_vbd id =
 
 let cd_eject id =
 	let vbd, _ = find_vbd id in
-	Client.VBD.eject rpc vbd.Vbd.id |> success |> wait_for_task rpc |> success_task rpc
+	Client.VBD.eject vbd.Vbd.id |> success |> wait_for_task |> success_task
 
 let cd_insert id disk =
 	let vbd, _ = find_vbd id in
-	Client.VBD.insert rpc vbd.Vbd.id (Local disk) |> success |> wait_for_task rpc |> success_task rpc
+	Client.VBD.insert vbd.Vbd.id (Local disk) |> success |> wait_for_task |> success_task
 
 let slave () =
 	let copy a b =
@@ -371,7 +369,7 @@ let slave () =
 let verbose_task t =
 	let string_of_result = function
 		| Task.Completed t -> Printf.sprintf "%.2f" t
-		| Task.Failed x -> Printf.sprintf "Error: %s" (x |> rpc_of_error |> Jsonrpc.to_string)
+		| Task.Failed x -> Printf.sprintf "Error: %s" (x |>rpc_of_error |> Jsonrpc.to_string)
 		| Task.Pending _ -> Printf.sprintf "Error: still pending" in
 	let rows = List.map (fun (name, result) -> [ name;  string_of_result result ]) t.Task.subtasks in
 	Table.print rows;
