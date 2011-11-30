@@ -302,7 +302,6 @@ rm -rf $RPM_BUILD_ROOT
 @BASE_PATH@/libexec/xenopsd
 /etc/rc.d/init.d/xenopsd
 @BASE_PATH@/bin/xn
-@BASE_PATH@/debug/sm
 /usr/bin/xn
 
 %files v6d
