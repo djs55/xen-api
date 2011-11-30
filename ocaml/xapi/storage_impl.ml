@@ -511,6 +511,16 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 
 	end
 
+	module Mirror = struct
+		let start context ~task ~sr ~vdi ~url ~dest =
+			info "Mirror.start task:%s sr:%s vdi:%s url:%s dest:%s" task sr vdi url dest;
+			Impl.Mirror.start context ~task ~sr ~vdi ~url ~dest
+
+		let stop context ~task ~sr ~vdi =
+			info "Mirror.stop task:%s sr:%s vdi:%s" task sr vdi;
+			Impl.Mirror.stop context ~task ~sr ~vdi
+	end
+
 	module DP = struct
 		let create context ~task ~id = id
 

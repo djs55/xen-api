@@ -151,6 +151,10 @@ module Mux = struct
 			C.VDI.similar_content ~task ~sr ~vdi
 		let export context ~task ~sr ~vdi ~url ~dest = Storage_migrate.export ~task ~sr ~vdi ~url ~dest
 	end
+	module Mirror = struct
+		let start context ~task ~sr ~vdi ~url ~dest = Storage_migrate.start ~task ~sr ~vdi ~url ~dest
+		let stop context ~task ~sr ~vdi = Storage_migrate.stop ~task ~sr ~vdi
+	end
 end
 
 module Server = Storage_interface.Server(Storage_impl.Wrapper(Mux))

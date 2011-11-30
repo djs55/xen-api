@@ -57,4 +57,8 @@ module Proxy = functor(RPC: RPC) -> struct
 		let similar_content _ = Client.VDI.similar_content
 		let export _ = Client.VDI.export
 	end
+	module Mirror = struct
+		let start _ = Client.Mirror.start
+		let stop _ = Client.Mirror.stop
+	end
 end

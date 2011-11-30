@@ -126,3 +126,8 @@ let export ~task ~sr ~vdi ~url ~dest =
 	Local.VDI.set_content_id ~task ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id |> success |> unit;
 	Success (Vdi dest_vdi)
 
+let start ~task ~sr ~vdi ~url ~dest =
+	failwith "Mirror.start unimplemented"
+
+let stop ~task ~sr ~vdi =
+	failwith "Mirror.stop unimplemented"

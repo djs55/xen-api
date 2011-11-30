@@ -143,8 +143,15 @@ module Debug_print_impl = struct
 					end else Hashtbl.remove activated key);
 			info "VDI.deactivate dp:%s sr:%s vdi:%s" dp sr vdi;
 			Success Unit
+
+		let export context ~task ~sr ~vdi ~url ~dest = assert false				
 	end
 
+	module Mirror = struct
+		let start context ~task ~sr ~vdi ~url ~dest = assert false
+		let stop context ~task ~sr ~vdi = assert false
+	end
+		
 	module SR = struct
 		let list context ~task = assert false
 		let scan context ~task ~sr = assert false

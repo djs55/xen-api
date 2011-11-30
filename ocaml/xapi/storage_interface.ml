@@ -216,3 +216,14 @@ module VDI = struct
 	external set_content_id : task:task -> sr:sr -> vdi:vdi -> content_id:content_id -> result = ""
 
 end
+
+module Mirror = struct
+
+	(** [start task sr vdi url sr2] creates a VDI in remote [url]'s [sr2] and writes
+		data synchronously. It returns the id of the VDI.*)
+	external start : task:task -> sr:sr -> vdi:vdi -> url:string -> dest:sr -> result = ""
+
+	(** [stop task sr vdi] stops mirroring local [vdi] *)
+	external stop : task:task -> sr:sr -> vdi:vdi -> result = ""
+
+end

@@ -407,6 +407,10 @@ module Builtin_impl = struct
 
 		let export context ~task ~sr ~vdi ~url ~dest = assert false
 	end
+	module Mirror = struct
+		let start context ~task ~sr ~vdi ~url ~dest = assert false
+		let stop context ~task ~sr ~vdi = assert false
+	end
 end
 
 module Qemu_blkfront = struct
