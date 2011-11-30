@@ -53,7 +53,7 @@ module Receiver = struct
 	let initial = Waiting_metadata, []
 	let next (state, created_objects) call = match state, call.Rpc.name, call.Rpc.params with
 		| Waiting_metadata, call, [ Rpc.String md ] when call = _metadata ->
-			let vm = md |> Client.VM.import_metadata local_rpc |> unwrap in
+			let vm = md |> Client.VM.import_metadata |> unwrap in
 			let created_objects = Vm_metadata vm :: created_objects in
 (*
 			Client.VM.create local_rpc vm |> success |> wait_for_task local_rpc |> success_task local_rpc |> ignore_task;

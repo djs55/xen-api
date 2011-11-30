@@ -79,9 +79,11 @@ let domid_of_uuid ~xc ~xs uuid = Opt.map (fun di -> di.Xenctrl.domid) (di_of_uui
 module Storage = struct
 	open Storage_interface
 
-	let rpc call =
-		let open Xmlrpc_client in
-		XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/storage") ~http:(xmlrpc ~version:"1.0" "/") call
+	module Client = Client(struct
+		let rpc call =
+			let open Xmlrpc_client in
+			XMLRPC_protocol.rpc ~transport:(Unix "/var/xapi/storage") ~http:(xmlrpc ~version:"1.0" "/") call
+	end)
 
 	let success = function
 		| Success x -> x
@@ -106,20 +108,20 @@ module Storage = struct
 	let attach_and_activate task dp sr vdi read_write =
 		let result =
 			Xenops_task.with_subtask task (Printf.sprintf "VDI.attach %s" dp)
-				(fun () -> Client.VDI.attach rpc "attach_and_activate" dp sr vdi read_write |> success |> params) in
+				(fun () -> Client.VDI.attach "attach_and_activate" dp sr vdi read_write |> success |> params) in
 		Xenops_task.with_subtask task (Printf.sprintf "VDI.activate %s" dp)
-			(fun () -> Client.VDI.activate rpc "attach_and_activate" dp sr vdi |> success |> unit);
+			(fun () -> Client.VDI.activate "attach_and_activate" dp sr vdi |> success |> unit);
 		(* XXX: we need to find out the backend domid *)
 		{ domid = 0; params = result }
 
 	let deactivate task dp sr vdi =
 		Xenops_task.with_subtask task (Printf.sprintf "VDI.deactivate %s" dp)
-			(fun () -> Client.VDI.deactivate rpc "deactivate" dp sr vdi |> success |> unit)
+			(fun () -> Client.VDI.deactivate "deactivate" dp sr vdi |> success |> unit)
 
 	let deactivate_and_detach task dp =
 		Xenops_task.with_subtask task (Printf.sprintf "DP.destroy %s" dp)
 			(fun () ->
-				Client.DP.destroy rpc "deactivate_and_detach" dp false |> success |> unit)
+				Client.DP.destroy "deactivate_and_detach" dp false |> success |> unit)
 
 	let get_disk_by_name path = match List.filter (fun x -> x <> "") (String.split '/' path) with
 		| [ sr; vdi ] -> sr, vdi
