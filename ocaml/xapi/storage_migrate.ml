@@ -87,7 +87,7 @@ let export ~task ~sr ~vdi ~url ~dest =
 			| Some x -> Some x
 			| None ->
 				try
-					let remote_vdi = Remote.VDI.get_by_content ~task ~sr:dest ~content_id:vdi.content_id |> success |> _vdi in
+					let remote_vdi = Remote.VDI.get_by_name ~task ~sr:dest ~name:vdi.content_id |> success |> _vdi in
 					debug "Local VDI %s has same content_id (%s) as remote VDI %s" vdi.vdi vdi.content_id remote_vdi.vdi;
 					Some (vdi, remote_vdi)
 				with _ -> None) None vdis in

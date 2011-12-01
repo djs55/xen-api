@@ -112,8 +112,8 @@ let _ =
 				| x ->
 					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
 			end
-		| [ "vdi-get-by-content"; sr; content_id ] ->
-			begin match Client.VDI.get_by_content ~task ~sr ~content_id with
+		| [ "vdi-get-by-name"; sr; name ] ->
+			begin match Client.VDI.get_by_name ~task ~sr ~name with
 				| Success (Vdi v) ->
 					Printf.printf "%s\n" (string_of_vdi_info v)
 				| x ->

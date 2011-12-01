@@ -334,13 +334,13 @@ module Builtin_impl = struct
 				| No_VDI ->
 					Failure Vdi_does_not_exist
 
-		let get_by_content context ~task ~sr ~content_id =
-			info "VDI.get_by_content task:%s sr:%s content_id:%s" task sr content_id;
+		let get_by_name context ~task ~sr ~name =
+			info "VDI.get_by_name task:%s sr:%s name:%s" task sr name;
 			(* PR-1255: the backend should do this for us *)
-			 Server_helpers.exec_with_new_task "VDI.get_by_content" ~subtask_of:(Ref.of_string task)
+			 Server_helpers.exec_with_new_task "VDI.get_by_name" ~subtask_of:(Ref.of_string task)
                 (fun __context ->
 					(* PR-1255: the backend should do this for us *)
-					let _, vdi = find_content ~__context ~sr content_id in
+					let _, vdi = find_content ~__context ~sr name in
 					Success(Vdi(SR.vdi_info_of_vdi_rec __context vdi))
 				)
 

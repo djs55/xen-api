@@ -140,9 +140,9 @@ module Mux = struct
 			let module C = Client(struct let rpc = of_sr sr end) in
 			C.VDI.detach ~task ~dp ~sr ~vdi
 
-		let get_by_content context ~task ~sr ~content_id =
+		let get_by_name context ~task ~sr ~name =
 			let module C = Client(struct let rpc = of_sr sr end) in
-			C.VDI.get_by_content ~task ~sr ~content_id
+			C.VDI.get_by_name ~task ~sr ~name
 		let set_content_id context ~task ~sr ~vdi ~content_id =
 			let module C = Client(struct let rpc = of_sr sr end) in
 			C.VDI.set_content_id ~task ~sr ~vdi ~content_id

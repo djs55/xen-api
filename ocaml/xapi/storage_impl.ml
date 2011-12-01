@@ -493,9 +493,9 @@ module Wrapper = functor(Impl: Server_impl) -> struct
                         )
                 )
 
-		let get_by_content context ~task ~sr ~content_id =
-			info "VDI.get_by_content task:%s sr:%s content_id:%s" task sr content_id;
-			Impl.VDI.get_by_content context ~task ~sr ~content_id
+		let get_by_name context ~task ~sr ~name =
+			info "VDI.get_by_name task:%s sr:%s name:%s" task sr name;
+			Impl.VDI.get_by_name context ~task ~sr ~name
 
 		let set_content_id context ~task ~sr ~vdi ~content_id =
 			info "VDI.set_content_id task:%s sr:%s vdi:%s content_id:%s" task sr vdi content_id;

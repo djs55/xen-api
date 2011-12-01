@@ -209,8 +209,8 @@ module VDI = struct
 	(** [similar_content task sr vdi] returns a list of VDIs which have similar content to [vdi] *)
 	external similar_content : task:task -> sr:sr -> vdi:vdi -> result = ""
 
-	(** [get_by_content task sr content_id] returns the info of a VDI with the [content_id] *)
-	external get_by_content : task:task -> sr:sr -> content_id:content_id -> result = ""
+	(** [get_by_name task sr name] returns the vdi within [sr] with [name] *)
+	external get_by_name : task:task -> sr:sr -> name:string -> result = ""
 
 	(** [set_content_id task sr vdi content_id] tells the storage backend that a VDI has an updated [content_id] *)
 	external set_content_id : task:task -> sr:sr -> vdi:vdi -> content_id:content_id -> result = ""
