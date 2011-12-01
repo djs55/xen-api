@@ -48,7 +48,7 @@ let success_task id =
 	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
 	| Task.Pending _ -> failwith "task pending"
 
-let disk_of x = match List.filter (fun x -> x <> "") (String.split ':' x) with
+let parse_source x = match List.filter (fun x -> x <> "") (String.split ':' x) with
 	| [ "phy"; path ] -> Some (Local path)
 	| [ "sm"; path ] -> Some (VDI path)
 	| [ "file"; path ] ->
@@ -58,6 +58,36 @@ let disk_of x = match List.filter (fun x -> x <> "") (String.split ':' x) with
 	| _ ->
 		Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,...\n" x;
 		exit 2
+
+let parse_disk vm_id x = match String.split ',' x with
+	| [ source; device_number; rw ] ->
+		let ty, device_number, device_number' = match String.split ':' device_number with
+			| [ x ] -> Vbd.Disk, x, Device_number.of_string false x
+			| [ x; "cdrom" ] -> Vbd.CDROM, x, Device_number.of_string false x
+			| _ ->
+				Printf.fprintf stderr "Failed to understand disk name '%s'. It should be 'xvda' or 'hda:cdrom'\n" device_number;
+				exit 2 in
+		let mode = match String.lowercase rw with
+			| "r" -> Vbd.ReadOnly
+			| "w" -> Vbd.ReadWrite
+			| x ->
+				Printf.fprintf stderr "Failed to understand disk mode '%s'. It should be 'r' or 'w'\n" x;
+				exit 2 in
+		let backend = parse_source source in
+		{
+			Vbd.id = vm_id, device_number;
+			position = Some device_number';
+			mode = mode;
+			backend = backend;
+			ty = ty;
+			unpluggable = true;
+			extra_backend_keys = [];
+			extra_private_keys = [];
+		}
+	| _ ->
+		Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,xvda,w'\n" x;
+		exit 2
+
 
 let add filename =
 	Unixext.with_input_channel filename
@@ -143,35 +173,7 @@ let add filename =
 			} in
 			let (id: Vm.id) = success (Client.VM.add vm) in
 			let disks = if mem _disk then find _disk |> list string else [] in
-			let parse_disk x = match String.split ',' x with
-				| [ source; device_number; rw ] ->
-					let ty, device_number, device_number' = match String.split ':' device_number with
-						| [ x ] -> Vbd.Disk, x, Device_number.of_string false x
-						| [ x; "cdrom" ] -> Vbd.CDROM, x, Device_number.of_string false x
-						| _ ->
-							Printf.fprintf stderr "Failed to understand disk name '%s'. It should be 'xvda' or 'hda:cdrom'\n" device_number;
-							exit 2 in
-					let mode = match String.lowercase rw with
-						| "r" -> Vbd.ReadOnly
-						| "w" -> Vbd.ReadWrite
-						| x ->
-							Printf.fprintf stderr "Failed to understand disk mode '%s'. It should be 'r' or 'w'\n" x;
-							exit 2 in
-					let backend = disk_of source in
-					{
-						Vbd.id = id, device_number;
-						position = Some device_number';
-						mode = mode;
-						backend = backend;
-						ty = ty;
-						unpluggable = true;
-						extra_backend_keys = [];
-						extra_private_keys = [];
-					}
-				| _ ->
-					Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,xvda,w'\n" x;
-					exit 2 in
-			let one x = x |> parse_disk |> Client.VBD.add |> success in
+			let one x = x |> parse_disk id |> Client.VBD.add |> success in
 			let (_: Vbd.id list) = List.map one disks in
 			let vifs = if mem _vif then find _vif |> list string else [] in
 			let vifs = List.combine vifs (Range.to_list (Range.make 0 (List.length vifs))) in
@@ -346,7 +348,7 @@ let cd_eject id =
 
 let cd_insert id disk =
 	let vbd, _ = find_vbd id in
-	let backend = disk_of disk |> Opt.unbox in
+	let backend = parse_source disk |> Opt.unbox in
 	Client.VBD.insert vbd.Vbd.id backend |> success |> wait_for_task |> success_task
 
 let slave () =
