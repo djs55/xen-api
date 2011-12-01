@@ -48,6 +48,17 @@ let success_task id =
 	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
 	| Task.Pending _ -> failwith "task pending"
 
+let disk_of x = match List.filter (fun x -> x <> "") (String.split ':' x) with
+	| [ "phy"; path ] -> Some (Local path)
+	| [ "sm"; path ] -> Some (VDI path)
+	| [ "file"; path ] ->
+		Printf.fprintf stderr "I don't understand 'file' disk paths. Please use 'phy'.\n";
+		exit 2
+	| [] -> None (* empty *)
+	| _ ->
+		Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,...\n" x;
+		exit 2
+
 let add filename =
 	Unixext.with_input_channel filename
 		(fun ic ->
@@ -146,16 +157,8 @@ let add filename =
 						| x ->
 							Printf.fprintf stderr "Failed to understand disk mode '%s'. It should be 'r' or 'w'\n" x;
 							exit 2 in
-					let backend = match List.filter (fun x -> x <> "") (String.split ':' source) with
-						| [ "phy"; path ] -> Some (Local path)
-						| [ "sm"; path ] -> Some (VDI path)
-						| [ "file"; path ] ->
-							Printf.fprintf stderr "I don't understand 'file' disk paths. Please use 'phy'.\n";
-							exit 2
-						| [] -> None (* empty *)
-						| _ ->
-							Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,...\n" source;
-							exit 2 in {
+					let backend = disk_of source in
+					{
 						Vbd.id = id, device_number;
 						position = Some device_number';
 						mode = mode;
@@ -343,7 +346,8 @@ let cd_eject id =
 
 let cd_insert id disk =
 	let vbd, _ = find_vbd id in
-	Client.VBD.insert vbd.Vbd.id (Local disk) |> success |> wait_for_task |> success_task
+	let backend = disk_of disk |> Opt.unbox in
+	Client.VBD.insert vbd.Vbd.id backend |> success |> wait_for_task |> success_task
 
 let slave () =
 	let copy a b =
