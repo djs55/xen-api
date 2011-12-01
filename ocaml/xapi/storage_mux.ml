@@ -57,7 +57,7 @@ let domid_of_sr sr =
 
 open Fun
 
-let multicast f = Hashtbl.fold (fun sr plugin acc -> (sr, f plugin.processor) :: acc) plugins []
+let multicast f = Hashtbl.fold (fun sr plugin acc -> (sr, f sr plugin.processor) :: acc) plugins []
 
 let partition = List.partition (success ++ snd)
 
@@ -66,6 +66,10 @@ let choose x = snd(List.hd x)
 let fail_or f results =
 	let successes, errors = partition results in
 	if errors <> [] then choose errors else f successes
+
+let success_or f results =
+	let successes, errors = partition results in
+	if successes <> [] then f successes else f errors
 
 module Mux = struct
 	type context = Smint.request
@@ -80,16 +84,16 @@ module Mux = struct
 		let create context ~task ~id = id (* XXX: is this pointless? *)
 		let destroy context ~task ~dp ~allow_leak =
 			(* Tell each plugin about this *)
-			fail_or choose (multicast (fun rpc ->
-				let module C = Client(struct let rpc = rpc end) in
+			fail_or choose (multicast (fun sr rpc ->
+				let module C = Client(struct let rpc = of_sr sr end) in
 				C.DP.destroy ~task ~dp ~allow_leak))
 		let diagnostics context () =
 			let combine results =
 				let all = List.fold_left (fun acc (sr, result) ->
 					Printf.sprintf "For SR: %s" sr :: (string_of_result result) :: acc) [] results in
 				Success (String (String.concat "\n" all)) in
-			fail_or combine (multicast (fun rpc ->
-				let module C = Client(struct let rpc = rpc end) in
+			fail_or combine (multicast (fun sr rpc ->
+				let module C = Client(struct let rpc = of_sr sr end) in
 				C.DP.diagnostics ()))
 	end
 	module SR = struct
@@ -106,8 +110,8 @@ module Mux = struct
 			let module C = Client(struct let rpc = of_sr sr end) in
 			C.SR.scan ~task ~sr
 		let list context ~task =
-			List.fold_left (fun acc (sr, list) -> list @ acc) [] (multicast (fun rpc ->
-				let module C = Client(struct let rpc = rpc end) in
+			List.fold_left (fun acc (sr, list) -> list @ acc) [] (multicast (fun sr rpc ->
+				let module C = Client(struct let rpc = of_sr sr end) in
 				C.SR.list ~task))
 		let reset context ~task ~sr = assert false
 	end
@@ -151,6 +155,24 @@ module Mux = struct
 			C.VDI.similar_content ~task ~sr ~vdi
 		let export context ~task ~sr ~vdi ~url ~dest = Storage_migrate.export ~task ~sr ~vdi ~url ~dest
 	end
+
+	let get_by_name context ~task ~name =
+		(* Assume it has either the format:
+		   SR/VDI -- for a particular SR and VDI
+		   content_id -- for a particular content *)
+		let open Stringext in
+		match List.filter (fun x -> x <> "") (String.split '/' name) with
+			| [ sr; name ] ->
+				let module C = Client(struct let rpc = of_sr sr end) in
+				C.VDI.get_by_name ~task ~sr ~name
+			| [ name ] ->
+				success_or choose (multicast (fun sr rpc ->
+					let module C = Client(struct let rpc = of_sr sr end) in
+					C.VDI.get_by_name ~task ~sr ~name
+				))
+			| _ ->
+				Failure Vdi_does_not_exist
+
 	module Mirror = struct
 		let start context ~task ~sr ~vdi ~url ~dest = Storage_migrate.start ~task ~sr ~vdi ~url ~dest
 		let stop context ~task ~sr ~vdi = Storage_migrate.stop ~task ~sr ~vdi

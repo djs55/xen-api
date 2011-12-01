@@ -80,6 +80,7 @@ let _ =
 			let find key = if List.mem_assoc key kvpairs then Some (List.assoc key kvpairs) else None in
 			let vdi_info = {
 				vdi = "";
+				sr = sr;
 				content_id = ""; (* PR-1255 *)
 				name_label = Opt.default "default name_label" (find "name_label");
 				name_description = Opt.default "default name_description" (find "name_description");
@@ -114,6 +115,13 @@ let _ =
 			end
 		| [ "vdi-get-by-name"; sr; name ] ->
 			begin match Client.VDI.get_by_name ~task ~sr ~name with
+				| Success (Vdi v) ->
+					Printf.printf "%s\n" (string_of_vdi_info v)
+				| x ->
+					Printf.fprintf stderr "Unexpected result: %s\n" (string_of_result x)
+			end
+		| [ "vdi-get-by-name"; name ] ->
+			begin match Client.get_by_name ~task ~name with
 				| Success (Vdi v) ->
 					Printf.printf "%s\n" (string_of_vdi_info v)
 				| x ->

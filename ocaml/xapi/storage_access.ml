@@ -30,8 +30,8 @@ let find_vdi ~__context sr vdi =
 		| x :: _ -> x
 		| _ -> raise No_VDI
 
-(* Find a VDI reference given a content_id *)
-let find_content ~__context ?sr content_id =
+(* Find a VDI reference given a name *)
+let find_content ~__context ?sr name =
 	(* PR-1255: the backend should do this for us *)
 	let open Db_filter_types in
 	let expr = Opt.default True (Opt.map (fun sr -> Eq(Field "SR", Literal (Ref.string_of (Db.SR.get_by_uuid ~__context ~uuid:sr)))) sr) in
@@ -39,8 +39,8 @@ let find_content ~__context ?sr content_id =
 	List.find
 		(fun (_, vdi_rec) ->
 			false
-			|| (vdi_rec.API.vDI_location = content_id) (* PR-1255 *)
-			|| (List.mem_assoc "content_id" vdi_rec.API.vDI_other_config && (List.assoc "content_id" vdi_rec.API.vDI_other_config = content_id))
+			|| (vdi_rec.API.vDI_location = name) (* PR-1255 *)
+			|| (List.mem_assoc "content_id" vdi_rec.API.vDI_other_config && (List.assoc "content_id" vdi_rec.API.vDI_other_config = name))
 		) all
 
 module Builtin_impl = struct
@@ -130,13 +130,14 @@ module Builtin_impl = struct
 						)
 				)
 
-		let vdi_info_of_vdi_rec __context vdi_rec =
+		let vdi_info_of_vdi_rec __context sr vdi_rec =
 			let content_id =
 				if List.mem_assoc "content_id" vdi_rec.API.vDI_other_config
 				then List.assoc "content_id" vdi_rec.API.vDI_other_config
 				else vdi_rec.API.vDI_location (* PR-1255 *)
 			in {
 				vdi = vdi_rec.API.vDI_location;
+				sr = sr;
 				content_id = content_id; (* PR-1255 *)
 				name_label = vdi_rec.API.vDI_name_label;
 				name_description = vdi_rec.API.vDI_name_description;
@@ -150,10 +151,10 @@ module Builtin_impl = struct
 				physical_utilisation = vdi_rec.API.vDI_physical_utilisation;
 			}
 
-		let scan context ~task ~sr =
+		let scan context ~task ~sr:sr' =
 			Server_helpers.exec_with_new_task "SR.scan" ~subtask_of:(Ref.of_string task)
 				(fun __context ->
-					let sr = Db.SR.get_by_uuid ~__context ~uuid:sr in
+					let sr = Db.SR.get_by_uuid ~__context ~uuid:sr' in
 
 					Sm.call_sm_functions ~__context ~sR:sr
 						(fun device_config _type ->
@@ -161,7 +162,7 @@ module Builtin_impl = struct
 								Sm.sr_scan device_config _type sr;
 								let open Db_filter_types in
 								let vdis = Db.VDI.get_records_where ~__context ~expr:(Eq(Field "SR", Literal (Ref.string_of sr))) |> List.map snd in
-								Success (Vdis (List.map (vdi_info_of_vdi_rec __context) vdis))
+								Success (Vdis (List.map (vdi_info_of_vdi_rec __context sr') vdis))
 							with
 								| Smint.Not_implemented_in_backend ->
 									Failure (Storage_interface.Backend_error(Api_errors.sr_operation_not_supported, [ Ref.string_of sr ]))
@@ -259,6 +260,7 @@ module Builtin_impl = struct
             let r = Db.VDI.get_record ~__context ~self in
             Vdi {
                 vdi = r.API.vDI_location;
+				sr = Db.SR.get_uuid ~__context ~self:r.API.vDI_SR;
 				content_id = r.API.vDI_location; (* PR-1255 *)
                 name_label = r.API.vDI_name_label;
                 name_description = r.API.vDI_name_description;
@@ -340,8 +342,14 @@ module Builtin_impl = struct
 			 Server_helpers.exec_with_new_task "VDI.get_by_name" ~subtask_of:(Ref.of_string task)
                 (fun __context ->
 					(* PR-1255: the backend should do this for us *)
-					let _, vdi = find_content ~__context ~sr name in
-					Success(Vdi(SR.vdi_info_of_vdi_rec __context vdi))
+					try
+						let _, vdi = find_content ~__context ~sr name in
+						let vi = SR.vdi_info_of_vdi_rec __context sr vdi in
+						debug "VDI.get_by_name returning successfully";
+						Success(Vdi vi)
+					with e ->
+						error "VDI.get_by_name caught: %s" (Printexc.to_string e);
+						Failure Vdi_does_not_exist
 				)
 
 		let set_content_id context ~task ~sr ~vdi ~content_id =
@@ -402,11 +410,14 @@ module Builtin_impl = struct
 					let _, vdi_rec = find_vdi ~__context sr vdi in
 					let vdis = explore 0 StringMap.empty vdi_rec.API.vDI_location |> invert |> IntMap.bindings |> List.map snd |> List.concat in
 					let vdi_recs = List.map (fun l -> StringMap.find l locations) vdis in
-					Success(Vdis(List.map (fun x -> SR.vdi_info_of_vdi_rec __context x) vdi_recs))
+					Success(Vdis(List.map (fun x -> SR.vdi_info_of_vdi_rec __context sr x) vdi_recs))
 				)
 
 		let export context ~task ~sr ~vdi ~url ~dest = assert false
 	end
+
+	let get_by_name context ~task ~name = assert false
+
 	module Mirror = struct
 		let start context ~task ~sr ~vdi ~url ~dest = assert false
 		let stop context ~task ~sr ~vdi = assert false

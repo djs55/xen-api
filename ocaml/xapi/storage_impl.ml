@@ -511,6 +511,10 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 
 	end
 
+	let get_by_name context ~task ~name =
+		debug "get_by_name task:%s name:%s" task name;
+		Impl.get_by_name context ~task ~name
+
 	module Mirror = struct
 		let start context ~task ~sr ~vdi ~url ~dest =
 			info "Mirror.start task:%s sr:%s vdi:%s url:%s dest:%s" task sr vdi url dest;

@@ -43,6 +43,7 @@ type content_id = string
 (** The result of an operation which creates or examines a VDI *)
 type vdi_info = {
     vdi: vdi;
+	sr: sr;
 	content_id: content_id;
     name_label: string;
     name_description: string;
@@ -216,6 +217,9 @@ module VDI = struct
 	external set_content_id : task:task -> sr:sr -> vdi:vdi -> content_id:content_id -> result = ""
 
 end
+
+(** [get_by_name task name] returns a vdi with [name] (which may be in any SR) *)
+external get_by_name : task:task -> name:string -> result = ""
 
 module Mirror = struct
 

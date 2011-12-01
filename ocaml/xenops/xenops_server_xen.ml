@@ -98,6 +98,10 @@ module Storage = struct
 		| Unit -> ()
 		| x -> failwith (Printf.sprintf "Storage operation returned bad type. Expected Unit; returned: %s" (x |> rpc_of_success_t |> Jsonrpc.to_string))			
 
+	let vdi = function
+		| Vdi vdi -> vdi
+		| x -> failwith (Printf.sprintf "Storage operation returned bad type. Expected Vdi; returned: %s" (x |> rpc_of_success_t |> Jsonrpc.to_string))
+
 	(* Used to identify this VBD to the storage layer *)
 	let id_of frontend_domid vbd = Printf.sprintf "vbd/%d/%s" frontend_domid (snd vbd)
 
@@ -124,10 +128,13 @@ module Storage = struct
 			(fun () ->
 				Client.DP.destroy "deactivate_and_detach" dp false |> success |> unit)
 
-	let get_disk_by_name path = match List.filter (fun x -> x <> "") (String.split '/' path) with
-		| [ sr; vdi ] -> sr, vdi
-		| _ -> raise (Exception (VDI_not_found path))
-
+	let get_disk_by_name task path =
+		debug "Storage.get_disk_by_name %s" path;
+		Xenops_task.with_subtask task (Printf.sprintf "get_by_name %s" path)
+			(fun () ->
+				let vdi = Client.get_by_name "get_by_name" path |> success |> vdi in
+				vdi.sr, vdi.vdi
+			)
 end
 
 let with_disk ~xc ~xs task disk f = match disk with
@@ -135,7 +142,7 @@ let with_disk ~xc ~xs task disk f = match disk with
 	| VDI path ->
 		let open Storage_interface in
 		let open Storage in
-		let sr, vdi = get_disk_by_name path in
+		let sr, vdi = get_disk_by_name task path in
 		let dp = Client.DP.create "with_disk" "xenopsd" in
 		finally
 			(fun () ->
@@ -671,7 +678,7 @@ module VM = struct
 							| None
 							| Some (Local _) -> ()
 							| Some (VDI path) ->
-								let sr, vdi = Storage.get_disk_by_name path in
+								let sr, vdi = Storage.get_disk_by_name task path in
 								Storage.deactivate task (Storage.id_of domid vbd.Vbd.id) sr vdi
 						) d.VmExtra.vbds;
 
@@ -753,7 +760,7 @@ module VBD = struct
 			| Some (Local path) ->
 				{ Storage.domid = this_domid ~xs; params = path }
 			| Some (VDI path) ->
-				let sr, vdi = Storage.get_disk_by_name path in
+				let sr, vdi = Storage.get_disk_by_name task path in
 				let dp = Storage.id_of frontend_domid vbd.id in
 				Storage.attach_and_activate task dp sr vdi (vbd.mode = ReadWrite)
 
