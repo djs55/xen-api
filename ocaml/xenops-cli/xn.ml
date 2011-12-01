@@ -35,6 +35,8 @@ let usage () =
 	Printf.fprintf stderr "%s vbd-list <name or id> - query the states of a VM's block devices\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-insert <id> <disk> - insert a CD into a VBD\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s export-metadata <id> - export metadata associated with <id>\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s export-metadata-xm <id> - export metadata associated with <id> in xm format\n" Sys.argv.(0);
 	()
 
 let success_task id =
@@ -144,6 +146,37 @@ let parse_vif vm_id (x, idx) =
 		other_config = [];
 		extra_private_keys = [];
 	}
+
+let print_vm id =
+	let open Xn_cfg_types in
+	let open Vm in
+	let vm_t, _ = Client.VM.stat id |> success in
+	let boot = match vm_t.ty with
+		| PV { boot = boot } ->
+			begin match boot with
+				| Direct { kernel = k; cmdline = c; ramdisk = i } -> [
+					_builder, "linux";
+					_kernel, k;
+					_root, c
+				] @ (Opt.default [] (Opt.map (fun x -> [ _ramdisk, x ]) i))
+				| Indirect { bootloader = b } -> [
+					_builder, "linux";
+					_bootloader, b;
+				]
+			end
+		| HVM { boot_order = b } -> [
+			_builder, "hvmloader";
+			_boot, b
+		] in
+	let vcpus = [ _vcpus, string_of_int vm_t.vcpus ] in
+	let bytes_to_mib x = Int64.div x (Int64.mul 1024L 1024L) in
+	let memory = [ _memory, vm_t.memory_static_max |> bytes_to_mib |> Int64.to_string ] in
+	let vbds = Client.VBD.list id |> success |> List.map fst in
+	let vbds = [ _disk, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_disk x)) vbds)) ] in
+	let vifs = Client.VIF.list id |> success |> List.map fst in
+	let vifs = [ _vif, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_vif x)) vifs)) ] in
+	String.concat "\n" (List.map (fun (k, v) -> Printf.sprintf "%s=%s" k v)
+		(boot @ vcpus @ memory @ vbds @ vifs))
 
 
 let add filename =
@@ -289,6 +322,12 @@ let export_metadata x filename =
 	let open Vm in
 	let vm, _ = find_by_name x in
 	let txt = Client.VM.export_metadata vm.id |> success in
+	Unixext.write_string_to_file filename txt
+
+let export_metadata_xm x filename =
+	let open Vm in
+	let vm, _ = find_by_name x in
+	let txt = print_vm vm.id in
 	Unixext.write_string_to_file filename txt
 
 let import_metadata filename =
@@ -441,6 +480,8 @@ let _ =
 			remove id
 		| [ "export-metadata"; id; filename ] ->
 			export_metadata id filename
+		| [ "export-metadata-xm"; id; filename ] ->
+			export_metadata_xm id filename
 		| [ "import-metadata"; filename ] ->
 			import_metadata filename
 		| [ "start"; id; "paused" ] ->
