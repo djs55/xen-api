@@ -59,6 +59,22 @@ let parse_source x = match List.filter (fun x -> x <> "") (String.split ':' x) w
 		Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,...\n" x;
 		exit 2
 
+let print_source = function
+	| None -> ""
+	| Some (Local path) -> Printf.sprintf "phy:%s" path
+	| Some (VDI path) -> Printf.sprintf "sm:%s" path
+
+let print_disk vbd =
+	let device_number = snd vbd.Vbd.id in
+	let mode = match vbd.Vbd.mode with
+		| Vbd.ReadOnly -> "r"
+		| Vbd.ReadWrite -> "w" in
+	let ty = match vbd.Vbd.ty with
+		| Vbd.CDROM -> ":cdrom"
+		| Vbd.Disk -> "" in
+	let source = print_source vbd.Vbd.backend in
+	Printf.sprintf "%s,%s%s,%s" source device_number ty mode
+
 let parse_disk vm_id x = match String.split ',' x with
 	| [ source; device_number; rw ] ->
 		let ty, device_number, device_number' = match String.split ':' device_number with
@@ -87,6 +103,27 @@ let parse_disk vm_id x = match String.split ',' x with
 	| _ ->
 		Printf.fprintf stderr "I don't understand '%s'. Please use 'phy:path,xvda,w'\n" x;
 		exit 2
+
+let print_disk vbd =
+	let device_number = snd vbd.Vbd.id in
+	let mode = match vbd.Vbd.mode with
+		| Vbd.ReadOnly -> "r"
+		| Vbd.ReadWrite -> "w" in
+	let ty = match vbd.Vbd.ty with
+		| Vbd.CDROM -> ":cdrom"
+		| Vbd.Disk -> "" in
+	let source = print_source vbd.Vbd.backend in
+	Printf.sprintf "%s,%s%s,%s" source device_number ty mode
+
+let print_vif vif =
+	let mac = if vif.Vif.mac = "" then "" else Printf.sprintf "mac=%s" vif.Vif.mac in
+	let bridge = match vif.Vif.backend with
+		| Bridge x -> Printf.sprintf "bridge=%s" x
+		| VSwitch x -> Printf.sprintf "bridge=%s" x
+		| Netback (_, _) ->
+			Printf.fprintf stderr "Cannot handle backend = Netback(_, _)\n%!";
+			exit 2 in
+	String.concat "," [ mac; bridge ]
 
 let parse_vif vm_id (x, idx) =
 	let open Xn_cfg_types in
