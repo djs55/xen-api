@@ -36,6 +36,7 @@ type error =
 	| Failed_to_shutdown
 	| Device_is_connected
 	| Device_not_connected
+	| Media_not_ejectable
 	| Media_present
 	| Media_not_present
 	| No_bootable_device
