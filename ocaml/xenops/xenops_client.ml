@@ -49,10 +49,8 @@ let event_wait p =
 	done
 
 let wait_for_task id =
-	Printf.fprintf stderr "wait_for id = %s\n%!" id;
 	let finished = function
 		| Dynamic.Task_t t ->
-			Printf.fprintf stderr "got event for id %s\n%!" id;
 			if t.Task.id = id then begin
 				match t.Task.result with
 				| Task.Pending _ -> false
@@ -60,7 +58,6 @@ let wait_for_task id =
 				| Task.Failed _ -> true
 			end else false
 		| x ->
-			Printf.fprintf stderr "ignore event on %s\n%!" (x |> Dynamic.rpc_of_t |> Jsonrpc.to_string);
 			false in 
 	event_wait finished;
 	id

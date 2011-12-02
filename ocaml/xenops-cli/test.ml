@@ -287,7 +287,7 @@ let vm_test_start_shutdown _ =
 		(fun id ->
 			Client.VM.start id |> success |> wait_for_task |> success_task;
 			fail_running (Client.VM.remove id);
-			Client.VM.shutdown id |> success |> wait_for_task |> success_task;
+			Client.VM.shutdown id None |> success |> wait_for_task |> success_task;
 		)
 
 let vm_test_consoles _ =
@@ -297,7 +297,7 @@ let vm_test_consoles _ =
 		(fun id ->
 			success (Client.VM.start id);
 			let (_: Console.t list) = success (Client.CONSOLE.list id) in
-			success (Client.VM.shutdown id);
+			success (Client.VM.shutdown id None);
 		)
 *)
 
@@ -316,7 +316,7 @@ let vm_test_reboot _ =
 					| Dynamic.Vm_t (vm_t, vm_state) ->
 						vm_t.Vm.id = id && vm_state.Vm.domids <> state.Vm.domids
 					| _ -> false);
-			Client.VM.shutdown id |> success |> wait_for_task |> success_task;
+			Client.VM.shutdown id None |> success |> wait_for_task |> success_task;
 		)
 
 let vm_test_halt _ =
@@ -333,7 +333,7 @@ let vm_test_halt _ =
 					| Dynamic.Vm_t (vm_t, vm_state) ->
 						vm_t.Vm.id = id && vm_state.Vm.domids = []
 					| _ -> false);
-			Client.VM.shutdown id |> success |> wait_for_task |> success_task;
+			Client.VM.shutdown id None |> success |> wait_for_task |> success_task;
 		)
 
 let vm_test_suspend _ =

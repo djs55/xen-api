@@ -300,7 +300,7 @@ module VM = struct
 	external list: unit -> ((Vm.t * Vm.state) list option) * (error option) = ""
 
 	external start: Vm.id -> (Task.id option) * (error option) = ""
-	external shutdown: Vm.id -> (Task.id option) * (error option) = ""
+	external shutdown: Vm.id -> float option -> (Task.id option) * (error option) = ""
 	external reboot: Vm.id -> float option -> (Task.id option) * (error option) = ""
 	external suspend: Vm.id -> disk -> (Task.id option) * (error option) = ""
 	external resume: Vm.id -> disk -> (Task.id option) * (error option) = ""

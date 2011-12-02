@@ -407,10 +407,10 @@ let start x paused =
 	if not paused
 	then Client.VM.unpause vm.id |> success |> wait_for_task |> success_task |> ignore_task
 
-let shutdown x =
+let shutdown x timeout =
 	let open Vm in
 	let vm, _ = find_by_name x in
-	Client.VM.shutdown vm.id |> success |> wait_for_task |> success_task
+	Client.VM.shutdown vm.id timeout |> success |> wait_for_task |> success_task
 
 let pause x =
 	let open Vm in
@@ -611,7 +611,9 @@ let _ =
 		| [ "unpause"; id ] ->
 			unpause id |> task
 		| [ "shutdown"; id ] ->
-			shutdown id |> task
+			shutdown id None |> task
+		| [ "shutdown"; id; timeout ] ->
+			shutdown id (Some (float_of_string timeout)) |> task
 		| [ "reboot"; id ] ->
 			reboot id None |> task
 		| [ "reboot"; id; timeout ] ->

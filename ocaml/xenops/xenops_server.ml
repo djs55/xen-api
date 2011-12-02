@@ -54,7 +54,7 @@ let updates = Updates.empty ()
 
 type operation =
 	| VM_start of Vm.id
-	| VM_shutdown of Vm.id
+	| VM_shutdown of (Vm.id * float option)
 	| VM_reboot of (Vm.id * float option)
 	| VM_delay of (Vm.id * float) (** used to suppress fast reboot loops *)
 	| VM_suspend of (Vm.id * data)
@@ -238,8 +238,9 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				perform ~subtask:"VM_destroy" (VM_destroy id) t;
 				raise e
 			end
-		| VM_shutdown id ->
+		| VM_shutdown (id, timeout) ->
 			debug "VM.shutdown %s" id;
+			Opt.iter (fun x -> perform ~subtask:"VM_shutdown_domain(Halt)" (VM_shutdown_domain(id, Halt, x)) t) timeout;
 			perform ~subtask:"VM_destroy" (VM_destroy id) t;
 			List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_unplug %s" (snd vbd.Vbd.id)) (VBD_unplug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
 			List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_unplug %s" (snd vif.Vif.id)) (VIF_unplug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
@@ -247,7 +248,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 		| VM_reboot (id, timeout) ->
 			debug "VM.reboot %s" id;
 			Opt.iter (fun x -> perform ~subtask:"VM_shutdown_domain(Reboot)" (VM_shutdown_domain(id, Reboot, x)) t) timeout;
-			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+			perform ~subtask:"VM_shutdown" (VM_shutdown (id, None)) t;
 			perform ~subtask:"VM_start" (VM_start id) t;
 			perform ~subtask:"VM_unpause" (VM_unpause id) t;
 			Updates.add (Dynamic.Vm id) updates
@@ -263,7 +264,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 		| VM_suspend (id, data) ->
 			debug "VM.suspend %s" id;
 			perform ~subtask:"VM_save" (VM_save (id, [], data)) t;
-			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+			perform ~subtask:"VM_shutdown" (VM_shutdown (id, None)) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_restore_devices id -> (* XXX: this is delayed due to the 'attach'/'activate' behaviour *)
 			debug "VM_restore_devices %s" id;
@@ -314,7 +315,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 							debug "XXX completed signal ok";
 						)
 				);
-			perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+			perform ~subtask:"VM_shutdown" (VM_shutdown (id, None)) t;
 			perform ~subtask:"VM_remove" (VM_remove id) t;
 			Updates.add (Dynamic.Vm id) updates
 		| VM_receive_memory (id, s) ->
@@ -341,7 +342,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 						success |> Jsonrpc.string_of_response
 					end else begin
 						debug "Something went wrong";
-						perform ~subtask:"VM_shutdown" (VM_shutdown id) t;
+						perform ~subtask:"VM_shutdown" (VM_shutdown (id, None)) t;
 						failure |> Jsonrpc.string_of_response
 					end
 				)
@@ -397,13 +398,13 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 					[] in
 			let operations_of_action = function
 				| Vm.Coredump -> []
-				| Vm.Shutdown -> [ VM_shutdown id ]
+				| Vm.Shutdown -> [ VM_shutdown (id, None) ]
 				| Vm.Start    ->
 					let delay = if run_time < 60. then begin
 						debug "VM %s rebooted too quickly; inserting delay" id;
 						[ VM_delay (id, 15.) ]
 					end else [] in
-					let restart = [ VM_shutdown id; VM_start id; VM_unpause id ] in
+					let restart = [ VM_shutdown (id, None); VM_start id; VM_unpause id ] in
 					delay @ restart
 			in
 			let operations = List.concat (List.map operations_of_action actions) in
@@ -598,7 +599,7 @@ module VM = struct
 
 	let start _ id = queue_operation id (VM_start id) |> return
 
-	let shutdown _ id = queue_operation id (VM_shutdown id) |> return
+	let shutdown _ id timeout = queue_operation id (VM_shutdown (id, timeout)) |> return
 
 	let reboot _ id timeout = queue_operation id (VM_reboot (id, timeout)) |> return
 
