@@ -204,23 +204,25 @@ let print_vm id =
 	let open Xn_cfg_types in
 	let open Vm in
 	let vm_t, _ = Client.VM.stat id |> success in
+	let quote x = Printf.sprintf "'%s'" x in
 	let boot = match vm_t.ty with
 		| PV { boot = boot } ->
 			begin match boot with
 				| Direct { kernel = k; cmdline = c; ramdisk = i } -> [
-					_builder, "linux";
-					_kernel, k;
-					_root, c
+					_builder, quote "linux";
+					_kernel, quote k;
+					_root, quote c
 				] @ (Opt.default [] (Opt.map (fun x -> [ _ramdisk, x ]) i))
 				| Indirect { bootloader = b } -> [
-					_builder, "linux";
-					_bootloader, b;
+					_builder, quote "linux";
+					_bootloader, quote b;
 				]
 			end
 		| HVM { boot_order = b } -> [
-			_builder, "hvmloader";
-			_boot, b
+			_builder, quote "hvmloader";
+			_boot, quote b
 		] in
+	let name = [ _name, quote vm_t.name ] in
 	let vcpus = [ _vcpus, string_of_int vm_t.vcpus ] in
 	let bytes_to_mib x = Int64.div x (Int64.mul 1024L 1024L) in
 	let memory = [ _memory, vm_t.memory_static_max |> bytes_to_mib |> Int64.to_string ] in
@@ -233,7 +235,7 @@ let print_vm id =
 	let pcis = List.sort (fun a b -> compare a.Pci.id b.Pci.id) pcis in
 	let pcis = [ _pci, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_pci x)) pcis)) ] in
 	String.concat "\n" (List.map (fun (k, v) -> Printf.sprintf "%s=%s" k v)
-		(boot @ vcpus @ memory @ vbds @ vifs @ pcis))
+		(name @ boot @ vcpus @ memory @ vbds @ vifs @ pcis))
 
 
 let add filename =
@@ -287,7 +289,7 @@ let add filename =
 					boot_order = if mem _boot then find _boot |> string else "cd";
 					qemu_disk_cmdline = false;
 				} in
-			let uuid = if mem _uuid then find _uuid |> string else "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0" in
+			let uuid = if mem _uuid then find _uuid |> string else Uuid.string_of_uuid (Uuid.make_uuid ()) in
 			let name = if mem _name then find _name |> string else uuid in
 			let mib = if mem _memory then find _memory |> int |> Int64.of_int else 64L in
 			let bytes = Int64.mul 1024L (Int64.mul 1024L mib) in
