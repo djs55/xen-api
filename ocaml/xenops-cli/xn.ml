@@ -33,6 +33,8 @@ let usage () =
 	Printf.fprintf stderr "%s resume <name or id> <disk> - resume a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s migrate <name or id> <url> - migrate a VM to <url>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s vbd-list <name or id> - query the states of a VM's block devices\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s pci-add <name or id> <number> <bdf> - associate the PCI device <bdf> with <name or id>\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s pci-remove <name or id> <number> - disassociate the PCI device <bdf> with <name or id>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s pci-list <name or id> - query the states of a VM's PCI devices\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-insert <id> <disk> - insert a CD into a VBD\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
@@ -405,6 +407,25 @@ let vbd_list x =
 		) vbds in
 	List.iter print_endline (header :: lines)
 
+let pci_add x idx bdf =
+	let vm, _ = find_by_name x in
+	let open Pci in
+	let domain, bus, dev, fn = Scanf.sscanf bdf "%04x:%02x:%02x.%1x" (fun a b c d -> a, b, c, d) in
+	let id = Client.PCI.add {
+		id = (vm.Vm.id, idx);
+		domain = domain;
+		bus = bus;
+		dev = dev;
+		fn = fn;
+		msitranslate = false;
+		power_mgmt = false
+	} |> success in
+	Printf.printf "%s.%s\n" (fst id) (snd id)
+
+let pci_remove x idx =
+	let vm, _ = find_by_name x in
+	Client.PCI.remove (vm.Vm.id, idx) |> success
+
 let pci_list x =
 	let vm, _ = find_by_name x in
 	let pcis = success (Client.PCI.list vm.Vm.id) in
@@ -415,7 +436,7 @@ let pci_list x =
 		(fun (pci, state) ->
 			let open Pci in
 			let id = snd pci.id in
-			let bdf = Printf.sprintf "%4x:%2x:%2x.%1x" pci.domain pci.bus pci.dev pci.fn in
+			let bdf = Printf.sprintf "%04x:%02x:%02x.%01x" pci.domain pci.bus pci.dev pci.fn in
 			line id bdf
 		) pcis in
 	List.iter print_endline (header :: lines)
@@ -522,6 +543,10 @@ let _ =
 			migrate id url |> task
 		| [ "vbd-list"; id ] ->
 			vbd_list id
+		| [ "pci-add"; id; idx; bdf ] ->
+			pci_add id idx bdf
+		| [ "pci-remove"; id; idx] ->
+			pci_remove id idx
 		| [ "pci-list"; id ] ->
 			pci_list id
 		| [ "cd-insert"; id; disk ] ->
