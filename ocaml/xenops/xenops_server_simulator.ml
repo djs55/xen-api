@@ -31,6 +31,7 @@ module Domain = struct
 		suspended: bool;
 		vbds: Vbd.t list;
 		vifs: Vif.t list;
+		pcis: Pci.t list;
 		last_create_time: float;
 	} with rpc
 end
@@ -89,6 +90,7 @@ let create_nolock vm () =
 			suspended = false;
 			vifs = [];
 			vbds = [];
+			pcis = [];
 			last_create_time = Unix.gettimeofday ();
 		} in
 		DB.write k domain
@@ -181,6 +183,21 @@ let add_vbd (vm: Vm.id) (vbd: Vbd.t) () =
 		raise (Exception Already_exists)
 	end else DB.write k { d with Domain.vbds = { vbd with Vbd.position = Some this_dn } :: d.Domain.vbds }
 
+let pci_state vm pci () =
+	let k = [ vm ] in
+	if not (DB.exists k)
+	then unplugged_pci
+	else
+		let d = read k in
+		let this_one x = x.Pci.id = pci.Pci.id in
+		match List.filter this_one d.Domain.pcis with
+			| [ pci ] ->
+				{
+					Pci.plugged = true
+				}
+			| [] -> unplugged_pci
+			| _ -> assert false (* at most one *)
+
 let vbd_state vm vbd () =
 	let k = [ vm ] in
 	if not (DB.exists k)
@@ -252,6 +269,10 @@ module VM = struct
 	let set_internal_state vm s =
 		let k = key_of vm in
 		DB.write k (s |> Jsonrpc.of_string |> Domain.t_of_rpc)
+end
+
+module PCI = struct
+	let get_state vm pci = Mutex.execute m (pci_state vm pci)
 end
 
 module VBD = struct

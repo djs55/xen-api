@@ -218,6 +218,9 @@ module type S = sig
 		val get_internal_state: Vm.t -> string
 		val set_internal_state: Vm.t -> string -> unit
 	end
+	module PCI : sig
+		val get_state: Vm.id -> Pci.t -> Pci.state
+	end
 	module VBD : sig
 		val plug: Xenops_task.t -> Vm.id -> Vbd.t -> unit
 		val unplug: Xenops_task.t -> Vm.id -> Vbd.t -> unit

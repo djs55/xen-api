@@ -33,6 +33,7 @@ let usage () =
 	Printf.fprintf stderr "%s resume <name or id> <disk> - resume a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s migrate <name or id> <url> - migrate a VM to <url>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s vbd-list <name or id> - query the states of a VM's block devices\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s pci-list <name or id> - query the states of a VM's PCI devices\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-insert <id> <disk> - insert a CD into a VBD\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s cd-eject <id> - eject a CD from a VBD\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s export-metadata <id> - export metadata associated with <id>\n" Sys.argv.(0);
@@ -404,6 +405,21 @@ let vbd_list x =
 		) vbds in
 	List.iter print_endline (header :: lines)
 
+let pci_list x =
+	let vm, _ = find_by_name x in
+	let pcis = success (Client.PCI.list vm.Vm.id) in
+	let line id bdf =
+		Printf.sprintf "%-10s %-12s" id bdf in
+	let header = line "id" "bdf" in
+	let lines = List.map
+		(fun (pci, state) ->
+			let open Pci in
+			let id = snd pci.id in
+			let bdf = Printf.sprintf "%4x:%2x:%2x.%1x" pci.domain pci.bus pci.dev pci.fn in
+			line id bdf
+		) pcis in
+	List.iter print_endline (header :: lines)
+
 let find_vbd id =
 	let vbd_id : Vbd.id = match String.split ~limit:2 '.' id with
 		| [ a; b ] -> a, b
@@ -506,6 +522,8 @@ let _ =
 			migrate id url |> task
 		| [ "vbd-list"; id ] ->
 			vbd_list id
+		| [ "pci-list"; id ] ->
+			pci_list id
 		| [ "cd-insert"; id; disk ] ->
 			cd_insert id disk |> task
 		| [ "cd-eject"; id ] ->

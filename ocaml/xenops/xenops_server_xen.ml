@@ -747,6 +747,23 @@ let on_frontend f frontend =
 			f xc xs frontend_di.Xenctrl.domid frontend_di.Xenctrl.hvm_guest
 		)
 
+module PCI = struct
+	open Pci
+
+	let id_of pci = snd pci.id
+
+	let get_state vm pci =
+		with_xc_and_xs
+			(fun xc xs ->
+				let all = match domid_of_uuid ~xc ~xs (Uuid.uuid_of_string vm) with
+					| Some domid -> Device.PCI.list ~xc ~xs domid |> List.map snd
+					| None -> [] in
+				{
+					plugged = List.mem (pci.domain, pci.bus, pci.dev, pci.fn) all
+				}
+			)
+end
+
 module VBD = struct
 	open Vbd
 

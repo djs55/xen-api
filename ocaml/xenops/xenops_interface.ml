@@ -171,6 +171,23 @@ module Vm = struct
 
 end
 
+module Pci = struct
+
+	type id = string * string
+
+	type t = {
+		id: id;
+		domain: int;
+		bus: int;
+		dev: int;
+		fn: int;
+	}
+
+	type state = {
+		plugged: bool;
+	}
+end
+
 module Vbd = struct
 
 	type mode = ReadOnly | ReadWrite
@@ -289,6 +306,12 @@ module VM = struct
 
 	external export_metadata: Vm.id -> (string option) * (error option) = ""
 	external import_metadata: string -> (Vm.id option) * (error option) = ""
+end
+
+module PCI = struct
+	external add: Pci.t -> (Pci.id option) * (error option) = ""
+	external remove: Pci.id -> (unit option) * (error option) = ""
+	external list: Vm.id -> ((Pci.t * Pci.state) list option) * (error option) = ""
 end
 
 module VBD = struct

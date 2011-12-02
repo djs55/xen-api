@@ -131,6 +131,10 @@ let halted_vm = {
 	last_start_time = 0.;
 }
 
+let unplugged_pci = {
+	Pci.plugged = false;
+}
+
 let unplugged_vbd = {
 	Vbd.plugged = false;
 	kthread_pid = 0;

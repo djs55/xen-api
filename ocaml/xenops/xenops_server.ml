@@ -146,6 +146,24 @@ module VM_DB = struct
 		List.combine vms states
 end
 
+module PCI_DB = struct
+	include TypedTable(struct
+		include Pci
+		let namespace = "PCI"
+	end)
+	let key_of k = [ fst k; "pci." ^ (snd k) ]
+	let vm_of = fst
+	let string_of_id (a, b) = a ^ "." ^ b
+
+	let list vm =
+		debug "PCI.list";
+		let key_of' id = [ vm; "pci." ^ id ] in
+		let xs = list [ vm ] |> (filter_prefix "pci.") |> (List.map (read ++ key_of')) |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.PCI.get_state vm) xs in
+		List.combine xs states
+end
+
 module VBD_DB = struct
 	include TypedTable(struct
 		include Vbd
@@ -439,6 +457,27 @@ let queue_operation id op =
 let immediate_operation id op =
 	let task = Xenops_task.add (fun t -> perform op t) in
 	Xenops_task.run task
+
+module PCI = struct
+	open Pci
+	module DB = PCI_DB
+
+	let string_of_id (a, b) = a ^ "." ^ b
+	let add' x =
+		debug "PCI.add %s %s" (string_of_id x.id) (Jsonrpc.to_string (rpc_of_t x));
+		DB.add (DB.key_of x.id) x;
+		x.id
+	let add _ x = add' x |> return
+
+	let remove _ id =
+		debug "PCI.remove %s" (string_of_id id);
+		let module B = (val get_backend () : S) in
+		if (B.PCI.get_state (DB.vm_of id) (id |> DB.key_of |> DB.read |> unbox)).Pci.plugged
+		then raise (Exception Device_is_connected)
+		else return (DB.remove (DB.key_of id))
+
+	let list _ vm = DB.list vm |> return
+end
 
 module VBD = struct
 	open Vbd
