@@ -181,6 +181,8 @@ module Pci = struct
 		bus: int;
 		dev: int;
 		fn: int;
+		msitranslate: bool;
+		power_mgmt: bool;
 	}
 
 	type state = {
