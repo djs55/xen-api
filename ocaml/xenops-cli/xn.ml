@@ -69,6 +69,56 @@ let print_source = function
 	| Some (Local path) -> Printf.sprintf "phy:%s" path
 	| Some (VDI path) -> Printf.sprintf "sm:%s" path
 
+let print_pci x =
+	let open Pci in
+	let open Xn_cfg_types in
+	Printf.sprintf "%04x:%02x:%02x.%01x,%s=%d,%s=%d" x.domain x.bus x.dev x.fn
+		_msitranslate (if x.msitranslate then 1 else 0)
+		_power_mgmt (if x.power_mgmt then 1 else 0)
+
+let parse_pci vm_id (x, idx) = match String.split ',' x with
+	| bdf :: options ->
+		let hex x = int_of_string ("0x" ^ x) in
+		let parse_dev_fn x = match String.split '.' x with
+			| [ dev; fn ] -> hex dev, hex fn
+			| _ ->
+				Printf.fprintf stderr "Failed to parse BDF: %s. It should be '[DDDD:]BB:VV.F'\n" bdf;
+				exit 2 in
+		let domain, bus, dev, fn = match String.split ':' bdf with
+			| [ domain; bus; dev_dot_fn ] ->
+				let dev, fn = parse_dev_fn dev_dot_fn in
+				hex domain, hex bus, dev, fn
+			| [ bus; dev_dot_fn ] ->
+				let dev, fn = parse_dev_fn dev_dot_fn in
+				0, hex bus, dev, fn
+			| _ ->
+				Printf.fprintf stderr "Failed to parse BDF: %s. It should be '[DDDD:]BB:VV.F'\n" bdf;
+				exit 2 in
+		let options = List.map (fun x -> match String.split ~limit:2 '=' x with
+			| [k; v] -> k, v
+			| _ ->
+				Printf.fprintf stderr "Failed to parse PCI option: %s. It should be key=value.\n" x;
+				exit 2
+		) options in
+		let default_bool d k opts =
+			if List.mem_assoc k opts then List.assoc k opts = "1" else d in
+		let open Pci in
+		let open Xn_cfg_types in
+		let msitranslate = default_bool false _msitranslate options in
+		let power_mgmt = default_bool false _power_mgmt options in
+		{
+			Pci.id = vm_id, string_of_int idx;
+			domain = domain;
+			bus = bus;
+			dev = dev;
+			fn = fn;
+			msitranslate = msitranslate;
+			power_mgmt = power_mgmt
+		}
+	| _ ->
+		Printf.fprintf stderr "Failed to parse PCI '%s'. It should be '[DDDD:]BB:VV.F[,option1[,option2]]'." x;
+		exit 2
+
 let print_disk vbd =
 	let device_number = snd vbd.Vbd.id in
 	let mode = match vbd.Vbd.mode with
@@ -178,8 +228,12 @@ let print_vm id =
 	let vbds = [ _disk, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_disk x)) vbds)) ] in
 	let vifs = Client.VIF.list id |> success |> List.map fst in
 	let vifs = [ _vif, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_vif x)) vifs)) ] in
+	let pcis = Client.PCI.list id |> success |> List.map fst in
+	(* Sort into order based on id *)
+	let pcis = List.sort (fun a b -> compare a.Pci.id b.Pci.id) pcis in
+	let pcis = [ _pci, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_pci x)) pcis)) ] in
 	String.concat "\n" (List.map (fun (k, v) -> Printf.sprintf "%s=%s" k v)
-		(boot @ vcpus @ memory @ vbds @ vifs))
+		(boot @ vcpus @ memory @ vbds @ vifs @ pcis))
 
 
 let add filename =
@@ -272,6 +326,10 @@ let add filename =
 			let vifs = List.combine vifs (Range.to_list (Range.make 0 (List.length vifs))) in
 			let one x = x |> parse_vif id |> Client.VIF.add |> success in
 			let (_: Vif.id list) = List.map one vifs in
+			let pcis = if mem _pci then find _pci |> list string else [] in
+			let pcis = List.combine pcis (Range.to_list (Range.make 0 (List.length pcis))) in
+			let one x = x |> parse_pci id |> Client.PCI.add |> success in
+			let (_: Pci.id list) = List.map one pcis in
 			Printf.printf "%s\n" id
 		)
 

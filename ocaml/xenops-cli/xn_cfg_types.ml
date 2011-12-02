@@ -45,3 +45,6 @@ let _type = "type"
 let _vifname = "vifname"
 
 let _disk = "disk"
+let _pci = "pci"
+let _msitranslate = "msitranslate"
+let _power_mgmt = "power_mgmt"
