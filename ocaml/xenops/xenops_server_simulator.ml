@@ -183,6 +183,16 @@ let add_vbd (vm: Vm.id) (vbd: Vbd.t) () =
 		raise (Exception Already_exists)
 	end else DB.write k { d with Domain.vbds = { vbd with Vbd.position = Some this_dn } :: d.Domain.vbds }
 
+let add_pci (vm: Vm.id) (pci: Pci.t) () =
+	debug "add_pci";
+	let k = [ vm ] in
+	let d = read k in
+	let existing_positions = List.map (fun pci -> pci.Pci.position) d.Domain.pcis in
+	if List.mem pci.Pci.position existing_positions then begin
+		debug "PCI.plug %s.%s: Already exists" (fst pci.Pci.id) (snd pci.Pci.id);
+		raise (Exception Already_exists)
+	end else DB.write k { d with Domain.pcis = pci :: d.Domain.pcis }
+
 let pci_state vm pci () =
 	let k = [ vm ] in
 	if not (DB.exists k)
@@ -240,6 +250,14 @@ let remove_vif vm vif () =
 	then raise (Exception Does_not_exist)
 	else DB.write k { d with Domain.vifs = List.filter (fun x -> not (this_one x)) d.Domain.vifs }
 
+let remove_pci vm pci () =
+	let k = [ vm ] in
+	let d = read k in
+	let this_one x = x.Pci.id = pci.Pci.id in
+	if List.filter this_one d.Domain.pcis = []
+	then raise (Exception Does_not_exist)
+	else DB.write k { d with Domain.pcis = List.filter (fun x -> not (this_one x)) d.Domain.pcis }
+
 let remove_vbd vm vbd () =
 	let k = [ vm ] in
 	let d = read k in
@@ -272,6 +290,9 @@ module VM = struct
 end
 
 module PCI = struct
+	let plug _ (vm: Vm.id) (pci: Pci.t) = Mutex.execute m (add_pci vm pci)
+	let unplug _ vm pci = Mutex.execute m (remove_pci vm pci)
+
 	let get_state vm pci = Mutex.execute m (pci_state vm pci)
 end
 

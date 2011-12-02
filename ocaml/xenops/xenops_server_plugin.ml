@@ -220,6 +220,8 @@ module type S = sig
 	end
 	module PCI : sig
 		val get_state: Vm.id -> Pci.t -> Pci.state
+		val plug: Xenops_task.t -> Vm.id -> Pci.t -> unit
+		val unplug: Xenops_task.t -> Vm.id -> Pci.t -> unit
 	end
 	module VBD : sig
 		val plug: Xenops_task.t -> Vm.id -> Vbd.t -> unit

@@ -73,6 +73,8 @@ type operation =
 	| VM_unpause of Vm.id
 	| VM_check_state of Vm.id
 	| VM_remove of Vm.id
+	| PCI_plug of Pci.id
+	| PCI_unplug of Pci.id
 	| VBD_plug of Vbd.id
 	| VBD_unplug of Vbd.id
 	| VBD_insert of Vbd.id * disk
@@ -223,10 +225,13 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				perform ~subtask:"VM_build" (VM_build id) t;
 				List.iter (fun vbd -> perform ~subtask:(Printf.sprintf "VBD_plug %s" (snd vbd.Vbd.id)) (VBD_plug vbd.Vbd.id) t) (VBD_DB.list id |> List.map fst);
 				List.iter (fun vif -> perform ~subtask:(Printf.sprintf "VIF_plug %s" (snd vif.Vif.id)) (VIF_plug vif.Vif.id) t) (VIF_DB.list id |> List.map fst);
-				(* Unfortunately this has to be done after the devices have been created since
+				(* Unfortunately this has to be done after the vbd,vif devices have been created since
 				   qemu reads xenstore keys in preference to its own commandline. After this is
 				   fixed we can consider creating qemu as a part of the 'build' *)
 				perform ~subtask:"VM_create_device_model" (VM_create_device_model (id, false)) t;
+				(* We hotplug PCI devices into HVM guests via qemu, since otherwise hotunplug triggers
+				   some kind of unfixed race condition causing an interrupt storm. *)
+				List.iter (fun pci -> perform ~subtask:(Printf.sprintf "PCI_plug %s" (snd pci.Pci.id)) (PCI_plug pci.Pci.id) t) (PCI_DB.list id |> List.map fst |> List.sort (fun a b -> compare a.Pci.position b.Pci.position));
 				Updates.add (Dynamic.Vm id) updates
 			with e ->
 				debug "VM.start threw error: %s. Calling VM.destroy" (Printexc.to_string e);
@@ -268,6 +273,9 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			   qemu reads xenstore keys in preference to its own commandline. After this is
 			   fixed we can consider creating qemu as a part of the 'build' *)
 			perform ~subtask:"VM_create_device_model" (VM_create_device_model (id, true)) t;
+			(* We hotplug PCI devices into HVM guests via qemu, since otherwise hotunplug triggers
+			   some kind of unfixed race condition causing an interrupt storm. *)
+			List.iter (fun pci -> perform ~subtask:(Printf.sprintf "PCI_plug %s" (snd pci.Pci.id)) (PCI_plug pci.Pci.id) t) (PCI_DB.list id |> List.map fst |> List.sort (fun a b -> compare a.Pci.position b.Pci.position));
 		| VM_resume (id, data) ->
 			debug "VM.resume %s" id;
 			perform ~subtask:"VM_create" (VM_create id) t;
@@ -408,6 +416,12 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				| Halted ->
 					VM_DB.remove [ id ]
 			end
+		| PCI_plug id ->
+			debug "PCI.plug %s" (PCI_DB.string_of_id id);
+			B.PCI.plug t (PCI_DB.vm_of id) (id |> PCI_DB.key_of |> PCI_DB.read |> unbox)
+		| PCI_unplug id ->
+			debug "PCI.unplug %s" (PCI_DB.string_of_id id);
+			B.PCI.unplug t (PCI_DB.vm_of id) (id |> PCI_DB.key_of |> PCI_DB.read |> unbox)
 		| VBD_plug id ->
 			debug "VBD.plug %s" (VBD_DB.string_of_id id);
 			B.VBD.plug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)

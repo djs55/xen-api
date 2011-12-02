@@ -108,6 +108,7 @@ let parse_pci vm_id (x, idx) = match String.split ',' x with
 		let power_mgmt = default_bool false _power_mgmt options in
 		{
 			Pci.id = vm_id, string_of_int idx;
+			position = idx;
 			domain = domain;
 			bus = bus;
 			dev = dev;
@@ -231,8 +232,8 @@ let print_vm id =
 	let vifs = Client.VIF.list id |> success |> List.map fst in
 	let vifs = [ _vif, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_vif x)) vifs)) ] in
 	let pcis = Client.PCI.list id |> success |> List.map fst in
-	(* Sort into order based on id *)
-	let pcis = List.sort (fun a b -> compare a.Pci.id b.Pci.id) pcis in
+	(* Sort into order based on position *)
+	let pcis = List.sort (fun a b -> compare a.Pci.position b.Pci.position) pcis in
 	let pcis = [ _pci, Printf.sprintf "[ %s ]" (String.concat ", " (List.map (fun x -> Printf.sprintf "'%s'" (print_pci x)) pcis)) ] in
 	String.concat "\n" (List.map (fun (k, v) -> Printf.sprintf "%s=%s" k v)
 		(name @ boot @ vcpus @ memory @ vbds @ vifs @ pcis))
@@ -473,6 +474,7 @@ let pci_add x idx bdf =
 	let domain, bus, dev, fn = Scanf.sscanf bdf "%04x:%02x:%02x.%1x" (fun a b c d -> a, b, c, d) in
 	let id = Client.PCI.add {
 		id = (vm.Vm.id, idx);
+		position = int_of_string idx;
 		domain = domain;
 		bus = bus;
 		dev = dev;
@@ -490,14 +492,14 @@ let pci_list x =
 	let vm, _ = find_by_name x in
 	let pcis = success (Client.PCI.list vm.Vm.id) in
 	let line id bdf =
-		Printf.sprintf "%-10s %-12s" id bdf in
-	let header = line "id" "bdf" in
+		Printf.sprintf "%-10s %-3s %-12s" id bdf in
+	let header = line "id" "pos" "bdf" in
 	let lines = List.map
 		(fun (pci, state) ->
 			let open Pci in
 			let id = snd pci.id in
 			let bdf = Printf.sprintf "%04x:%02x:%02x.%01x" pci.domain pci.bus pci.dev pci.fn in
-			line id bdf
+			line id (string_of_int pci.position) bdf
 		) pcis in
 	List.iter print_endline (header :: lines)
 

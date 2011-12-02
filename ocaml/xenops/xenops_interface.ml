@@ -177,6 +177,7 @@ module Pci = struct
 
 	type t = {
 		id: id;
+		position: int;
 		domain: int;
 		bus: int;
 		dev: int;

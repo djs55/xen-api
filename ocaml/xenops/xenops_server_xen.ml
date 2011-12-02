@@ -762,6 +762,28 @@ module PCI = struct
 					plugged = List.mem (pci.domain, pci.bus, pci.dev, pci.fn) all
 				}
 			)
+
+	let plug task vm pci =
+		let device = pci.domain, pci.bus, pci.dev, pci.fn in
+		let msitranslate = if pci.msitranslate then 1 else 0
+		and pci_power_mgmt = if pci.power_mgmt then 1 else 0 in
+		Device.PCI.bind [ device ];
+		on_frontend
+			(fun xc xs frontend_domid hvm ->
+				(* If the guest is HVM then we plug via qemu *)
+				if hvm
+				then Device.PCI.plug ~xc ~xs device frontend_domid
+				else Device.PCI.add ~xc ~xs ~hvm ~msitranslate ~pci_power_mgmt [ device ] frontend_domid 0
+			) vm
+
+	let unplug task vm pci =
+		let device = pci.domain, pci.bus, pci.dev, pci.fn in
+		on_frontend
+			(fun xc xs frontend_domid hvm ->
+				if hvm
+				then Device.PCI.unplug ~xc ~xs device frontend_domid
+				else debug "PCI.unplug for PV guests is unsupported"
+			) vm
 end
 
 module VBD = struct
