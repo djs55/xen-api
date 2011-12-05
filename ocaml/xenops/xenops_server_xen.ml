@@ -1031,7 +1031,6 @@ type origin =
 type watch =
 	| Xapi_private
 	| Data_updated
-	| Messages
 	| Memory_target
 	| Memory_uncooperative
 	| Console_VNC
@@ -1039,7 +1038,7 @@ type watch =
 	| Rtc_timeoffset
 
 let all_watches = [
-	Xapi_private; Data_updated; Messages; Memory_target;
+	Xapi_private; Data_updated; Memory_target;
 	Memory_uncooperative; Console_VNC; Console_Text;
 	Rtc_timeoffset;
 ]
@@ -1048,7 +1047,6 @@ let path_of_watch domid uuid =
 	let open Printf in function
 		| Xapi_private         -> sprintf "/xapi/%d" domid
 		| Data_updated         -> sprintf "/local/domain/%d/data/updated" domid
-		| Messages             -> sprintf "/local/domain/%d/messages" domid
 		| Memory_target        -> sprintf "/local/domain/%d/memory/target" domid
 		| Memory_uncooperative -> sprintf "/local/domain/%d/memory/uncooperative" domid
 		| Console_VNC          -> sprintf "/local/domain/%d/console/vnc-port" domid
@@ -1061,7 +1059,6 @@ let watch_of_path path =
 	match List.filter (fun x -> x <> "") (String.split '/' path) with
 		| [ "xapi"; domid ]                                       -> Some (int domid, Xapi_private)
 		| [ "local"; "domain"; domid; "data"; "updated" ]         -> Some (int domid, Data_updated)
-		| [ "local"; "domain"; domid; "messages" ]                -> Some (int domid, Messages)
 		| [ "local"; "domain"; domid; "memory"; "target" ]        -> Some (int domid, Memory_target)
 		| [ "local"; "domain"; domid; "memory"; "uncooperative" ] -> Some (int domid, Memory_uncooperative)
 		| [ "local"; "domain"; domid; "console"; "vnc-port" ]     -> Some (int domid, Console_VNC)
@@ -1135,8 +1132,6 @@ let watch_xenstore () =
 								begin match watch with
 									| Xapi_private ->
 										debug "UNHANDLED: /xapi"
-									| Messages ->
-										debug "UNHANDLED: messages"
 									| Data_updated
 									| Rtc_timeoffset
 									| Memory_target
