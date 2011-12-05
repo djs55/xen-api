@@ -984,12 +984,13 @@ end
 let _introduceDomain = "@introduceDomain"
 let _releaseDomain = "@releaseDomain"
 
-module StringMap = Map.Make(struct type t = string let compare = compare end)
+module IntMap = Map.Make(struct type t = int let compare = compare end)
+module IntSet = Set.Make(struct type t = int let compare = compare end)
 
 let list_domains xc =
 	let dis = Xenctrl.domain_getinfolist xc 0 in
-	let ids = List.map (fun x -> Uuid.uuid_of_int_array x.Xenctrl.handle |> Uuid.string_of_uuid) dis in
-	List.fold_left (fun map (k, v) -> StringMap.add k v map) StringMap.empty (List.combine ids dis)
+	let ids = List.map (fun x -> x.Xenctrl.domid) dis in
+	List.fold_left (fun map (k, v) -> IntMap.add k v map) IntMap.empty (List.combine ids dis)
 
 let domain_looks_different a b = match a, b with
 	| None, Some _ -> true
@@ -1000,21 +1001,54 @@ let domain_looks_different a b = match a, b with
 		|| (a'.Xenctrl.shutdown && b'.Xenctrl.shutdown && (a'.Xenctrl.shutdown_code <> b'.Xenctrl.shutdown_code))
 
 let list_different_domains a b =
-	let c = StringMap.merge (fun _ a b -> if domain_looks_different a b then Some () else None) a b in
-	List.map fst (StringMap.bindings c)
+	let c = IntMap.merge (fun _ a b -> if domain_looks_different a b then Some () else None) a b in
+	List.map fst (IntMap.bindings c)
+
+(* List of paths we need to watch per-domain *)
+let xenstore_watches domid =
+	let open Printf in
+	[
+		sprintf "/xapi/%d" domid;
+		sprintf "/local/domain/%d/data/updated" domid; (* guest agent *)
+		sprintf "/local/domain/%d/messages" domid; (* messages *)
+		sprintf "/local/domain/%d/memory/target" domid;
+		sprintf "/local/domain/%d/memory/uncooperative" domid;
+		sprintf "/local/domain/%d/console" domid;
+		sprintf "/local/domain/%d/device" domid;
+		sprintf "/local/domain/%d/error/device" domid;
+	]
+
+let add_watches xs domid = List.iter (fun p -> xs.Xs.watch p p) (xenstore_watches domid)
+let remove_watches xs domid = List.iter (fun p -> xs.Xs.unwatch p p) (xenstore_watches domid)
 
 let watch_xenstore () =
 	with_xc_and_xs
 		(fun xc xs ->
-
-			let domains = ref StringMap.empty in
+			let domains = ref IntMap.empty in
+			let watches = ref IntSet.empty in
 			let look_for_different_domains () =
 				let domains' = list_domains xc in
 				let different = list_different_domains !domains domains' in
 				List.iter
-					(fun id ->
-						debug "Domain %s has changed state" id;
-						Updates.add (Dynamic.Vm id) updates
+					(fun domid ->
+						debug "Domain %d has changed state" domid;
+						(* The uuid is either in the new domains map or the old map. *)
+						let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
+						let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
+						Updates.add (Dynamic.Vm id) updates;
+						(* A domain is 'running' if we know it has not shutdown *)
+						let running = IntMap.mem domid domains' && (not (IntMap.find domid domains').Xenctrl.shutdown) in
+						match IntSet.mem domid !watches, running with
+							| true, true -> () (* still running, nothing to do *)
+							| false, false -> () (* still offline, nothing to do *)
+							| false, true ->
+								debug "Registering watches for new domain: %d" domid;
+								add_watches xs domid;
+								watches := IntSet.add domid !watches
+							| true, false ->
+								debug "Unregistering watches for old domain: %d" domid;
+								remove_watches xs domid;
+								watches := IntSet.remove domid !watches
 					) different;
 				domains := domains' in
 
@@ -1029,6 +1063,7 @@ let watch_xenstore () =
 					else Xs.read_watchevent xs in
 				if path = _introduceDomain || path = _releaseDomain
 				then look_for_different_domains ()
+				else debug "Ignoring watch: %s" path
 			done
 		)
 
