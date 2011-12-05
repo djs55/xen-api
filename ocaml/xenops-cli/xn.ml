@@ -33,6 +33,7 @@ let usage () =
 	Printf.fprintf stderr "%s resume <name or id> <disk> - resume a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s migrate <name or id> <url> - migrate a VM to <url>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s vbd-list <name or id> - query the states of a VM's block devices\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s console-list <name or id> - query the states of a VM's consoles\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s pci-add <name or id> <number> <bdf> - associate the PCI device <bdf> with <name or id>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s pci-remove <name or id> <number> - disassociate the PCI device <bdf> with <name or id>\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s pci-list <name or id> - query the states of a VM's PCI devices\n" Sys.argv.(0);
@@ -469,6 +470,20 @@ let vbd_list x =
 		) vbds in
 	List.iter print_endline (header :: lines)
 
+let console_list x =
+	let _, s = find_by_name x in
+	let line protocol port =
+		Printf.sprintf "%-10s %-6s" protocol port in
+	let header = line "protocol" "port" in
+	let lines = List.map
+		(fun c ->
+			let protocol = match c.Vm.protocol with
+				| Vm.Rfb -> "RFB"
+				| Vm.Vt100 -> "VT100" in
+			line protocol (string_of_int c.Vm.port)
+		) s.Vm.consoles in
+	List.iter print_endline (header :: lines)
+
 let pci_add x idx bdf =
 	let vm, _ = find_by_name x in
 	let open Pci in
@@ -626,6 +641,8 @@ let _ =
 			migrate id url |> task
 		| [ "vbd-list"; id ] ->
 			vbd_list id
+		| [ "console-list"; id ] ->
+			console_list id
 		| [ "pci-add"; id; idx; bdf ] ->
 			pci_add id idx bdf
 		| [ "pci-remove"; id; idx] ->
