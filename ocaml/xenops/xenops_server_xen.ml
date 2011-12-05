@@ -711,14 +711,22 @@ module VM = struct
 							(Device.get_vnc_port ~xs d)in
 						let tc = Opt.map (fun port -> { Vm.protocol = Vm.Vt100; port = port })
 							(Device.get_tc_port ~xs d) in
-						let uncooperative = try ignore_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/uncooperative" d)); true with Xenbus.Xb.Noent -> false in
-						let memory_target = try xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/target" d) |> Int64.of_string |> Int64.mul 1024L with Xenbus.Xb.Noent -> 0L in
+						let local x = Printf.sprintf "/local/domain/%d/%s" d x in
+						let uncooperative = try ignore_string (xs.Xs.read (local "memory/uncooperative")); true with Xenbus.Xb.Noent -> false in
+						let memory_target = try xs.Xs.read (local "memory/target") |> Int64.of_string |> Int64.mul 1024L with Xenbus.Xb.Noent -> 0L in
 						let rtc = try xs.Xs.read (Printf.sprintf "/vm/%s/rtc/timeoffset" (Uuid.string_of_uuid uuid)) with Xenbus.Xb.Noent -> "" in
-						{ halted_vm with
+						let rec ls_lR root dir =
+							let this = try [ dir, xs.Xs.read (root ^ "/" ^ dir) ] with _ -> [] in
+							let subdirs = try List.map (fun x -> dir ^ "/" ^ x) (xs.Xs.directory (root ^ "/" ^ dir)) with _ -> [] in
+							this @ (List.concat (List.map (ls_lR root) subdirs)) in
+						let guest_agent =
+							[ "drivers"; "attr"; "data" ] |> List.map (ls_lR (Printf.sprintf "/local/domain/%d" d)) |> List.concat in
+						{
 							Vm.power_state = Running;
 							domids = [ d ];
 							consoles = Opt.to_list vnc @ (Opt.to_list tc);
 							uncooperative_balloon_driver = uncooperative;
+							guest_agent = guest_agent;
 							memory_target = memory_target;
 							rtc_timeoffset = rtc;
 							last_start_time = match vme with
@@ -1127,10 +1135,9 @@ let watch_xenstore () =
 								begin match watch with
 									| Xapi_private ->
 										debug "UNHANDLED: /xapi"
-									| Data_updated ->
-										debug "UNHANDLED: data/updated"
 									| Messages ->
 										debug "UNHANDLED: messages"
+									| Data_updated
 									| Rtc_timeoffset
 									| Memory_target
 									| Memory_uncooperative
