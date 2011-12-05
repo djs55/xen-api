@@ -711,10 +711,12 @@ module VM = struct
 							(Device.get_vnc_port ~xs d)in
 						let tc = Opt.map (fun port -> { Vm.protocol = Vm.Vt100; port = port })
 							(Device.get_tc_port ~xs d) in
+						let uncooperative = try ignore_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/uncooperative" d)); true with Xenbus.Xb.Noent -> false in
 						{ halted_vm with
 							Vm.power_state = Running;
 							domids = [ d ];
 							consoles = Opt.to_list vnc @ (Opt.to_list tc);
+							uncooperative_balloon_driver = uncooperative;
 							last_start_time = match vme with
 								| Some x -> x.VmExtra.last_create_time
 								| None -> 0.
@@ -1109,8 +1111,7 @@ let watch_xenstore () =
 									debug "UNHANDLED: messages"						
 								| Memory_target ->
 									debug "UNHANDLED: target"
-								| Memory_uncooperative ->
-									debug "UNHANDLED: uncooperative"
+								| Memory_uncooperative
 								| Console_VNC | Console_Text ->
 									Updates.add (Dynamic.Vm id) updates;
 							end

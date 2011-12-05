@@ -22,7 +22,7 @@ open Xenops_client
 let usage () =
 	Printf.fprintf stderr "%s <command> [args] - send commands to the xenops daemon\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s add <config> - add a VM from <config>\n" Sys.argv.(0);
-	Printf.fprintf stderr "%s list - query the states of known VMs\n" Sys.argv.(0);
+	Printf.fprintf stderr "%s list [verbose] - query the states of known VMs\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s remove <name or id> - forget about a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s start <name or id> [paused] - start a VM\n" Sys.argv.(0);
 	Printf.fprintf stderr "%s pause <name or id> - pause a VM\n" Sys.argv.(0);
@@ -338,6 +338,22 @@ let add filename =
 			Printf.printf "%s\n" id
 		)
 
+let string_of_power_state = function
+	| Running   -> "Running"
+	| Suspended -> "Suspend"
+	| Halted    -> "Halted "
+	| Paused    -> "Paused "
+
+let list_verbose () =
+	let open Vm in
+	let vms = success (Client.VM.list ()) in
+	List.iter
+		(fun (vm, state) ->
+			Printf.printf "%-45s%-5s\n"  vm.name (state.power_state |> string_of_power_state);
+			Printf.printf "  %s\n" (vm |> rpc_of_t |> Jsonrpc.to_string);
+			Printf.printf "  %s\n" (state |> rpc_of_state |> Jsonrpc.to_string);
+		) vms
+
 let list () =
 	let open Vm in
 	let line name domid mem vcpus state time =
@@ -349,11 +365,7 @@ let list () =
 			| _ -> "-" in
 		let mem = Int64.to_string (Int64.div (Int64.div vm.memory_static_max 1024L) 1024L) in
 		let vcpus = string_of_int vm.vcpus in
-		let state = match state.Vm.power_state with
-			| Running   -> "Running"
-			| Suspended -> "Suspend"
-			| Halted    -> "Halted "
-			| Paused    -> "Paused " in
+		let state = state.Vm.power_state |> string_of_power_state in
 		line vm.name domid mem vcpus state "" in
 	let vms = success (Client.VM.list ()) in
 	let lines = header :: (List.map string_of_vm vms) in
@@ -609,6 +621,8 @@ let _ =
 			add filename
 		| [ "list" ] ->
 			list ()
+		| [ "list"; "verbose" ] ->
+			list_verbose ()
 		| [ "remove"; id ] ->
 			remove id
 		| [ "export-metadata"; id; filename ] ->
