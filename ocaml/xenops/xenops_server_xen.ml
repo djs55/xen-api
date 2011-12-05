@@ -1024,47 +1024,18 @@ let list_different_domains a b =
 	let c = IntMap.merge (fun _ a b -> if domain_looks_different a b then Some () else None) a b in
 	List.map fst (IntMap.bindings c)
 
-type origin =
-	| Domid of int
-	| Uuid of string
+let all_domU_watches domid uuid =
+	let open Printf in [
+		sprintf "/local/domain/%d/data/updated" domid;
+		sprintf "/local/domain/%d/memory/target" domid;
+		sprintf "/local/domain/%d/memory/uncooperative" domid;
+		sprintf "/local/domain/%d/console/vnc-port" domid;
+		sprintf "/local/domain/%d/console/tc-port" domid;
+		sprintf "/vm/%s/rtc/timeoffset" uuid;
+	]
 
-type watch =
-	| Data_updated
-	| Memory_target
-	| Memory_uncooperative
-	| Console_VNC
-	| Console_Text
-	| Rtc_timeoffset
-
-let all_watches = [
-	Data_updated; Memory_target;
-	Memory_uncooperative; Console_VNC; Console_Text;
-	Rtc_timeoffset;
-]
-
-let path_of_watch domid uuid =
-	let open Printf in function
-		| Data_updated         -> sprintf "/local/domain/%d/data/updated" domid
-		| Memory_target        -> sprintf "/local/domain/%d/memory/target" domid
-		| Memory_uncooperative -> sprintf "/local/domain/%d/memory/uncooperative" domid
-		| Console_VNC          -> sprintf "/local/domain/%d/console/vnc-port" domid
-		| Console_Text         -> sprintf "/local/domain/%d/console/tc-port" domid
-		| Rtc_timeoffset       -> sprintf "/vm/%s/rtc/timeoffset" uuid
-
-let watch_of_path path =
-	let int x = Domid (int_of_string x) in
-	let uuid x = Uuid x in
-	match List.filter (fun x -> x <> "") (String.split '/' path) with
-		| [ "local"; "domain"; domid; "data"; "updated" ]         -> Some (int domid, Data_updated)
-		| [ "local"; "domain"; domid; "memory"; "target" ]        -> Some (int domid, Memory_target)
-		| [ "local"; "domain"; domid; "memory"; "uncooperative" ] -> Some (int domid, Memory_uncooperative)
-		| [ "local"; "domain"; domid; "console"; "vnc-port" ]     -> Some (int domid, Console_VNC)
-		| [ "local"; "domain"; domid; "console"; "tc-port" ]      -> Some (int domid, Console_Text)
-		| [ "vm"; u; "rtc"; "timeoffset" ]                        -> Some (uuid u, Rtc_timeoffset)
-		| _ -> None
-
-let add_watches xs domid uuid = List.iter (fun p -> xs.Xs.watch p p) (List.map (path_of_watch domid uuid) all_watches)
-let remove_watches xs domid uuid = List.iter (fun p -> xs.Xs.unwatch p p) (List.map (path_of_watch domid uuid) all_watches)
+let add_watches xs domid uuid = List.iter (fun p -> xs.Xs.watch p p) (all_domU_watches domid uuid)
+let remove_watches xs domid uuid = List.iter (fun p -> xs.Xs.unwatch p p) (all_domU_watches domid uuid)
 
 let watch_xenstore () =
 	with_xc_and_xs
@@ -1108,34 +1079,18 @@ let watch_xenstore () =
 					else Xs.read_watchevent xs in
 				if path = _introduceDomain || path = _releaseDomain
 				then look_for_different_domains ()
-				else match watch_of_path path with
-					| Some (origin, watch) ->
-						let id = match origin with
-							| Domid d ->
-								(* If the domain has gone then we have to ignore *)
-								if not(IntMap.mem d !domains)
-								then begin
-									debug "Ignoring watch on shutdown domain %d" d;
-									None
-								end else begin
-									let di = IntMap.find d !domains in
-									let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
-									Some id
-								end
-							| Uuid u -> Some u in
-						Opt.iter
-							(fun id ->
-								debug "VM: %s" id;
-								begin match watch with
-									| Data_updated
-									| Rtc_timeoffset
-									| Memory_target
-									| Memory_uncooperative
-									| Console_VNC | Console_Text ->
-										Updates.add (Dynamic.Vm id) updates;
-								end
-							) id
-					| None -> debug "Ignoring unexpected watch: %s" path
+				else match List.filter (fun x -> x <> "") (String.split '/' path) with
+					| "local" :: "domain" :: domid :: _ ->
+						let d = int_of_string domid in
+						if not(IntMap.mem d !domains)
+						then debug "Ignoring watch on shutdown domain %d" d
+						else
+							let di = IntMap.find d !domains in
+							let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
+							Updates.add (Dynamic.Vm id) updates
+					| "vm" :: uuid :: _ ->
+						Updates.add (Dynamic.Vm uuid) updates
+					| _  -> debug "Ignoring unexpected watch: %s" path
 			done
 		)
 
