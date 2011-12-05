@@ -713,12 +713,14 @@ module VM = struct
 							(Device.get_tc_port ~xs d) in
 						let uncooperative = try ignore_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/uncooperative" d)); true with Xenbus.Xb.Noent -> false in
 						let memory_target = try xs.Xs.read (Printf.sprintf "/local/domain/%d/memory/target" d) |> Int64.of_string |> Int64.mul 1024L with Xenbus.Xb.Noent -> 0L in
+						let rtc = try xs.Xs.read (Printf.sprintf "/vm/%s/rtc/timeoffset" (Uuid.string_of_uuid uuid)) with Xenbus.Xb.Noent -> "" in
 						{ halted_vm with
 							Vm.power_state = Running;
 							domids = [ d ];
 							consoles = Opt.to_list vnc @ (Opt.to_list tc);
 							uncooperative_balloon_driver = uncooperative;
 							memory_target = memory_target;
+							rtc_timeoffset = rtc;
 							last_start_time = match vme with
 								| Some x -> x.VmExtra.last_create_time
 								| None -> 0.
@@ -1014,6 +1016,10 @@ let list_different_domains a b =
 	let c = IntMap.merge (fun _ a b -> if domain_looks_different a b then Some () else None) a b in
 	List.map fst (IntMap.bindings c)
 
+type origin =
+	| Domid of int
+	| Uuid of string
+
 type watch =
 	| Xapi_private
 	| Data_updated
@@ -1022,13 +1028,15 @@ type watch =
 	| Memory_uncooperative
 	| Console_VNC
 	| Console_Text
+	| Rtc_timeoffset
 
 let all_watches = [
 	Xapi_private; Data_updated; Messages; Memory_target;
 	Memory_uncooperative; Console_VNC; Console_Text;
+	Rtc_timeoffset;
 ]
 
-let path_of_watch domid =
+let path_of_watch domid uuid =
 	let open Printf in function
 		| Xapi_private         -> sprintf "/xapi/%d" domid
 		| Data_updated         -> sprintf "/local/domain/%d/data/updated" domid
@@ -1037,9 +1045,11 @@ let path_of_watch domid =
 		| Memory_uncooperative -> sprintf "/local/domain/%d/memory/uncooperative" domid
 		| Console_VNC          -> sprintf "/local/domain/%d/console/vnc-port" domid
 		| Console_Text         -> sprintf "/local/domain/%d/console/tc-port" domid
+		| Rtc_timeoffset       -> sprintf "/vm/%s/rtc/timeoffset" uuid
 
 let watch_of_path path =
-	let int = int_of_string in
+	let int x = Domid (int_of_string x) in
+	let uuid x = Uuid x in
 	match List.filter (fun x -> x <> "") (String.split '/' path) with
 		| [ "xapi"; domid ]                                       -> Some (int domid, Xapi_private)
 		| [ "local"; "domain"; domid; "data"; "updated" ]         -> Some (int domid, Data_updated)
@@ -1048,10 +1058,11 @@ let watch_of_path path =
 		| [ "local"; "domain"; domid; "memory"; "uncooperative" ] -> Some (int domid, Memory_uncooperative)
 		| [ "local"; "domain"; domid; "console"; "vnc-port" ]     -> Some (int domid, Console_VNC)
 		| [ "local"; "domain"; domid; "console"; "tc-port" ]      -> Some (int domid, Console_Text)
+		| [ "vm"; u; "rtc"; "timeoffset" ]                        -> Some (uuid u, Rtc_timeoffset)
 		| _ -> None
 
-let add_watches xs domid = List.iter (fun p -> xs.Xs.watch p p) (List.map (path_of_watch domid) all_watches)
-let remove_watches xs domid = List.iter (fun p -> xs.Xs.unwatch p p) (List.map (path_of_watch domid) all_watches)
+let add_watches xs domid uuid = List.iter (fun p -> xs.Xs.watch p p) (List.map (path_of_watch domid uuid) all_watches)
+let remove_watches xs domid uuid = List.iter (fun p -> xs.Xs.unwatch p p) (List.map (path_of_watch domid uuid) all_watches)
 
 let watch_xenstore () =
 	with_xc_and_xs
@@ -1075,11 +1086,11 @@ let watch_xenstore () =
 							| false, false -> () (* still offline, nothing to do *)
 							| false, true ->
 								debug "Registering watches for new domain: %d" domid;
-								add_watches xs domid;
+								add_watches xs domid id;
 								watches := IntSet.add domid !watches
 							| true, false ->
 								debug "Unregistering watches for old domain: %d" domid;
-								remove_watches xs domid;
+								remove_watches xs domid id;
 								watches := IntSet.remove domid !watches
 					) different;
 				domains := domains' in
@@ -1096,26 +1107,37 @@ let watch_xenstore () =
 				if path = _introduceDomain || path = _releaseDomain
 				then look_for_different_domains ()
 				else match watch_of_path path with
-					| Some (domid, watch) ->
-						(* If the domain has gone then we have to ignore *)
-						if not(IntMap.mem domid !domains)
-						then debug "Ignoring watch on shutdown domain %s" (path_of_watch domid watch)
-						else
-							let di = IntMap.find domid !domains in
-							let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
-							debug "VM: %s" id;
-							begin match watch with
-								| Xapi_private ->
-									debug "UNHANDLED: /xapi"
-								| Data_updated ->
-									debug "UNHANDLED: data/updated"
-								| Messages ->
-									debug "UNHANDLED: messages"						
-								| Memory_target
-								| Memory_uncooperative
-								| Console_VNC | Console_Text ->
-									Updates.add (Dynamic.Vm id) updates;
-							end
+					| Some (origin, watch) ->
+						let id = match origin with
+							| Domid d ->
+								(* If the domain has gone then we have to ignore *)
+								if not(IntMap.mem d !domains)
+								then begin
+									debug "Ignoring watch on shutdown domain %d" d;
+									None
+								end else begin
+									let di = IntMap.find d !domains in
+									let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
+									Some id
+								end
+							| Uuid u -> Some u in
+						Opt.iter
+							(fun id ->
+								debug "VM: %s" id;
+								begin match watch with
+									| Xapi_private ->
+										debug "UNHANDLED: /xapi"
+									| Data_updated ->
+										debug "UNHANDLED: data/updated"
+									| Messages ->
+										debug "UNHANDLED: messages"
+									| Rtc_timeoffset
+									| Memory_target
+									| Memory_uncooperative
+									| Console_VNC | Console_Text ->
+										Updates.add (Dynamic.Vm id) updates;
+								end
+							) id
 					| None -> debug "Ignoring unexpected watch: %s" path
 			done
 		)
