@@ -1012,6 +1012,7 @@ let list_domains xc =
 	let ids = List.map (fun x -> x.Xenctrl.domid) dis in
 	List.fold_left (fun map (k, v) -> IntMap.add k v map) IntMap.empty (List.combine ids dis)
 
+
 let domain_looks_different a b = match a, b with
 	| None, Some _ -> true
 	| Some _, None -> true
@@ -1031,17 +1032,60 @@ let all_domU_watches domid uuid =
 		sprintf "/local/domain/%d/memory/uncooperative" domid;
 		sprintf "/local/domain/%d/console/vnc-port" domid;
 		sprintf "/local/domain/%d/console/tc-port" domid;
+		sprintf "/local/domain/%d/device" domid;
 		sprintf "/vm/%s/rtc/timeoffset" uuid;
 	]
 
-let add_watches xs domid uuid = List.iter (fun p -> xs.Xs.watch p p) (all_domU_watches domid uuid)
-let remove_watches xs domid uuid = List.iter (fun p -> xs.Xs.unwatch p p) (all_domU_watches domid uuid)
+let watches_of_device device =
+	let interesting_backend_keys = [
+		"kthread-pid";
+		"tapdisk-pid";
+		"shutdown-done";
+		"params";
+	] in
+	let open Device_common in
+	let be = device.backend.domid in
+	let fe = device.frontend.domid in
+	let kind = string_of_kind device.backend.kind in
+	let devid = device.frontend.devid in
+	List.map (fun k -> Printf.sprintf "/local/domain/%d/backend/%s/%d/%d/%s" be kind fe devid k) interesting_backend_keys
 
 let watch_xenstore () =
 	with_xc_and_xs
 		(fun xc xs ->
 			let domains = ref IntMap.empty in
-			let watches = ref IntSet.empty in
+			let watches = ref IntMap.empty in
+
+			let add_domU_watches xs domid uuid =
+				debug "Watch: domid %d" domid;
+				List.iter (fun p -> xs.Xs.watch p p) (all_domU_watches domid uuid);
+				watches := IntMap.add domid [] !watches in
+			let remove_domU_watches xs domid uuid =
+				debug "Unwatch: domid %d" domid;
+				List.iter (fun p -> xs.Xs.unwatch p p) (all_domU_watches domid uuid);
+				IntMap.iter (fun _ ds ->
+					List.iter (fun d ->
+						List.iter (fun p -> xs.Xs.unwatch p p) (watches_of_device d)
+					) ds
+				) !watches;
+
+				watches := IntMap.remove domid !watches in
+
+			let add_device_watch xs device =
+				let open Device_common in
+				debug "Watch: %s" (string_of_device device);
+				let domid = device.frontend.domid in
+				List.iter (fun p -> xs.Xs.watch p p) (watches_of_device device);
+				watches := IntMap.add domid (device :: (IntMap.find domid !watches)) !watches in
+
+			let remove_device_watch xs device =
+				let open Device_common in
+				debug "Unwatch: %s" (string_of_device device);
+				let domid = device.frontend.domid in
+				let current = IntMap.find domid !watches in
+				List.iter (fun p -> xs.Xs.watch p p) (watches_of_device device);
+				watches := IntMap.add domid (List.filter (fun x -> x <> device) current) !watches in
+
 			let look_for_different_domains () =
 				let domains' = list_domains xc in
 				let different = list_different_domains !domains domains' in
@@ -1051,20 +1095,20 @@ let watch_xenstore () =
 						(* The uuid is either in the new domains map or the old map. *)
 						let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
 						let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
-						Updates.add (Dynamic.Vm id) updates;
-						(* A domain is 'running' if we know it has not shutdown *)
-						let running = IntMap.mem domid domains' && (not (IntMap.find domid domains').Xenctrl.shutdown) in
-						match IntSet.mem domid !watches, running with
-							| true, true -> () (* still running, nothing to do *)
-							| false, false -> () (* still offline, nothing to do *)
-							| false, true ->
-								debug "Registering watches for new domain: %d" domid;
-								add_watches xs domid id;
-								watches := IntSet.add domid !watches
-							| true, false ->
-								debug "Unregistering watches for old domain: %d" domid;
-								remove_watches xs domid id;
-								watches := IntSet.remove domid !watches
+						if not (DB.exists [ id ])
+						then debug "Domain %d is not managed by us: ignoring" domid
+						else begin
+							Updates.add (Dynamic.Vm id) updates;
+							(* A domain is 'running' if we know it has not shutdown *)
+							let running = IntMap.mem domid domains' && (not (IntMap.find domid domains').Xenctrl.shutdown) in
+							match IntMap.mem domid !watches, running with
+								| true, true -> () (* still running, nothing to do *)
+								| false, false -> () (* still offline, nothing to do *)
+								| false, true ->
+									add_domU_watches xs domid id
+								| true, false ->
+									remove_domU_watches xs domid id
+						end
 					) different;
 				domains := domains' in
 
@@ -1080,6 +1124,20 @@ let watch_xenstore () =
 				if path = _introduceDomain || path = _releaseDomain
 				then look_for_different_domains ()
 				else match List.filter (fun x -> x <> "") (String.split '/' path) with
+					| "local" :: "domain" :: domid :: "backend" :: kind :: frontend :: devid :: _ ->
+						debug "Ignoring backend %s %s -> %s.%s" domid kind frontend devid
+					| "local" :: "domain" :: frontend :: "device" :: _ ->
+						let domid = int_of_string frontend in
+						if not(IntMap.mem domid !watches)
+						then debug "Ignoring frontend device watch on unmanaged domain: %d" domid
+						else begin
+							let devices = IntMap.find domid !watches in
+							let devices' = Device_common.list_frontends ~xs (int_of_string frontend) in
+							let old_devices = Listext.List.set_difference devices devices' in
+							let new_devices = Listext.List.set_difference devices' devices in
+							List.iter (add_device_watch xs) new_devices;
+							List.iter (remove_device_watch xs) old_devices;
+						end
 					| "local" :: "domain" :: domid :: _ ->
 						let d = int_of_string domid in
 						if not(IntMap.mem d !domains)
@@ -1087,6 +1145,7 @@ let watch_xenstore () =
 						else
 							let di = IntMap.find d !domains in
 							let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
+							debug "boring watch: %s" path;
 							Updates.add (Dynamic.Vm id) updates
 					| "vm" :: uuid :: _ ->
 						Updates.add (Dynamic.Vm uuid) updates
