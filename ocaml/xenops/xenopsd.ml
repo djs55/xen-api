@@ -124,9 +124,9 @@ let _ =
     (fun _ -> failwith "Invalid argument")
     (Printf.sprintf "Usage: %s [-daemon] [-pidfile filename]" name);
 
-  Logs.reset_all [ log_file_path ];
+  Logs.reset_all (if !daemonize then [ log_file_path ] else [ "file:/dev/stdout" ]);
 
-  if !daemonize then Unixext.daemonize () else Xenops_utils.print_debug := true;
+  if !daemonize then Unixext.daemonize ();
 
   Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
   Unixext.pidfile_write !pidfile;

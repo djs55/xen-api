@@ -139,14 +139,14 @@ module Per_VM_queues = struct
 	let m = Mutex.create ()
 	let c = Condition.create ()
 
-	let add vm f =
+	let add vm (op, f) =
 		Mutex.execute m
 			(fun () ->
-				Queue.push f queue;
+				Queue.push (op, f) queue;
 				Condition.signal c)
 
 	let rec process_queue q =
-		let item =
+		let op, item =
 			Mutex.execute m
 				(fun () ->
 					while Queue.is_empty q do
@@ -154,7 +154,7 @@ module Per_VM_queues = struct
 					done;
 					Queue.pop q
 				) in
-		Xenops_task.run item;
+		Debug.with_thread_associated (string_of_operation op) Xenops_task.run item;
 		debug "Triggering event on task id %s" item.Xenops_task.id;
 		Updates.add (Dynamic.Task item.Xenops_task.id) updates;
 		process_queue q
@@ -496,13 +496,13 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 
 let queue_operation id op =
 	let task = Xenops_task.add (fun t -> perform op t) in
-	Per_VM_queues.add id task;
+	Per_VM_queues.add id (op, task);
 	debug "Pushed %s with id %s" (string_of_operation op) task.Xenops_task.id;
 	task.Xenops_task.id
 
 let immediate_operation id op =
 	let task = Xenops_task.add (fun t -> perform op t) in
-	Xenops_task.run task
+	Debug.with_thread_associated (string_of_operation op) Xenops_task.run task
 
 module PCI = struct
 	open Pci
@@ -689,7 +689,7 @@ end
 
 let internal_event_thread = ref None
 
-let internal_event_thread_body () =
+let internal_event_thread_body = Debug.with_thread_associated "events" (fun () ->
 	debug "Starting internal event thread";
 	let module B = (val get_backend () : S) in
 	let id = ref None in
@@ -708,6 +708,7 @@ let internal_event_thread_body () =
 		id := next_id
 	done;
 	debug "Shutting down internal event thread"
+)
 
 let set_backend m =
 	backend := m;

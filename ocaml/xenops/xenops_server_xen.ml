@@ -1162,7 +1162,7 @@ let init () =
 	let (_: Thread.t) = Thread.create
 		(fun () ->
 			try
-				watch_xenstore ();
+				Debug.with_thread_associated "xenstore" watch_xenstore ();
 				debug "watch_xenstore thread exitted"
 			with e ->
 				debug "watch_xenstore thread raised: %s" (Printexc.to_string e)
