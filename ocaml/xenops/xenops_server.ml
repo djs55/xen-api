@@ -411,14 +411,13 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			let vm = id |> VM_DB.key_of |> VM_DB.read |> unbox in
 			let state = B.VM.get_state vm in
 			let run_time = Unix.gettimeofday () -. state.Vm.last_start_time in
-			debug "VM %s ran for %.2f seconds" id run_time;
 			let actions = match B.VM.get_domain_action_request vm with
 				| Some Needs_reboot -> vm.Vm.on_reboot
 				| Some Needs_poweroff -> vm.Vm.on_shutdown
 				| Some Needs_crashdump ->
 					(* A VM which crashes too quickly should be shutdown *)
 					if run_time < 120.0 then begin
-						debug "VM %s crashed too quickly; shutting down" id;
+						debug "VM %s ran too quickly (%.2f seconds); shutting down" id run_time;
 						[ Vm.Shutdown ]
 					end else vm.Vm.on_crash
 				| Some Needs_suspend ->
