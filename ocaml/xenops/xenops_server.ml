@@ -81,6 +81,37 @@ type operation =
 	| VBD_eject of Vbd.id
 	| VIF_plug of Vif.id
 	| VIF_unplug of Vif.id
+let string_of_operation =
+	let open Printf in
+	function
+	| VM_start id -> sprintf "VM_start %s" id
+	| VM_shutdown (id, t) -> sprintf "VM_shutdown (%s, %s)" id (Opt.default "None" (Opt.map string_of_float t))
+	| VM_reboot (id, t) -> sprintf "VM_shutdown (%s, %s)" id (Opt.default "None" (Opt.map string_of_float t))
+	| VM_delay (id, t) -> sprintf "VM_delay (%s, %.0f)" id t
+	| VM_suspend (id, data) -> sprintf "VM_suspend (%s, %s)" id (string_of_data data)
+	| VM_resume (id, data) -> sprintf "VM_resume (%s, %s)" id (string_of_data data)
+	| VM_save (id, flags, data) -> sprintf "VM_save (%s, [ %s ], %s)" id (String.concat ", " (List.map string_of_flag flags)) (string_of_data data)
+	| VM_restore (id, data) -> sprintf "VM_restore (%s, %s)" id (string_of_data data)
+	| VM_restore_devices id -> sprintf "VM_restore_devices %s" id
+	| VM_migrate (id, url) -> sprintf "VM_migrate (%s, %s)" id url
+	| VM_receive_memory (id, fd) -> sprintf "VM_receive_memory (%s, %d)" id (Unixext.int_of_file_descr fd)
+	| VM_shutdown_domain (id, request, t) -> sprintf "VM_shutdown_domain (%s, %s, %.0f)" id (string_of_shutdown_request request) t
+	| VM_destroy id -> sprintf "VM_destroy %s" id
+	| VM_create id -> sprintf "VM_create %s" id
+	| VM_build id -> sprintf "VM_build %s" id
+	| VM_create_device_model (id, resuming) -> sprintf "VM_create_device_model(%s, resuming = %b)" id resuming
+	| VM_pause id -> sprintf "VM_pause %s" id
+	| VM_unpause id -> sprintf "VM_unpause %s" id
+	| VM_check_state id -> sprintf "VM_check_state %s" id
+	| VM_remove id -> sprintf "VM_remove %s" id
+	| PCI_plug id -> sprintf "PCI_plug %s.%s" (fst id) (snd id)
+	| PCI_unplug id -> sprintf "PCI_unplug %s.%s" (fst id) (snd id)
+	| VBD_plug id -> sprintf "VBD_plug %s.%s" (fst id) (snd id)
+	| VBD_unplug id -> sprintf "VBD_unplug %s.%s" (fst id) (snd id)
+	| VBD_insert (id, disk) -> sprintf "VBD_insert (%s.%s, %s)" (fst id) (snd id) (string_of_disk disk)
+	| VBD_eject id -> sprintf "VBD_eject %s.%s" (fst id) (snd id)
+	| VIF_plug id -> sprintf "VIF_plug %s.%s" (fst id) (snd id)
+	| VIF_unplug id -> sprintf "VIF_unplug %s.%s" (fst id) (snd id)
 
 module TASK = struct
 	let cancel _ id =
@@ -466,7 +497,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 let queue_operation id op =
 	let task = Xenops_task.add (fun t -> perform op t) in
 	Per_VM_queues.add id task;
-	debug "Pushed task with id %s" task.Xenops_task.id;
+	debug "Pushed %s with id %s" (string_of_operation op) task.Xenops_task.id;
 	task.Xenops_task.id
 
 let immediate_operation id op =
@@ -663,14 +694,10 @@ let internal_event_thread_body () =
 	let module B = (val get_backend () : S) in
 	let id = ref None in
 	while true do
-		debug "About to call get with id = %s" (Opt.default "None" (Opt.map string_of_int !id));
 		let updates, next_id = B.UPDATES.get !id None in
-		debug "returned id = %s" (Opt.default "None" (Opt.map string_of_int next_id));
 		assert (updates <> []);
 		List.iter
 			(function
-				| Dynamic.Vm id, None ->
-					debug "Ignoring event on unmanaged VM: %s" id
 				| Dynamic.Vm id, Some (Dynamic.Vm_t (vm, state)) ->
 					debug "Received an event on managed VM %s" vm.Vm.id;
 					let (_: Task.id) = queue_operation vm.Vm.id (VM_check_state vm.Vm.id) in

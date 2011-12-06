@@ -188,13 +188,20 @@ type shutdown_request =
 	| S3Suspend
 	| Suspend
 with rpc
+let string_of_shutdown_request x = x |> rpc_of_shutdown_request |> Jsonrpc.to_string
 
+let string_of_disk d = d |> rpc_of_disk |> Jsonrpc.to_string
 type data =
 	| Disk of disk
 	| FD of Unix.file_descr
+let string_of_data = function
+	| Disk d -> Printf.sprintf "Disk %s" (string_of_disk d)
+	| FD fd -> Printf.sprintf "FD %d" (Unixext.int_of_file_descr fd)
 
 type flag =
 	| Live
+let string_of_flag = function
+	| Live -> "Live"
 
 module type S = sig
 	val init: unit -> unit

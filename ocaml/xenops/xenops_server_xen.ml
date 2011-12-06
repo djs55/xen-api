@@ -1057,11 +1057,11 @@ let watch_xenstore () =
 			let watches = ref IntMap.empty in
 
 			let add_domU_watches xs domid uuid =
-				debug "Watch: domid %d" domid;
+				debug "Adding watches for: domid %d" domid;
 				List.iter (fun p -> xs.Xs.watch p p) (all_domU_watches domid uuid);
 				watches := IntMap.add domid [] !watches in
 			let remove_domU_watches xs domid uuid =
-				debug "Unwatch: domid %d" domid;
+				debug "Removing watches for: domid %d" domid;
 				List.iter (fun p -> xs.Xs.unwatch p p) (all_domU_watches domid uuid);
 				IntMap.iter (fun _ ds ->
 					List.iter (fun d ->
@@ -1073,14 +1073,14 @@ let watch_xenstore () =
 
 			let add_device_watch xs device =
 				let open Device_common in
-				debug "Watch: %s" (string_of_device device);
+				debug "Adding watches for: %s" (string_of_device device);
 				let domid = device.frontend.domid in
 				List.iter (fun p -> xs.Xs.watch p p) (watches_of_device device);
 				watches := IntMap.add domid (device :: (IntMap.find domid !watches)) !watches in
 
 			let remove_device_watch xs device =
 				let open Device_common in
-				debug "Unwatch: %s" (string_of_device device);
+				debug "Removing watches for: %s" (string_of_device device);
 				let domid = device.frontend.domid in
 				let current = IntMap.find domid !watches in
 				List.iter (fun p -> xs.Xs.watch p p) (watches_of_device device);
@@ -1091,12 +1091,12 @@ let watch_xenstore () =
 				let different = list_different_domains !domains domains' in
 				List.iter
 					(fun domid ->
-						debug "Domain %d has changed state" domid;
+						debug "Domain %d may have changed state" domid;
 						(* The uuid is either in the new domains map or the old map. *)
 						let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
 						let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
 						if not (DB.exists [ id ])
-						then debug "Domain %d is not managed by us: ignoring" domid
+						then debug "However domain %d is not managed by us: ignoring" domid
 						else begin
 							Updates.add (Dynamic.Vm id) updates;
 							(* A domain is 'running' if we know it has not shutdown *)
