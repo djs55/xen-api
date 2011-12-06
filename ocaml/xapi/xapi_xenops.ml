@@ -56,11 +56,11 @@ let builder_of_vm ~__context ~vm =
 			end;
 			acpi = bool vm.API.vM_platform true "acpi";
 			serial = Some (string vm.API.vM_platform "pty" "hvm_serial");
-			keymap = Some (string vm.API.vM_platform "en_us" "keymap");
-			vnc_ip = None;
+			keymap = Some (string vm.API.vM_platform "en-us" "keymap");
+			vnc_ip = Some "0.0.0.0" (*None PR-1255*);
 			pci_emulations = [];
 			pci_passthrough = false;
-			boot_order = string vm.API.vM_HVM_boot_params "order" "cd" ;
+			boot_order = string vm.API.vM_HVM_boot_params "cd" "order";
 			qemu_disk_cmdline = false;
 		}
 		| Helpers.DirectPV { Helpers.kernel = k; kernel_args = ka; ramdisk = initrd } ->
@@ -144,3 +144,23 @@ let create_metadata ~__context ~self =
 		vifs = List.map (fun vif -> MD.of_vif ~__context ~vm ~vif) vifs;
 		domains = ""
 	}
+
+open Xenops_interface
+open Xenops_client
+open Fun
+
+let success_task id =
+	let t = Client.TASK.stat id |> success in
+	match t.Task.result with
+	| Task.Completed _ -> t
+	| Task.Failed (Failed_to_contact_remote_service x) ->
+		failwith (Printf.sprintf "Failed to contact remote service on: %s\n" x)
+	| Task.Failed x -> failwith (Jsonrpc.to_string (rpc_of_error x))
+	| Task.Pending _ -> failwith "task pending"
+
+let start ~__context ~self paused =
+	let txt = create_metadata ~__context ~self |> Metadata.rpc_of_t |> Jsonrpc.to_string in
+	let id = Client.VM.import_metadata txt |> success in
+	Client.VM.start id |> success |> wait_for_task |> success_task |> ignore_task;
+	if not paused
+	then Client.VM.unpause id |> success |> wait_for_task |> success_task |> ignore_task	

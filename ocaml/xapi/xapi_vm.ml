@@ -200,6 +200,9 @@ let unpause  ~__context ~vm =
 *)
 
 let start ~__context ~vm ~start_paused:paused ~force =
+	Xapi_xenops.start ~__context ~self:vm paused
+
+let start_old ~__context ~vm ~start_paused:paused ~force =
 	License_check.with_vm_license_check ~__context vm (fun () ->
 		Local_work_queue.wait_in_line Local_work_queue.normal_vm_queue
 			(Printf.sprintf "VM.start %s" (Context.string_of_task __context))
