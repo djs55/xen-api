@@ -1112,9 +1112,30 @@ let watch_xenstore () =
 					) different;
 				domains := domains' in
 
+			let look_for_different_devices domid =
+				if not(IntMap.mem domid !watches)
+				then debug "Ignoring frontend device watch on unmanaged domain: %d" domid
+				else begin
+					let devices = IntMap.find domid !watches in
+					let devices' = Device_common.list_frontends ~xs domid in
+					let old_devices = Listext.List.set_difference devices devices' in
+					let new_devices = Listext.List.set_difference devices' devices in
+					List.iter (add_device_watch xs) new_devices;
+					List.iter (remove_device_watch xs) old_devices;
+				end in
+
 			xs.Xs.watch _introduceDomain "";
 			xs.Xs.watch _releaseDomain "";
 			look_for_different_domains ();
+
+			let fire_event_on_vm domid =
+				let d = int_of_string domid in
+				if not(IntMap.mem d !domains)
+				then debug "Ignoring watch on shutdown domain %d" d
+				else
+					let di = IntMap.find d !domains in
+					let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
+					Updates.add (Dynamic.Vm id) updates in
 
 			while true do
 				let path, _ =
@@ -1125,28 +1146,12 @@ let watch_xenstore () =
 				then look_for_different_domains ()
 				else match List.filter (fun x -> x <> "") (String.split '/' path) with
 					| "local" :: "domain" :: domid :: "backend" :: kind :: frontend :: devid :: _ ->
-						debug "Ignoring backend %s %s -> %s.%s" domid kind frontend devid
+						debug "Watch on backend %s %s -> %s.%s" domid kind frontend devid;
+						fire_event_on_vm frontend
 					| "local" :: "domain" :: frontend :: "device" :: _ ->
-						let domid = int_of_string frontend in
-						if not(IntMap.mem domid !watches)
-						then debug "Ignoring frontend device watch on unmanaged domain: %d" domid
-						else begin
-							let devices = IntMap.find domid !watches in
-							let devices' = Device_common.list_frontends ~xs (int_of_string frontend) in
-							let old_devices = Listext.List.set_difference devices devices' in
-							let new_devices = Listext.List.set_difference devices' devices in
-							List.iter (add_device_watch xs) new_devices;
-							List.iter (remove_device_watch xs) old_devices;
-						end
+						look_for_different_devices (int_of_string frontend)
 					| "local" :: "domain" :: domid :: _ ->
-						let d = int_of_string domid in
-						if not(IntMap.mem d !domains)
-						then debug "Ignoring watch on shutdown domain %d" d
-						else
-							let di = IntMap.find d !domains in
-							let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
-							debug "boring watch: %s" path;
-							Updates.add (Dynamic.Vm id) updates
+						fire_event_on_vm domid
 					| "vm" :: uuid :: _ ->
 						Updates.add (Dynamic.Vm uuid) updates
 					| _  -> debug "Ignoring unexpected watch: %s" path
