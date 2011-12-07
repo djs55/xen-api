@@ -308,8 +308,6 @@ let add filename =
 					"apic", "true";
 					"pae", "true";
 					"viridian", "true";
-					"vcpu/number", "1";
-					"vcpu/current", "1";
 				];
 				bios_strings = [];
 				ty = builder_info;

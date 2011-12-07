@@ -353,13 +353,18 @@ module VM = struct
 			end else begin
 				debug "VM %s: has no stored domain-level configuration, regenerating" vm.Vm.id;
 				let hvm = match vm.ty with HVM _ -> true | _ -> false in
+				(* XXX add per-vcpu information to the platform data *)
+				let vcpus = [
+					"vcpu/number", string_of_int vm.vcpus;
+					"vcpu/current", string_of_int vm.vcpus;
+				] in
 				let create_info = {
 					Domain.ssidref = vm.ssidref;
 					hvm = hvm;
 					hap = hvm;
 					name = vm.name;
 					xsdata = vm.xsdata;
-					platformdata = vm.platformdata;
+					platformdata = vm.platformdata @ vcpus;
 					bios_strings = vm.bios_strings;
 				} in {
 					VmExtra.domid = 0;
@@ -1083,7 +1088,7 @@ let watch_xenstore () =
 				debug "Removing watches for: %s" (string_of_device device);
 				let domid = device.frontend.domid in
 				let current = IntMap.find domid !watches in
-				List.iter (fun p -> xs.Xs.watch p p) (watches_of_device device);
+				List.iter (fun p -> xs.Xs.unwatch p p) (watches_of_device device);
 				watches := IntMap.add domid (List.filter (fun x -> x <> device) current) !watches in
 
 			let look_for_different_domains () =
