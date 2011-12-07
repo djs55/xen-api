@@ -248,7 +248,7 @@ module Metadata = struct
 		vm: Vm.t;
 		vbds: Vbd.t list;
 		vifs: Vif.t list;
-		domains: string;
+		domains: string option;
 		(** Opaque data describing per-domain state *)
 	}
 end

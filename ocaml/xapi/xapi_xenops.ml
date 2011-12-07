@@ -142,7 +142,7 @@ let create_metadata ~__context ~self =
 		vm = MD.of_vm ~__context ~vm;
 		vbds = List.map (fun vbd -> MD.of_vbd ~__context ~vm ~vbd) vbds;
 		vifs = List.map (fun vif -> MD.of_vif ~__context ~vm ~vif) vifs;
-		domains = ""
+		domains = None
 	}
 
 open Xenops_interface

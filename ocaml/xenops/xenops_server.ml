@@ -242,7 +242,7 @@ let export_metadata id =
 		Metadata.vm = vm_t;
 		vbds = vbds;
 		vifs = vifs;
-		domains = domains;
+		domains = Some domains;
 	} |> Metadata.rpc_of_t |> Jsonrpc.to_string
 
 let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
@@ -649,7 +649,7 @@ module VM = struct
 		let vifs = List.map (fun x -> { x with Vif.id = (vm, snd x.Vif.id) }) md.Metadata.vifs in
 		let (_: Vbd.id list) = List.map VBD.add' vbds in
 		let (_: Vif.id list) = List.map VIF.add' vifs in
-		B.VM.set_internal_state (vm |> VM_DB.key_of |> VM_DB.read |> unbox) md.Metadata.domains;
+		md.Metadata.domains |> Opt.iter (B.VM.set_internal_state (vm |> VM_DB.key_of |> VM_DB.read |> unbox));
 		vm |> return
 
 	let receive_memory req s _ =
