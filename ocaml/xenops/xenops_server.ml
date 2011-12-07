@@ -644,6 +644,13 @@ module VM = struct
 	let import_metadata _ s =
 		let module B = (val get_backend () : S) in
 		let md = s |> Jsonrpc.of_string |> Metadata.t_of_rpc in
+		let id = md.Metadata.vm.Vm.id in
+		(* We allow a higher-level toolstack to replace the metadata of a running VM.
+		   Any changes will take place on next reboot. *)
+		if DB.exists (DB.key_of id) then begin
+			debug "Updating VM metadata for VM: %s" id;
+			DB.remove [ id ]; (* deletes VBDs and VIFs recursively *)
+		end;
 		let vm = add' md.Metadata.vm in
 		let vbds = List.map (fun x -> { x with Vbd.id = (vm, snd x.Vbd.id) }) md.Metadata.vbds in
 		let vifs = List.map (fun x -> { x with Vif.id = (vm, snd x.Vif.id) }) md.Metadata.vifs in
