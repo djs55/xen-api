@@ -149,6 +149,24 @@ open Xenops_interface
 open Xenops_client
 open Fun
 
+let rec events_watch from =
+	let events, next = Client.UPDATES.get from None |> success in
+	let open Dynamic in
+	let lines = List.map
+		(function			| Vm_t(x, state) ->
+				
+				Printf.sprintf "VM %s" x.Vm.name
+			| Vbd_t(x, state) ->
+				Printf.sprintf "VBD %s.%s" (fst x.Vbd.id) (snd x.Vbd.id)
+			| Vif_t(x, state) ->
+				Printf.sprintf "VIF %s.%s" (fst x.Vif.id) (snd x.Vif.id)
+			| Task_t x ->
+				Printf.sprintf "Task %s %s" x.Task.id (x.Task.result |> Task.rpc_of_result |> Jsonrpc.to_string)
+		) events in
+	List.iter (fun x -> Printf.printf "%-8d %s\n" (Opt.unbox next) x) lines;
+	flush stdout;
+	events_watch next
+
 let success_task id =
 	let t = Client.TASK.stat id |> success in
 	match t.Task.result with
@@ -164,3 +182,4 @@ let start ~__context ~self paused =
 	Client.VM.start id |> success |> wait_for_task |> success_task |> ignore_task;
 	if not paused
 	then Client.VM.unpause id |> success |> wait_for_task |> success_task |> ignore_task	
+
