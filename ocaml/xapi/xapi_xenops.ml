@@ -174,8 +174,13 @@ let update_vm ~__context x state =
 						then Hashtbl.replace Monitor.uncooperative_domains domid ()
 						else Hashtbl.remove Monitor.uncooperative_domains domid
 					);
-				let lookup key = if List.mem_assoc key state.guest_agent then Some (List.assoc key state.guest_agent) else None in
-				let list dir = List.map snd (List.filter (fun x -> String.startswith dir (fst x)) state.guest_agent) in
+				debug "guest_agent = [ %s ]" (String.concat "; " (List.map (fun (k, v) -> k ^ ", " ^ v) state.guest_agent));
+				let lookup key =
+					debug "lookup [%s]" key;
+					if List.mem_assoc key state.guest_agent then Some (List.assoc key state.guest_agent) else None in
+				let list dir =
+					debug "list [%s]" dir;
+					List.map snd (List.filter (fun x -> String.startswith dir (fst x)) state.guest_agent) in
 				Xapi_guest_agent.all lookup list ~__context ~domid ~uuid:x.id
 			) state.domids;
 		let metrics = Db.VM.get_metrics ~__context ~self in
@@ -255,3 +260,10 @@ let start ~__context ~self paused =
 	if not paused
 	then Client.VM.unpause id |> success |> wait_for_task |> success_task |> ignore_task	
 
+let reboot ~__context ~self timeout =
+	let id = Db.VM.get_uuid ~__context ~self in
+	Client.VM.reboot id timeout |> success |> wait_for_task |> success_task |> ignore_task
+
+let shutdown ~__context ~self timeout =
+	let id = Db.VM.get_uuid ~__context ~self in
+	Client.VM.shutdown id timeout |> success |> wait_for_task |> success_task |> ignore_task

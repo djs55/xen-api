@@ -647,15 +647,21 @@ let record_shutdown_details ~__context ~vm reason initiator action =
     replace_other_config_key ~__context ~vm "last_shutdown_time" (Date.to_string (Date.of_float (Unix.gettimeofday())));
     info "VM %s shutdown initiated %sly; actions_after[%s] = %s" vm' initiator reason' action'
 
-(** VM.hard_reboot entrypoint *)
 let hard_reboot ~__context ~vm =
+	Xapi_xenops.reboot ~__context ~self:vm None
+
+(** VM.hard_reboot entrypoint *)
+let hard_reboot_old ~__context ~vm =
   let action = Db.VM.get_actions_after_reboot ~__context ~self:vm in
   record_shutdown_details ~__context ~vm Xal.Rebooted "external" action;
   let args = { TwoPhase.__context=__context; vm=vm; api_call_name="VM.hard_reboot"; clean=false } in
   retry_on_conflict args (of_action action)
 
-(** VM.hard_shutdown entrypoint *)
 let hard_shutdown ~__context ~vm =
+	Xapi_xenops.shutdown ~__context ~self:vm None
+
+(** VM.hard_shutdown entrypoint *)
+let hard_shutdown_old ~__context ~vm =
 	try
 		let action = Db.VM.get_actions_after_shutdown ~__context ~self:vm in
 		record_shutdown_details ~__context ~vm Xal.Halted "external" action;
@@ -674,15 +680,21 @@ let hard_shutdown ~__context ~vm =
 			(debug ("hard_shutdown: caught any exception besides VM_BAD_POWER_STATE, re-raising.");
 			raise e)
 
-(** VM.clean_reboot entrypoint *)
 let clean_reboot ~__context ~vm =
+	Xapi_xenops.reboot ~__context ~self:vm (Some 1200.0)
+
+let clean_shutdown ~__context ~vm =
+	Xapi_xenops.shutdown ~__context ~self:vm (Some 1200.0)
+
+(** VM.clean_reboot entrypoint *)
+let clean_reboot_old ~__context ~vm =
   let action = Db.VM.get_actions_after_reboot ~__context ~self:vm in
   record_shutdown_details ~__context ~vm Xal.Rebooted "external" action;
   let args = { TwoPhase.__context=__context; vm=vm; api_call_name="VM.clean_reboot"; clean=true } in
   retry_on_conflict args (of_action action)
 
 (** VM.clean_shutdown entrypoint *)
-let clean_shutdown ~__context ~vm =
+let clean_shutdown_old ~__context ~vm =
   let action = Db.VM.get_actions_after_shutdown ~__context ~self:vm in
   record_shutdown_details ~__context ~vm Xal.Halted "external" action;
   let args = { TwoPhase.__context=__context; vm=vm; api_call_name="VM.clean_shutdown"; clean=true } in
