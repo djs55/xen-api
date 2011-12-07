@@ -181,6 +181,9 @@ type domain_action_request =
 	| Needs_crashdump	
 with rpc
 
+type device_action_request =
+	| Needs_unplug
+
 type shutdown_request =
 	| Halt
 	| Reboot
@@ -237,12 +240,16 @@ module type S = sig
 		val eject: Xenops_task.t -> Vm.id -> Vbd.t -> unit
 
 		val get_state: Vm.id -> Vbd.t -> Vbd.state
+
+		val get_device_action_request: Vm.id -> Vbd.t -> device_action_request option
 	end
 	module VIF : sig
 		val plug: Xenops_task.t -> Vm.id -> Vif.t -> unit
 		val unplug: Xenops_task.t -> Vm.id -> Vif.t -> unit
 
 		val get_state: Vm.id -> Vif.t -> Vif.state
+
+		val get_device_action_request: Vm.id -> Vif.t -> device_action_request option
 	end
 	module UPDATES : sig
 		val get: Updates.id option -> int option -> Dynamic.id list * Updates.id option

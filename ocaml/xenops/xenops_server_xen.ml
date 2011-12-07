@@ -925,6 +925,15 @@ module VBD = struct
 					| Exception Device_not_connected ->
 						unplugged_vbd
 			)
+
+	let get_device_action_request vm vbd =
+		with_xc_and_xs
+			(fun xc xs ->
+				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
+				if Hotplug.device_is_online ~xs device
+				then None
+				else Some Needs_unplug
+			)
 end
 
 module VIF = struct
@@ -998,6 +1007,15 @@ module VIF = struct
 					| Exception Does_not_exist
 					| Exception Device_not_connected ->
 						unplugged_vif
+			)
+
+	let get_device_action_request vm vif =
+		with_xc_and_xs
+			(fun xc xs ->
+				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vif (id_of vif) in
+				if Hotplug.device_is_online ~xs device
+				then None
+				else Some Needs_unplug
 			)
 
 end
@@ -1142,6 +1160,23 @@ let watch_xenstore () =
 					let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
 					Updates.add (Dynamic.Vm id) updates in
 
+			let fire_event_on_device domid kind devid =
+				let d = int_of_string domid in
+				if not(IntMap.mem d !domains)
+				then debug "Ignoring watch on shutdown domain %d" d
+				else
+					let di = IntMap.find d !domains in
+					let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
+					let update = match kind with
+						| "vbd" ->
+							let devid' = devid |> int_of_string |> Device_number.of_xenstore_key |> Device_number.to_linux_device in
+							Some (Dynamic.Vbd (id, devid'))
+						| "vif" -> Some (Dynamic.Vif (id, devid))
+						| x ->
+							debug "Unknown device kind: '%s'" x;
+							None in
+					Opt.iter (fun x -> Updates.add x updates) update in
+
 			while true do
 				let path, _ =
 					if Xs.has_watchevents xs
@@ -1152,7 +1187,7 @@ let watch_xenstore () =
 				else match List.filter (fun x -> x <> "") (String.split '/' path) with
 					| "local" :: "domain" :: domid :: "backend" :: kind :: frontend :: devid :: _ ->
 						debug "Watch on backend %s %s -> %s.%s" domid kind frontend devid;
-						fire_event_on_vm frontend
+						fire_event_on_device frontend kind devid
 					| "local" :: "domain" :: frontend :: "device" :: _ ->
 						look_for_different_devices (int_of_string frontend)
 					| "local" :: "domain" :: domid :: _ ->

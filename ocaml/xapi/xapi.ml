@@ -948,7 +948,7 @@ let server_init() =
       "initialising storage", [ Startup.NoExnRaising ],
                 (fun () -> Helpers.call_api_functions ~__context Create_storage.create_storage_localhost);
       (* CA-13878: make sure PBD plugging has happened before attempting to reboot any VMs *)
-      "starting events thread", [], (fun () -> if not (!noevents) then ignore (Thread.create Events.listen_xal ()));
+(*      "starting events thread", [], (fun () -> if not (!noevents) then ignore (Thread.create Events.listen_xal ())); *)
 	  "starting xenops thread", [], (fun () -> if not (!noevents) then ignore (Thread.create Xapi_xenops.events_thread ()));
       "SR scanning", [ Startup.OnlyMaster; Startup.OnThread ], Xapi_sr.scanning_thread;
       "writing init complete", [], (fun () -> Helpers.touch_file !Xapi_globs.init_complete);

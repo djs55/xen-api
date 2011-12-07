@@ -50,8 +50,6 @@ let filter_prefix prefix xs =
 			then Some (String.sub x (String.length prefix) (String.length x - (String.length prefix)))
 			else None) xs
 
-let updates = Updates.empty ()
-
 type operation =
 	| VM_start of Vm.id
 	| VM_shutdown of (Vm.id * float option)
@@ -79,8 +77,11 @@ type operation =
 	| VBD_unplug of Vbd.id
 	| VBD_insert of Vbd.id * disk
 	| VBD_eject of Vbd.id
+	| VBD_check_state of Vbd.id
 	| VIF_plug of Vif.id
 	| VIF_unplug of Vif.id
+	| VIF_check_state of Vif.id
+
 let string_of_operation =
 	let open Printf in
 	function
@@ -110,8 +111,10 @@ let string_of_operation =
 	| VBD_unplug id -> sprintf "VBD_unplug %s.%s" (fst id) (snd id)
 	| VBD_insert (id, disk) -> sprintf "VBD_insert (%s.%s, %s)" (fst id) (snd id) (string_of_disk disk)
 	| VBD_eject id -> sprintf "VBD_eject %s.%s" (fst id) (snd id)
+	| VBD_check_state id -> sprintf "VBD_check_state %s.%s" (fst id) (snd id)
 	| VIF_plug id -> sprintf "VIF_plug %s.%s" (fst id) (snd id)
 	| VIF_unplug id -> sprintf "VIF_unplug %s.%s" (fst id) (snd id)
+	| VIF_check_state id -> sprintf "VIF_check_state %s.%s" (fst id) (snd id)
 
 module TASK = struct
 	let cancel _ id =
@@ -132,6 +135,94 @@ module TASK = struct
 			)
 	let stat _ id = stat' id |> return
 end
+
+module VM_DB = struct
+	include TypedTable(struct
+		include Vm
+		let namespace = "VM"
+	end)
+	let key_of id = [ id; "config" ]
+
+	let ids () : Vm.id list =
+		list []
+	let list () =
+		debug "VM.list";
+		let vms = ids () |> List.map key_of |> List.map read |> List.map unbox in
+		let module B = (val get_backend () : S) in
+		let states = List.map B.VM.get_state vms in
+		List.combine vms states
+end
+
+module PCI_DB = struct
+	include TypedTable(struct
+		include Pci
+		let namespace = "PCI"
+	end)
+	let key_of k = [ fst k; "pci." ^ (snd k) ]
+	let vm_of = fst
+	let string_of_id (a, b) = a ^ "." ^ b
+
+	let ids vm : Pci.id list =
+		list [ vm ] |> (filter_prefix "pci.") |> List.map (fun id -> (vm, id))
+	let list vm =
+		debug "PCI.list";
+		let key_of' (vm, id) = [ vm; "pci." ^ id ] in
+		let xs = ids vm |> List.map key_of' |> List.map read |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.PCI.get_state vm) xs in
+		List.combine xs states
+end
+
+module VBD_DB = struct
+	include TypedTable(struct
+		include Vbd
+		let namespace = "VM"
+	end)
+	let key_of k = [ fst k; "vbd." ^ (snd k) ]
+	let vm_of = fst
+	let string_of_id (a, b) = a ^ "." ^ b
+
+	let ids vm : Vbd.id list =
+		list [ vm ] |> (filter_prefix "vbd.") |> List.map (fun id -> (vm, id))
+	let list vm =
+		debug "VBD.list";
+		let key_of' (vm, id) = [ vm; "vbd." ^ id ] in
+		let vbds = ids vm |> List.map key_of' |> List.map read |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.VBD.get_state vm) vbds in
+		List.combine vbds states
+end
+
+module VIF_DB = struct
+	include TypedTable(struct
+		include Vif
+		let namespace = "VM"
+	end)
+	let key_of k = [ fst k; "vif." ^ (snd k) ]
+	let vm_of = fst
+	let string_of_id (a, b) = a ^ "." ^ b
+
+	let ids vm : Vif.id list =
+		list [ vm ] |> (filter_prefix "vif.") |> List.map (fun id -> (vm, id))
+ 	let list vm =
+		let key_of' (vm, id) = [ vm; "vif." ^ id ] in
+		let vifs = ids vm |> List.map key_of' |> List.map read |> dropnone in
+		let module B = (val get_backend () : S) in
+		let states = List.map (B.VIF.get_state vm) vifs in
+		List.combine vifs states
+end
+
+let updates =
+	let u = Updates.empty () in
+	(* Make sure all objects are 'registered' with the updates system *)
+	(* XXX: when do they get unregistered again? *)
+	List.iter
+		(fun vm ->
+			Updates.add (Dynamic.Vm vm) u;
+			List.iter (fun vbd -> Updates.add (Dynamic.Vbd vbd) u) (VBD_DB.ids vm);
+			List.iter (fun vif -> Updates.add (Dynamic.Vif vif) u) (VIF_DB.ids vm)
+		) (VM_DB.ids ());
+	u
 
 module Per_VM_queues = struct
 	(* Single queue for now, one per Vm later *)
@@ -162,74 +253,6 @@ module Per_VM_queues = struct
 	let start () =
 		let (_: Thread.t) = Thread.create process_queue queue in
 		()
-end
-
-module VM_DB = struct
-	include TypedTable(struct
-		include Vm
-		let namespace = "VM"
-	end)
-	let key_of id = [ id; "config" ]
-
-	let list () =
-		debug "VM.list";
-		let module B = (val get_backend () : S) in
-		let vms = List.map (fun x -> x |> key_of |> read |> unbox) (list []) in
-		let states = List.map B.VM.get_state vms in
-		List.combine vms states
-end
-
-module PCI_DB = struct
-	include TypedTable(struct
-		include Pci
-		let namespace = "PCI"
-	end)
-	let key_of k = [ fst k; "pci." ^ (snd k) ]
-	let vm_of = fst
-	let string_of_id (a, b) = a ^ "." ^ b
-
-	let list vm =
-		debug "PCI.list";
-		let key_of' id = [ vm; "pci." ^ id ] in
-		let xs = list [ vm ] |> (filter_prefix "pci.") |> (List.map (read ++ key_of')) |> dropnone in
-		let module B = (val get_backend () : S) in
-		let states = List.map (B.PCI.get_state vm) xs in
-		List.combine xs states
-end
-
-module VBD_DB = struct
-	include TypedTable(struct
-		include Vbd
-		let namespace = "VM"
-	end)
-	let key_of k = [ fst k; "vbd." ^ (snd k) ]
-	let vm_of = fst
-	let string_of_id (a, b) = a ^ "." ^ b
-
-	let list vm =
-		debug "VBD.list";
-		let key_of' id = [ vm; "vbd." ^ id ] in
-		let vbds = list [ vm ] |> (filter_prefix "vbd.") |> (List.map (read ++ key_of')) |> dropnone in
-		let module B = (val get_backend () : S) in
-		let states = List.map (B.VBD.get_state vm) vbds in
-		List.combine vbds states
-end
-
-module VIF_DB = struct
-	include TypedTable(struct
-		include Vif
-		let namespace = "VM"
-	end)
-	let key_of k = [ fst k; "vif." ^ (snd k) ]
-	let vm_of = fst
-	let string_of_id (a, b) = a ^ "." ^ b
-
-	let list vm =
-		let key_of' id = [ vm; "vif." ^ id ] in
-		let vifs = list [ vm ] |> (filter_prefix "vif.") |> (List.map (read ++ key_of')) |> dropnone in
-		let module B = (val get_backend () : S) in
-		let states = List.map (B.VIF.get_state vm) vifs in
-		List.combine vifs states
 end
 
 let export_metadata id =
@@ -455,10 +478,12 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			B.PCI.unplug t (PCI_DB.vm_of id) (id |> PCI_DB.key_of |> PCI_DB.read |> unbox)
 		| VBD_plug id ->
 			debug "VBD.plug %s" (VBD_DB.string_of_id id);
-			B.VBD.plug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
+			B.VBD.plug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox);
+			Updates.add (Dynamic.Vbd id) updates
 		| VBD_unplug id ->
 			debug "VBD.unplug %s" (VBD_DB.string_of_id id);
-			B.VBD.unplug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox)
+			B.VBD.unplug t (VBD_DB.vm_of id) (id |> VBD_DB.key_of |> VBD_DB.read |> unbox);
+			Updates.add (Dynamic.Vbd id) updates
 		| VBD_insert (id, disk) ->
 			debug "VBD.insert %s" (VBD_DB.string_of_id id);
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
@@ -470,6 +495,7 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				then raise (Exception Media_present)
 				else B.VBD.insert t (VBD_DB.vm_of id) vbd_t disk;
 			VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = Some disk };
+			Updates.add (Dynamic.Vbd id) updates
 		| VBD_eject id ->
 			debug "VBD.eject %s" (VBD_DB.string_of_id id);
 			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
@@ -481,13 +507,40 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				if vbd_state.Vbd.media_present
 				then B.VBD.eject t (VBD_DB.vm_of id) vbd_t
 				else raise (Exception Media_not_present);			
-			VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = None }
+			VBD_DB.write (VBD_DB.key_of id) { vbd_t with Vbd.backend = None };
+			Updates.add (Dynamic.Vbd id) updates
+		| VBD_check_state id ->
+			debug "VBD.check_state %s" (VBD_DB.string_of_id id);
+			let vbd_t = id |> VBD_DB.key_of |> VBD_DB.read |> unbox in
+			let vm_state = B.VM.get_state (VBD_DB.vm_of id |> VM_DB.key_of |> VM_DB.read |> unbox) in
+			let request =
+				if vm_state.Vm.power_state = Running
+				then B.VBD.get_device_action_request (VBD_DB.vm_of id) vbd_t
+				else Some Needs_unplug in
+			let operations_of_request = function
+				| Needs_unplug -> VBD_unplug id in
+			let operations = List.map operations_of_request (Opt.to_list request) in
+			List.iter (fun x -> perform x t) operations
 		| VIF_plug id ->
 			debug "VIF.plug %s" (VIF_DB.string_of_id id);
-			B.VIF.plug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+			B.VIF.plug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox);
+			Updates.add (Dynamic.Vif id) updates
 		| VIF_unplug id ->
 			debug "VIF.unplug %s" (VIF_DB.string_of_id id);
-			B.VIF.unplug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox)
+			B.VIF.unplug t (VIF_DB.vm_of id) (id |> VIF_DB.key_of |> VIF_DB.read |> unbox);
+			Updates.add (Dynamic.Vif id) updates
+		| VIF_check_state id ->
+			debug "VIF.check_state %s" (VIF_DB.string_of_id id);
+			let vif_t = id |> VIF_DB.key_of |> VIF_DB.read |> unbox in
+			let vm_state = B.VM.get_state (VIF_DB.vm_of id |> VM_DB.key_of |> VM_DB.read |> unbox) in
+			let request =
+				if vm_state.Vm.power_state = Running
+				then B.VIF.get_device_action_request (VIF_DB.vm_of id) vif_t
+				else Some Needs_unplug in
+			let operations_of_request = function
+				| Needs_unplug -> VIF_unplug id in
+			let operations = List.map operations_of_request (Opt.to_list request) in
+			List.iter (fun x -> perform x t) operations
 	in
 	match subtask with
 		| None -> one op
@@ -707,6 +760,14 @@ let internal_event_thread_body = Debug.with_thread_associated "events" (fun () -
 				| Dynamic.Vm id, Some (Dynamic.Vm_t (vm, state)) ->
 					debug "Received an event on managed VM %s" vm.Vm.id;
 					let (_: Task.id) = queue_operation vm.Vm.id (VM_check_state vm.Vm.id) in
+					()
+				| Dynamic.Vbd id, Some (Dynamic.Vbd_t (vbd, state)) ->
+					debug "Received an event on managed VBD %s.%s" (fst vbd.Vbd.id) (snd vbd.Vbd.id);
+					let (_: Task.id) = queue_operation (VBD_DB.vm_of vbd.Vbd.id) (VBD_check_state vbd.Vbd.id) in
+					()
+				| Dynamic.Vif id, Some (Dynamic.Vif_t (vif, state)) ->
+					debug "Received an event on managed VIF %s.%s" (fst vif.Vif.id) (snd vif.Vif.id);
+					let (_: Task.id) = queue_operation (VIF_DB.vm_of vif.Vif.id) (VIF_check_state vif.Vif.id) in
 					()
 				| id, _ ->
 					debug "Ignoring event on %s" (Jsonrpc.to_string (Dynamic.rpc_of_id id))

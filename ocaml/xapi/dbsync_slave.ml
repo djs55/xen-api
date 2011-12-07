@@ -525,10 +525,12 @@ let update_env __context sync_keys =
 	  Storage_access.resynchronise_pbds ~__context ~pbds:(Db.Host.get_PBDs ~__context ~self:localhost);
   );
 
+(*
   switched_sync Xapi_globs.sync_update_vms (fun () -> 
     debug "updating VM states";
     with_xal (fun xal -> update_vms ~xal ~__context);
   );
+*)
 
   switched_sync Xapi_globs.sync_remove_leaked_vbds (fun () ->
     debug "removing any leaked dom0 block-attached VBDs (if any)";

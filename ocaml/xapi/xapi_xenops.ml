@@ -183,6 +183,31 @@ let update_vm ~__context x state =
 	with e ->
 		error "Caught %s while updating VM: has this VM been removed while this host is offline?" (Printexc.to_string e)
 
+let update_vbd ~__context x state =
+	try
+		let open Vbd in
+		let vm = Db.VM.get_by_uuid ~__context ~uuid:(fst x.id) in
+		let vbds = Db.VM.get_VBDs ~__context ~self:vm in
+		let vbdrs = List.map (fun self -> self, Db.VBD.get_record ~__context ~self) vbds in
+		let linux_device = snd x.id in
+		let disk_number = Device_number.of_linux_device (snd x.id) |> Device_number.to_disk_number |> string_of_int in
+		debug "VM %s VBD userdevices = [ %s ]" (fst x.id) (String.concat "; " (List.map (fun (_,r) -> r.API.vBD_userdevice) vbdrs));
+		let vbd, _ = List.find (fun (_, vbdr) -> vbdr.API.vBD_userdevice = linux_device || vbdr.API.vBD_userdevice = disk_number) vbdrs in
+		Db.VBD.set_currently_attached ~__context ~self:vbd ~value:state.plugged
+	with e ->
+		error "Caught %s while updating VBD" (Printexc.to_string e)
+
+let update_vif ~__context x state =
+	try
+		let open Vif in
+		let vm = Db.VM.get_by_uuid ~__context ~uuid:(fst x.id) in
+		let vifs = Db.VM.get_VIFs ~__context ~self:vm in
+		let vifrs = List.map (fun self -> self, Db.VIF.get_record ~__context ~self) vifs in
+		let vif, _ = List.find (fun (_, vifr) -> vifr.API.vIF_device = (snd x.id)) vifrs in
+		Db.VIF.set_currently_attached ~__context ~self:vif ~value:state.plugged
+	with e ->
+		error "Caught %s while updating VIF" (Printexc.to_string e)
+
 let rec events_watch ~__context from =
 	let events, next = Client.UPDATES.get from None |> success in
 	let open Dynamic in
@@ -192,9 +217,11 @@ let rec events_watch ~__context from =
 				debug "xenops event on VM %s" x.Vm.name;
 				update_vm ~__context x state;
 			| Vbd_t(x, state) ->
-				debug "xenops event on VBD %s.%s" (fst x.Vbd.id) (snd x.Vbd.id)
+				debug "xenops event on VBD %s.%s" (fst x.Vbd.id) (snd x.Vbd.id);
+				update_vbd ~__context x state
 			| Vif_t(x, state) ->
-				debug "xenops event on VIF %s.%s" (fst x.Vif.id) (snd x.Vif.id)
+				debug "xenops event on VIF %s.%s" (fst x.Vif.id) (snd x.Vif.id);
+				update_vif ~__context x state
 			| Task_t x ->
 				debug "xenops event on Task %s %s" x.Task.id (x.Task.result |> Task.rpc_of_result |> Jsonrpc.to_string)
 		) events;

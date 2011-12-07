@@ -304,6 +304,8 @@ module VBD = struct
 	let eject _ vm vbd = ()
 
 	let get_state vm vbd = Mutex.execute m (vbd_state vm vbd)
+
+	let get_device_action_request vm vbd = None
 end
 
 module VIF = struct
@@ -311,6 +313,8 @@ module VIF = struct
 	let unplug _ vm vif = Mutex.execute m (remove_vif vm vif)
 
 	let get_state vm vif = Mutex.execute m (vif_state vm vif)
+
+	let get_device_action_request vm vif = None
 end
 
 module UPDATES = struct
