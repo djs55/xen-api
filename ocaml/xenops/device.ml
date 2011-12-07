@@ -719,7 +719,7 @@ let qemu_media_change ~xs ~device_number domid _type params =
 		"params",         params;
 	] in
 	Xs.transaction xs (fun t -> t.Xst.writev backend back_delta);
-	debug "Media changed"
+	debug "Media changed: params = %s" params
 
 let media_tray_is_locked ~xs ~device_number domid =
 	let devid = Device_number.to_xenstore_key device_number in

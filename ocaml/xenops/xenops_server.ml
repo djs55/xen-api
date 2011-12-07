@@ -461,7 +461,8 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 					delay @ restart
 			in
 			let operations = List.concat (List.map operations_of_action actions) in
-			List.iter (fun x -> perform x t) operations
+			List.iter (fun x -> perform x t) operations;
+			Updates.add (Dynamic.Vm id) updates
 		| VM_remove id ->
 			debug "VM.remove %s" id;
 			let power = (B.VM.get_state (id |> VM_DB.key_of |> VM_DB.read |> unbox)).Vm.power_state in

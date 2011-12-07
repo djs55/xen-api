@@ -200,7 +200,10 @@ let unpause  ~__context ~vm =
 *)
 
 let start ~__context ~vm ~start_paused:paused ~force =
-	Xapi_xenops.start ~__context ~self:vm paused
+	Xapi_xenops.start ~__context ~self:vm paused;
+	let localhost = Helpers.get_localhost ~__context in
+	Helpers.call_api_functions ~__context
+		(fun rpc session_id -> Client.VM.atomic_set_resident_on rpc session_id vm localhost)
 
 let start_old ~__context ~vm ~start_paused:paused ~force =
 	License_check.with_vm_license_check ~__context vm (fun () ->

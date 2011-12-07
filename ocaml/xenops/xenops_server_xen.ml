@@ -816,17 +816,16 @@ module VBD = struct
 
 	let id_of vbd = snd vbd.id
 
-	let attach_and_activate task xc xs frontend_domid vbd =
-		match vbd.backend with
-			| None ->
-				(* XXX: do something better with CDROMs *)
-				{ Storage.domid = this_domid ~xs; params = "" }
-			| Some (Local path) ->
-				{ Storage.domid = this_domid ~xs; params = path }
-			| Some (VDI path) ->
-				let sr, vdi = Storage.get_disk_by_name task path in
-				let dp = Storage.id_of frontend_domid vbd.id in
-				Storage.attach_and_activate task dp sr vdi (vbd.mode = ReadWrite)
+	let attach_and_activate task xc xs frontend_domid vbd = function
+		| None ->
+			(* XXX: do something better with CDROMs *)
+			{ Storage.domid = this_domid ~xs; params = "" }
+		| Some (Local path) ->
+			{ Storage.domid = this_domid ~xs; params = path }
+		| Some (VDI path) ->
+			let sr, vdi = Storage.get_disk_by_name task path in
+			let dp = Storage.id_of frontend_domid vbd.id in
+			Storage.attach_and_activate task dp sr vdi (vbd.mode = ReadWrite)
 
 	let frontend_domid_of_device device = device.Device_common.frontend.Device_common.domid
 
@@ -840,7 +839,7 @@ module VBD = struct
 	let plug task vm vbd =
 		on_frontend
 			(fun xc xs frontend_domid hvm ->
-				let vdi = attach_and_activate task xc xs frontend_domid vbd in
+				let vdi = attach_and_activate task xc xs frontend_domid vbd vbd.backend in
 				(* Remember the VBD id with the device *)
 				let id = _device_id Device_common.Vbd, id_of vbd in
 				let x = {
@@ -888,7 +887,7 @@ module VBD = struct
 			(fun xc xs ->
 				let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd (id_of vbd) in
 				let frontend_domid = frontend_domid_of_device device in
-				let vdi = attach_and_activate task xc xs frontend_domid vbd in
+				let vdi = attach_and_activate task xc xs frontend_domid vbd (Some disk) in
 				let device_number = device_number_of_device device in
 				let phystype = Device.Vbd.Phys in
 				Device.Vbd.media_insert ~xs ~device_number ~params:vdi.Storage.params ~phystype frontend_domid

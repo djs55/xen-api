@@ -174,12 +174,9 @@ let update_vm ~__context x state =
 						then Hashtbl.replace Monitor.uncooperative_domains domid ()
 						else Hashtbl.remove Monitor.uncooperative_domains domid
 					);
-				debug "guest_agent = [ %s ]" (String.concat "; " (List.map (fun (k, v) -> k ^ ", " ^ v) state.guest_agent));
 				let lookup key =
-					debug "lookup [%s]" key;
 					if List.mem_assoc key state.guest_agent then Some (List.assoc key state.guest_agent) else None in
 				let list dir =
-					debug "list [%s]" dir;
 					List.map snd (List.filter (fun x -> String.startswith dir (fst x)) state.guest_agent) in
 				Xapi_guest_agent.all lookup list ~__context ~domid ~uuid:x.id
 			) state.domids;
@@ -197,8 +194,24 @@ let update_vbd ~__context x state =
 		let linux_device = snd x.id in
 		let disk_number = Device_number.of_linux_device (snd x.id) |> Device_number.to_disk_number |> string_of_int in
 		debug "VM %s VBD userdevices = [ %s ]" (fst x.id) (String.concat "; " (List.map (fun (_,r) -> r.API.vBD_userdevice) vbdrs));
-		let vbd, _ = List.find (fun (_, vbdr) -> vbdr.API.vBD_userdevice = linux_device || vbdr.API.vBD_userdevice = disk_number) vbdrs in
-		Db.VBD.set_currently_attached ~__context ~self:vbd ~value:state.plugged
+		let vbd, vbd_r = List.find (fun (_, vbdr) -> vbdr.API.vBD_userdevice = linux_device || vbdr.API.vBD_userdevice = disk_number) vbdrs in
+		Db.VBD.set_currently_attached ~__context ~self:vbd ~value:state.plugged;
+		debug "state.media_present = %b" state.media_present;
+		if state.plugged then begin
+			if state.media_present then begin
+				(* XXX PR-1255: I need to know the actual SR and VDI in use, not the content requested *)
+				match x.backend with
+					| Some (VDI x) ->
+						let vdi, _ = Storage_access.find_content ~__context x in
+						Db.VBD.set_VDI ~__context ~self:vbd ~value:vdi;
+						Db.VBD.set_empty ~__context ~self:vbd ~value:false
+					| _ ->
+						error "I don't know what to do with this kind of VDI backend"
+			end else if vbd_r.API.vBD_type = `CD then begin
+				Db.VBD.set_empty ~__context ~self:vbd ~value:true;
+				Db.VBD.set_VDI ~__context ~self:vbd ~value:Ref.null
+			end
+		end
 	with e ->
 		error "Caught %s while updating VBD" (Printexc.to_string e)
 
@@ -260,10 +273,26 @@ let start ~__context ~self paused =
 	if not paused
 	then Client.VM.unpause id |> success |> wait_for_task |> success_task |> ignore_task	
 
+let id_of_vm ~__context ~self = Db.VM.get_uuid ~__context ~self
+
 let reboot ~__context ~self timeout =
-	let id = Db.VM.get_uuid ~__context ~self in
+	let id = id_of_vm ~__context ~self in
 	Client.VM.reboot id timeout |> success |> wait_for_task |> success_task |> ignore_task
 
 let shutdown ~__context ~self timeout =
-	let id = Db.VM.get_uuid ~__context ~self in
+	let id = id_of_vm ~__context ~self in
 	Client.VM.shutdown id timeout |> success |> wait_for_task |> success_task |> ignore_task
+
+let id_of_vbd ~__context ~self =
+	let vm = Db.VBD.get_VM ~__context ~self in
+	let vbd = MD.of_vbd ~__context ~vm:(Db.VM.get_record ~__context ~self:vm) ~vbd:(Db.VBD.get_record ~__context ~self) in
+	vbd.Vbd.id
+
+let vbd_eject ~__context ~self =
+	let id = id_of_vbd ~__context ~self in
+	Client.VBD.eject id |> success |> wait_for_task |> success_task |> ignore_task
+
+let vbd_insert ~__context ~self ~vdi =
+	let id = id_of_vbd ~__context ~self in
+	let disk = disk_of_vdi ~__context ~self:vdi |> Opt.unbox in
+	Client.VBD.insert id disk |> success |> wait_for_task |> success_task |> ignore_task
