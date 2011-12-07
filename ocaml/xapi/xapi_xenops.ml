@@ -15,7 +15,9 @@
 module D=Debug.Debugger(struct let name="xenops" end)
 open D
 
+open Stringext
 open Listext
+open Threadext
 open Xenops_interface
 
 let disk_of_vdi ~__context ~self =
@@ -149,23 +151,66 @@ open Xenops_interface
 open Xenops_client
 open Fun
 
-let rec events_watch from =
+let update_vm ~__context x state =
+	try
+		let open Vm in
+		let self = Db.VM.get_by_uuid ~__context ~uuid:x.id in
+		Db.VM.set_power_state ~__context ~self ~value:(match state.power_state with
+			| Running -> `Running
+			| Halted -> `Halted
+			| Suspended -> `Suspended
+			| Paused -> `Paused
+		);
+		(* consoles *)
+		Db.VM.set_memory_target ~__context ~self ~value:state.memory_target;
+		let key = "timeoffset" in
+		(try Db.VM.remove_from_platform ~__context ~self ~key with _ -> ());
+		Db.VM.add_to_platform ~__context ~self ~key ~value:state.rtc_timeoffset;
+		List.iter
+			(fun domid ->
+				Mutex.execute Monitor.uncooperative_domains_m
+					(fun () ->
+						if state.uncooperative_balloon_driver
+						then Hashtbl.replace Monitor.uncooperative_domains domid ()
+						else Hashtbl.remove Monitor.uncooperative_domains domid
+					);
+				let lookup key = if List.mem_assoc key state.guest_agent then Some (List.assoc key state.guest_agent) else None in
+				let list dir = List.map snd (List.filter (fun x -> String.startswith dir (fst x)) state.guest_agent) in
+				Xapi_guest_agent.all lookup list ~__context ~domid ~uuid:x.id
+			) state.domids;
+		let metrics = Db.VM.get_metrics ~__context ~self in
+		Db.VM_metrics.set_start_time ~__context ~self:metrics ~value:(Date.of_float state.last_start_time);
+	with e ->
+		error "Caught %s while updating VM: has this VM been removed while this host is offline?" (Printexc.to_string e)
+
+let rec events_watch ~__context from =
 	let events, next = Client.UPDATES.get from None |> success in
 	let open Dynamic in
-	let lines = List.map
-		(function			| Vm_t(x, state) ->
-				
-				Printf.sprintf "VM %s" x.Vm.name
+	List.iter
+		(function
+			| Vm_t(x, state) ->
+				debug "xenops event on VM %s" x.Vm.name;
+				update_vm ~__context x state;
 			| Vbd_t(x, state) ->
-				Printf.sprintf "VBD %s.%s" (fst x.Vbd.id) (snd x.Vbd.id)
+				debug "xenops event on VBD %s.%s" (fst x.Vbd.id) (snd x.Vbd.id)
 			| Vif_t(x, state) ->
-				Printf.sprintf "VIF %s.%s" (fst x.Vif.id) (snd x.Vif.id)
+				debug "xenops event on VIF %s.%s" (fst x.Vif.id) (snd x.Vif.id)
 			| Task_t x ->
-				Printf.sprintf "Task %s %s" x.Task.id (x.Task.result |> Task.rpc_of_result |> Jsonrpc.to_string)
-		) events in
-	List.iter (fun x -> Printf.printf "%-8d %s\n" (Opt.unbox next) x) lines;
-	flush stdout;
-	events_watch next
+				debug "xenops event on Task %s %s" x.Task.id (x.Task.result |> Task.rpc_of_result |> Jsonrpc.to_string)
+		) events;
+	events_watch ~__context next
+
+let events_thread () =
+    Server_helpers.exec_with_new_task "xapi_xenops"
+		(fun __context ->
+			while true do
+				try
+					events_watch ~__context None;
+				with e ->
+					error "event thread caught: %s" (Printexc.to_string e);
+					Thread.delay 10.
+			done
+		)
 
 let success_task id =
 	let t = Client.TASK.stat id |> success in
