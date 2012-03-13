@@ -169,14 +169,14 @@ let assert_subscribed ~__context =
 
 (** Register an interest in events generated on objects of class <class_name> *)
 let register ~__context ~classes = 
-	let subs = List.map subscription_of_string (List.map String.lowercase classes) in
+	let subs = List.map subscription_of_string classes in
 	let sub = get_subscription ~__context in
 	Mutex.execute sub.m (fun () -> sub.subs <- subs @ sub.subs)
 
 
 (** Unregister interest in events generated on objects of class <class_name> *)
 let unregister ~__context ~classes = 
-	let subs = List.map subscription_of_string (List.map String.lowercase classes) in
+	let subs = List.map subscription_of_string classes in
 	let sub = get_subscription ~__context in
 	Mutex.execute sub.m
 		(fun () -> sub.subs <- List.filter (fun x -> not(List.mem x subs)) sub.subs)
@@ -286,7 +286,7 @@ let from ~__context ~classes ~token ~timeout =
 			raise (Api_errors.Server_error(Api_errors.event_from_token_parse_failure, [ token ])) in
 
 	(* Temporarily create a subscription for the duration of this call *)
-	let subs = List.map subscription_of_string (List.map String.lowercase classes) in
+	let subs = List.map subscription_of_string classes in
 	let sub = get_subscription ~__context in
 
 	sub.timeout <- Unix.gettimeofday () +. timeout;
