@@ -1137,10 +1137,18 @@ let vdi_generate_config printer rpc session_id params =
 
 let vdi_copy printer rpc session_id params =
 	let vdi = Client.VDI.get_by_uuid rpc session_id (List.assoc "uuid" params) in
-	let sr = Client.SR.get_by_uuid rpc session_id (List.assoc "sr-uuid" params) in
-	let newvdi = Client.VDI.copy rpc session_id vdi sr in
-	let newuuid = Client.VDI.get_uuid rpc session_id newvdi in
-	printer (Cli_printer.PList [newuuid])
+	match List.mem_assoc "sr-uuid" params, List.mem_assoc "vdi-uuid" params with
+		| false, false
+		| true, true ->
+			failwith "You must specify either sr-uuid or vdi-uuid (but not both)"
+		| true, false ->
+			let sr = Client.SR.get_by_uuid rpc session_id (List.assoc "sr-uuid" params) in
+			let newvdi = Client.VDI.copy rpc session_id vdi sr in
+			let newuuid = Client.VDI.get_uuid rpc session_id newvdi in
+			printer (Cli_printer.PList [newuuid])
+		| false, true ->
+			let newvdi = Client.VDI.get_by_uuid rpc session_id (List.assoc "vdi-uuid" params) in
+			Client.VDI.copy_into rpc session_id vdi newvdi
 
 let vdi_pool_migrate printer rpc session_id params =
 	let vdi = Client.VDI.get_by_uuid rpc session_id (List.assoc "uuid" params)

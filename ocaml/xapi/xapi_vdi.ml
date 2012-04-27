@@ -499,44 +499,60 @@ let clone ~__context ~vdi ~driver_params =
        raise e)
 		)
 
-let copy ~__context ~vdi ~sr =
-  Xapi_vdi_helpers.assert_managed ~__context ~vdi;
-  let task_id = Ref.string_of (Context.get_task_id __context) in
-
-  let src = Db.VDI.get_record ~__context ~self:vdi in
-  let dst =
-    Helpers.call_api_functions ~__context
-      (fun rpc session_id ->
-	let result = Client.VDI.create ~rpc ~session_id
-	   ~name_label:src.API.vDI_name_label
-	   ~name_description:src.API.vDI_name_description
-	   ~sR:sr
-	   ~virtual_size:src.API.vDI_virtual_size
-	   ~_type:src.API.vDI_type
-	   ~sharable:src.API.vDI_sharable
-	   ~read_only:src.API.vDI_read_only
-	   ~other_config:src.API.vDI_other_config
-	   ~xenstore_data:src.API.vDI_xenstore_data
-	   ~sm_config:[] ~tags:[] in
-    if src.API.vDI_on_boot = `reset then begin
-		try Client.VDI.set_on_boot ~rpc ~session_id ~self:result ~value:(`reset) with _ -> ()
+let copy_into ~__context ~vdi ~dest =
+	Xapi_vdi_helpers.assert_managed ~__context ~vdi;
+	(* Check whether the destination VDI needs to be resized *)
+	let src_size = Db.VDI.get_virtual_size ~__context ~self:vdi in
+	let dest_size = Db.VDI.get_virtual_size ~__context ~self:dest in
+	if src_size > dest_size then begin
+		info "VDI.copy_into src VDI %s virtual_size %Ld > dest VDI %s virtual_size %Ld: resizing"
+			(Db.VDI.get_uuid ~__context ~self:vdi) src_size
+			(Db.VDI.get_uuid ~__context ~self:dest) dest_size;
+		Helpers.call_api_functions ~__context
+			(fun rpc session_id ->
+				Client.VDI.resize ~rpc ~session_id ~vdi:dest ~size:src_size
+			)
 	end;
-	result
-      ) in
-  try
-	Db.VDI.set_allow_caching ~__context ~self:dst ~value:src.API.vDI_allow_caching;
+	Sm_fs_ops.copy_vdi ~__context vdi dest;
 
-    Sm_fs_ops.copy_vdi ~__context vdi dst;
+	let task_id = Ref.string_of (Context.get_task_id __context) in
+	Db.VDI.remove_from_current_operations ~__context ~self:dest ~key:task_id;
+	update_allowed_operations ~__context ~self:dest
 
-    Db.VDI.remove_from_current_operations ~__context ~self:dst ~key:task_id;
-    update_allowed_operations ~__context ~self:dst;
+let copy ~__context ~vdi ~sr =
+	Xapi_vdi_helpers.assert_managed ~__context ~vdi;
 
-    dst
-  with 
-      e -> 
-      Helpers.call_api_functions ~__context
-      (fun rpc session_id -> Client.VDI.destroy rpc session_id dst);
-      raise e
+	let src = Db.VDI.get_record ~__context ~self:vdi in
+	let dest =
+		Helpers.call_api_functions ~__context
+			(fun rpc session_id ->
+				let result = Client.VDI.create ~rpc ~session_id
+					~name_label:src.API.vDI_name_label
+					~name_description:src.API.vDI_name_description
+					~sR:sr
+					~virtual_size:src.API.vDI_virtual_size
+					~_type:src.API.vDI_type
+					~sharable:src.API.vDI_sharable
+					~read_only:src.API.vDI_read_only
+					~other_config:src.API.vDI_other_config
+					~xenstore_data:src.API.vDI_xenstore_data
+					~sm_config:[] ~tags:[] in
+				if src.API.vDI_on_boot = `reset then begin
+					try Client.VDI.set_on_boot ~rpc ~session_id ~self:result ~value:(`reset) with _ -> ()
+				end;
+				result
+			) in
+	try
+		Db.VDI.set_allow_caching ~__context ~self:dest ~value:src.API.vDI_allow_caching;
+		copy_into ~__context ~vdi ~dest;
+		dest
+	with
+		| e -> 
+			Helpers.call_api_functions ~__context
+				(fun rpc session_id ->
+					Client.VDI.destroy rpc session_id dest
+				);
+			raise e
 
 let pool_migrate ~__context ~vdi ~sr ~network ~options =
 	raise (Api_errors.Server_error(Api_errors.not_implemented, [ "VDI.pool_migrate" ]))

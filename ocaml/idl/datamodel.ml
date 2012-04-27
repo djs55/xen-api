@@ -2793,6 +2793,17 @@ let vdi_copy = call
   ~allowed_roles:_R_VM_ADMIN
   ()
 
+let vdi_copy_into = call
+  ~name:"copy_into"
+  ~lifecycle:[
+	Published, rel_tampa, "Copies the contents of a VDI to another VDI. There must be a host that can see both the source and destination SRs simultaneously"
+  ]
+  ~in_oss_since:None
+  ~params:[Ref _vdi, "vdi", "The VDI to copy"; Ref _vdi, "dest", "The destination VDI" ]
+  ~doc:"Copy the data within a VDI into another VDI, resizing if necessary"
+  ~allowed_roles:_R_VM_ADMIN
+  ()
+
 let vdi_pool_migrate = call
   ~name:"pool_migrate"
   ~in_oss_since:None
@@ -5340,6 +5351,7 @@ let vdi =
 		 vdi_db_introduce; vdi_db_forget;
 		 vdi_update;
 		 vdi_copy;
+		 vdi_copy_into;
 		 vdi_force_unlock; vdi_set_managed;
 		 vdi_forget;
 		 vdi_set_sharable;

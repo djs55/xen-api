@@ -3209,6 +3209,18 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			with Not_found ->
 				SR.forward_sr_multiple_op ~local_fn ~__context ~srs:[src_sr] ~prefer_slaves:true op
 
+		let copy_into ~__context ~vdi ~dest =
+			info "VDI.copy_into: VDI = '%s'; dest = '%s'" (vdi_uuid ~__context vdi) (vdi_uuid ~__context dest);
+			let local_fn = Local.VDI.copy_into ~vdi ~dest in
+			let src_sr = Db.VDI.get_SR ~__context ~self:vdi in
+			let dest_sr = Db.VDI.get_SR ~__context ~self:dest in
+			(* No need to lock the VDI because the VBD.plug will do that for us *)
+			let op session_id rpc = Client.VDI.copy_into rpc session_id vdi dest in
+			try
+				SR.forward_sr_multiple_op ~local_fn ~__context ~srs:[src_sr; dest_sr] ~prefer_slaves:true op
+			with Not_found ->
+				SR.forward_sr_multiple_op ~local_fn ~__context ~srs:[src_sr] ~prefer_slaves:true op
+
 		let pool_migrate ~__context ~vdi ~sr ~network ~options =
 			info "VDI.pool_migrate: VDI = '%s'; SR = '%s'; network = '%s'"
 				(vdi_uuid ~__context vdi) (sr_uuid ~__context sr) (network_uuid ~__context network);
