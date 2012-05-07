@@ -1671,8 +1671,18 @@ let internal_event_thread_body = Debug.with_thread_associated "events" (fun () -
 	debug "Shutting down internal event thread"
 )
 
-let set_backend m =
-	backend := m;
+let registered_backends = Hashtbl.create 10
+
+let register_backend name m = Hashtbl.replace registered_backends name m
+
+let dump_backends () =
+  debug "Registered plugins: %s" (String.concat ", " (Hashtbl.fold (fun name _ acc -> name :: acc) registered_backends []))
+
+let set_backend name =
+	if not(Hashtbl.mem registered_backends name)
+	then failwith (Printf.sprintf "Backend %s not registered" name);
+	let m = Hashtbl.find registered_backends name in
+	backend := Some m;
 	(* start the internal event thread *)
 	internal_event_thread := Some (Thread.create internal_event_thread_body ());
 	let module B = (val get_backend () : S) in

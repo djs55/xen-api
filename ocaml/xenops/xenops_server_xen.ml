@@ -481,6 +481,8 @@ let set_stubdom ~xs domid domid' =
 let get_stubdom ~xs domid =
 	try Some (int_of_string (xs.Xs.read (Printf.sprintf "/local/domain/%d/stub-domid" domid))) with _ -> None
 
+module Backend = struct
+
 module HOST = struct
 	let get_console_data () =
 		with_xc_and_xs
@@ -2150,3 +2152,7 @@ module DEBUG = struct
 			debug "DEBUG.trigger cmd=%s Unimplemented" cmd;
 			raise (Unimplemented(cmd))
 end
+
+end
+
+let _ = Xenops_server.register_backend "xen" (module Backend: Xenops_server_plugin.S)

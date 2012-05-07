@@ -310,6 +310,8 @@ let set_qos_vbd vm vbd () =
 	(* XXX *)
 	()
 
+module Backend = struct
+
 module HOST = struct
 	let get_console_data () = "Xen simulator"
 	let get_total_memory_mib () = Int64.mul 1024L 1024L (* 1 TiB *)
@@ -417,3 +419,7 @@ module DEBUG = struct
 end
 
 let init () = ()
+
+end
+
+let _ = Xenops_server.register_backend "simulator" (module Backend: Xenops_server_plugin.S)

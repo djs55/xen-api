@@ -31,7 +31,7 @@ let minor_version = 9
 let config_file = ref (Printf.sprintf "/etc/%s.conf" name)
 let pidfile = ref (Printf.sprintf "/var/run/%s.pid" name)
 let log_destination = ref "syslog:daemon"
-let simulate = ref false
+let backend = ref "simulator"
 let persist = ref true
 let daemon = ref false
 let worker_pool_size = ref 4
@@ -39,7 +39,7 @@ let worker_pool_size = ref 4
 let config_spec = [
 	"pidfile", Config.Set_string pidfile;
 	"log", Config.Set_string log_destination;
-	"simulate", Config.Set_bool simulate;
+	"backend", Config.Set_string backend;
 	"persist", Config.Set_bool persist;
 	"daemon", Config.Set_bool daemon;
 	"disable-logging-for", Config.String
@@ -68,7 +68,7 @@ let read_config_file () =
 let dump_config_file () : unit =
 	debug "pidfile = %s" !pidfile;
 	debug "log = %s" !log_destination;
-	debug "simulate = %b" !simulate;
+	debug "backend = %s" !backend;
 	debug "persist = %b" !persist;
 	debug "daemon = %b" !daemon;
 	debug "worker-pool-size = %d" !worker_pool_size;
@@ -204,7 +204,7 @@ let _ =
   Arg.parse (Arg.align [
 	       "-daemon", Arg.Set daemon, "Create a daemon";
 	       "-pidfile", Arg.Set_string pidfile, Printf.sprintf "Set the pid file (default \"%s\")" !pidfile;
-		   "-simulate", Arg.Set simulate, "Use the simulator backend (default is the xen backend)";
+		   "-backend", Arg.Set_string backend, Printf.sprintf "Use the specified backend (default is %s)" !backend;
 		   "-config", Arg.Set_string config_file, Printf.sprintf "Read configuration from the specified config file (default \"%s\")" !config_file;
 	     ])
     (fun _ -> failwith "Invalid argument")
@@ -212,6 +212,7 @@ let _ =
   read_config_file ();
 
   dump_config_file ();
+  Xenops_server.dump_backends ();
 
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;
 
@@ -231,10 +232,7 @@ let _ =
 	  else (module Xenops_utils.MemFS: Xenops_utils.FS)));
 
   Xenops_server.register_objects();
-  Xenops_server.set_backend
-	  (Some (if !simulate
-	  then (module Xenops_server_simulator: Xenops_server_plugin.S)
-	  else (module Xenops_server_xen: Xenops_server_plugin.S)));
+  Xenops_server.set_backend !backend;
 
   Debug.with_thread_associated "main" (start sockets) Server.process;
   Xenops_utils.Scheduler.start ();
