@@ -48,7 +48,8 @@ let read_localhost_info () =
 		let xc = Xenctrl.interface_open () in
 		let v = Xenctrl.version xc in
 		Xenctrl.interface_close xc;
-		Printf.sprintf "%d.%d%s" v.Xenctrl.major v.Xenctrl.minor v.Xenctrl.extra
+		let open Xenctrl.Version in
+		Printf.sprintf "%d.%d%s" v.major v.minor v.extra
 	and linux_verstring =
 		let verstring = ref "" in
 		let f line =
@@ -398,7 +399,7 @@ let create_host_cpu ~__context =
 		let xc = Xenctrl.interface_open () in
 		let p = Xenctrl.physinfo xc in
 		Xenctrl.interface_close xc;
-		p.Xenctrl.nr_cpus
+		p.Xenctrl.Phys_info.nr_cpus
 		in
 	let trim_end s =
         	let i = ref (String.length s - 1) in
