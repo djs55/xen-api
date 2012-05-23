@@ -596,7 +596,7 @@ let bind ~__context ~pbd =
 			if List.mem ty (Sm.supported_drivers ())
 			then make_smapiv1 (Constants.path [ Constants._services; Constants._SM; ty ])
 			else begin
-				let socket = Filename.concat Fhs.vardir (Printf.sprintf "xapi/sm/%s" ty) in
+				let socket = Filename.concat Fhs.vardir (Printf.sprintf "sm/%s" ty) in
 				if not(Sys.file_exists socket) then begin
 					error "SM plugin unix domain socket does not exist: %s" socket;
 					raise (Api_errors.Server_error(Api_errors.sr_unknown_driver, [ ty ]));
