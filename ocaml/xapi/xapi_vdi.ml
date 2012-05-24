@@ -118,6 +118,10 @@ let check_operation_error ~__context ha_enabled record _ref' op =
 			Some (Api_errors.vdi_is_sharable, [ _ref ])
 	  | `snapshot when reset_on_boot ->
 		    Some (Api_errors.vdi_on_boot_mode_incompatable_with_operation, [])
+	  | `clone ->
+	      if not (List.mem Smint.Vdi_clone sm_caps)
+	      then Some (Api_errors.sr_operation_not_supported, [Ref.string_of sr])
+	      else None
       | _ -> None
     )
 
