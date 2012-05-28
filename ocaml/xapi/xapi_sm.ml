@@ -33,8 +33,7 @@ open D
 let create_from_query_result ~__context q =
 	let r = Ref.make () and u = Uuid.string_of_uuid (Uuid.make_uuid ()) in
 	let open Storage_interface in
-	let driver = String.lowercase q.driver in
-	Db.SM.create ~__context ~ref:r ~uuid:u ~_type:driver
+	Db.SM.create ~__context ~ref:r ~uuid:u ~_type:(String.lowercase q.driver)
 		 ~name_label:q.name
 		 ~name_description:q.description
 		 ~vendor:q.vendor
@@ -44,13 +43,14 @@ let create_from_query_result ~__context q =
 		 ~capabilities:q.features
 		 ~configuration:q.configuration
 		 ~other_config:[]
-		 ~driver_filename:driver
+		 ~driver_filename:(Sm_exec.cmd_name q.driver)
 
 let update_from_query_result ~__context (self, r) query_result =
 	let open Storage_interface in
-	let driver = String.lowercase query_result.driver in
-	if r.API.sM_type <> driver
-	then Db.SM.set_type ~__context ~self ~value:driver;
+	let _type = String.lowercase query_result.driver in
+	let driver_filename = Sm_exec.cmd_name query_result.driver in
+	if r.API.sM_type <> _type
+	then Db.SM.set_type ~__context ~self ~value:_type;
 	if r.API.sM_name_label <> query_result.name
 	then Db.SM.set_name_label ~__context ~self ~value:query_result.name;
 	if r.API.sM_name_description <> query_result.description
@@ -65,8 +65,8 @@ let update_from_query_result ~__context (self, r) query_result =
 	then Db.SM.set_capabilities ~__context ~self ~value:query_result.features;
 	if r.API.sM_configuration <> query_result.configuration
 	then Db.SM.set_configuration ~__context ~self ~value:query_result.configuration;
-	if r.API.sM_driver_filename <> driver
-	then Db.SM.set_driver_filename ~__context ~self ~value:driver
+	if r.API.sM_driver_filename <> driver_filename
+	then Db.SM.set_driver_filename ~__context ~self ~value:driver_filename
 
 (** Update all SMAPIv1 plugins which have been deleted from the filesystem.
     The SMAPIv2 ones are dynamically discovered so we leave those alone. *)
