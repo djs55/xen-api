@@ -150,12 +150,15 @@ let pingable ip () =
 		true
 	with _ -> false
 
-let queryable ip port () =
+let queryable ~__context transport () =
 	let open Xmlrpc_client in
-	let rpc = XMLRPC_protocol.rpc ~srcstr:"xapi" ~dststr:"remote_smapiv2" ~transport:(TCP(ip, port)) ~http:(xmlrpc ~version:"1.0" "/") in
+	let dbg = Context.string_of_task __context in
+	let rpc = XMLRPC_protocol.rpc ~srcstr:"xapi" ~dststr:"remote_smapiv2" ~transport ~http:(xmlrpc ~version:"1.0" "/") in
     try
 		let module C = Storage_interface.Client(struct let rpc = rpc end) in
-        let q = C.query () in
-        info "%s:%s:%s at %s:%d" q.Storage_interface.name q.Storage_interface.vendor q.Storage_interface.version ip port;
+        let q = C.Query.query ~dbg in
+        info "%s:%s:%s at %s" q.Storage_interface.name q.Storage_interface.vendor q.Storage_interface.version (string_of_transport transport);
         true
-    with _ -> false
+    with e ->
+		debug "Temporary failure querying storage service on %s: %s" (string_of_transport transport) (Printexc.to_string e);
+		false

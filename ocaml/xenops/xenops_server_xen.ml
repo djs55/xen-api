@@ -249,6 +249,18 @@ module Storage = struct
 	(* Used to identify this VBD to the storage layer *)
 	let id_of frontend_domid vbd = Printf.sprintf "vbd/%d/%s" frontend_domid (snd vbd)
 
+	let epoch_begin task sr vdi =
+		transform_exception
+			(fun () ->
+				Client.VDI.epoch_begin task.Xenops_task.debug_info sr vdi
+			) ()
+
+	let epoch_end task sr vdi =
+		transform_exception
+			(fun () ->
+				Client.VDI.epoch_end task.Xenops_task.debug_info sr vdi
+			) ()
+
 	let attach_and_activate task dp sr vdi read_write =
 		let result =
 			Xenops_task.with_subtask task (Printf.sprintf "VDI.attach %s" dp)
@@ -277,11 +289,11 @@ module Storage = struct
 
 	let get_disk_by_name task path =
 		debug "Storage.get_disk_by_name %s" path;
-		Xenops_task.with_subtask task (Printf.sprintf "get_by_name %s" path)
-			(transform_exception (fun () ->
-				let vdi = Client.get_by_name "get_by_name" path in
-				vdi.sr, vdi.vdi
-			))
+		match String.split ~limit:2 '/' path with
+			| [ sr; vdi ] -> sr, vdi
+			| _ ->
+				error "Failed to parse VDI name %s (expected SR/VDI)" path;
+				raise (Storage_interface.Vdi_does_not_exist path)
 end
 
 let with_disk ~xc ~xs task disk write f = match disk with
@@ -1469,6 +1481,18 @@ module VBD = struct
 
 	let device_number_of_device d =
 		Device_number.of_xenstore_key d.Device_common.frontend.Device_common.devid
+
+	let epoch_begin task vm vbd = match vbd.backend with
+		| Some (VDI path) ->
+			let sr, vdi = Storage.get_disk_by_name task path in
+			Storage.epoch_begin task sr vdi
+		| _ -> ()
+
+	let epoch_end task vm vbd = match vbd.backend with
+		| Some (VDI path) ->
+			let sr, vdi = Storage.get_disk_by_name task path in
+			Storage.epoch_end task sr vdi
+		| _ -> ()		
 
 	let plug task vm vbd =
 		(* Dom0 doesn't have a vm_t - we don't need this currently, but when we have storage driver domains, 
