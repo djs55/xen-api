@@ -34,7 +34,8 @@ let xenapi_of_xenops_power_state = function
 
 (* This is only used to block the 'present multiple physical cores as one big hyperthreaded core' feature *)
 let filtered_platform_flags = ["acpi"; "apic"; "nx"; "pae"; "viridian";
-                               "acpi_s3";"acpi_s4"; "mmio_size_mib"; "revision"; "device_id"]
+                               "acpi_s3";"acpi_s4"; "mmio_size_mib"; "revision"; "device_id";
+                               "tsc_mode"]
 
 let xenops_vdi_locator_of_strings sr_uuid vdi_location =
 	Printf.sprintf "%s/%s" sr_uuid vdi_location
@@ -333,6 +334,12 @@ module MD = struct
 		let platformdata =
 			("timeoffset", timeoffset) ::
 				(List.filter (fun (key, _) -> key <> "timeoffset") platformdata) in
+		(* Filter out invalid TSC modes. *)
+		let platformdata =
+			List.filter
+				(fun (k, v) -> k <> "tsc_mode" || List.mem v ["0"; "1"; "2"; "3"])
+				platformdata
+		in
 
 		let pci_msitranslate = true in (* default setting *)
 		(* CA-55754: allow VM.other_config:msitranslate to override the bus-wide setting *)
@@ -1361,7 +1368,7 @@ let transform_xenops_exn ~__context f =
 		| Does_not_exist(thing, id) -> internal "Object with type %s and id %s does not exist in xenopsd" thing id
 		| Unimplemented(fn) -> reraise Api_errors.not_implemented [ fn ]
 		| Domain_not_built -> internal "domain has not been built"
-		| Maximum_vcpus n -> internal "the maximum number of vcpus configured for this VM is currently: %d" n
+		| Invalid_vcpus n -> internal "the maximum number of vcpus configured for this VM is currently: %d" n
 		| Bad_power_state(found, expected) ->
 			let f x = x |> (fun x -> Some x) |> xenapi_of_xenops_power_state |> Record_util.power_state_to_string in
 			let found = f found and expected = f expected in
@@ -1485,7 +1492,7 @@ let set_vcpus ~__context ~self n =
 					Db.VM_metrics.set_VCPUs_number ~__context ~self:metrics ~value:n;
 				Event.wait dbg ();
 			with
-				| Maximum_vcpus n ->
+				| Invalid_vcpus n ->
 					raise (Api_errors.Server_error(Api_errors.invalid_value, [
 						"VCPU values must satisfy: 0 < VCPUs ≤ VCPUs_max";
 						string_of_int n

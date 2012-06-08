@@ -92,13 +92,14 @@ let _ =
 	else
 		Debug.log_to_stdout ();
 
+	handle_shutdown ();
+	Debug.with_thread_associated "main" start ();
+
 	if !pidfile <> "" then begin
 		Unixext.mkdir_rec (Filename.dirname !pidfile) 0o755;
 		Unixext.pidfile_write !pidfile;
 	end;
 
-	handle_shutdown ();
-	Debug.with_thread_associated "main" start ();
 	while true do
 		Thread.delay 300.;
 		Network_server.on_timer ()
