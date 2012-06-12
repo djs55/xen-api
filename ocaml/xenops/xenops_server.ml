@@ -70,8 +70,7 @@ type atomic =
 	| VIF_set_carrier of Vif.id * bool
 	| VIF_set_locking_mode of Vif.id * Vif.locking_mode
 	| VM_hook_script of (Vm.id * Xenops_hooks.script * string)
-	| VBD_plug_paused of Vbd.id
-	| VBD_unpause of Vbd.id
+	| VBD_plug of Vbd.id
 	| VBD_epoch_begin of Vbd.id
 	| VBD_epoch_end of Vbd.id
 	| VBD_set_qos of Vbd.id
@@ -113,7 +112,6 @@ type operation =
 	| VM_restore_devices of Vm.id
 	| VM_migrate of (Vm.id * (string * string) list * (string * Network.t) list * string)
 	| VM_receive_memory of (Vm.id * int64 * Unix.file_descr)
-	| VBD_plug of Vbd.id
 	| VM_check_state of Vm.id
 	| PCI_check_state of Pci.id
 	| VBD_check_state of Vbd.id
@@ -728,11 +726,6 @@ let pci_plug_order pcis =
 	List.sort (fun a b -> compare a.Pci.position b.Pci.position) pcis
 
 let rec atomics_of_operation = function
-	| VBD_plug id ->
-		[
-			VBD_plug_paused id;
-			VBD_unpause id
-		]
 	| VM_start id ->
 		[
 			VM_hook_script(id, Xenops_hooks.VM_pre_start, Xenops_hooks.reason__none);
@@ -740,9 +733,7 @@ let rec atomics_of_operation = function
 			VM_build id;
 		] @ (List.map (fun vbd -> VBD_epoch_begin vbd.Vbd.id)
 			(VBD_DB.vbds id)
-		) @ (List.concat (List.map (fun vbd -> atomics_of_operation (VBD_plug vbd.Vbd.id))
-			(VBD_DB.vbds id |> vbd_plug_order))
-		) @ (List.map (fun vbd -> VBD_unpause vbd.Vbd.id)
+		) @ (List.map (fun vbd -> VBD_plug vbd.Vbd.id)
 			(VBD_DB.vbds id |> vbd_plug_order)
 		) @ (List.map (fun vif -> VIF_plug vif.Vif.id)
 			(VIF_DB.vifs id |> vif_plug_order)
@@ -778,7 +769,7 @@ let rec atomics_of_operation = function
 		]
 	| VM_restore_devices id ->
 		[
-		] @ (List.map (fun vbd -> VBD_plug_paused vbd.Vbd.id)
+		] @ (List.map (fun vbd -> VBD_plug vbd.Vbd.id)
 			(VBD_DB.vbds id |> vbd_plug_order)
 		) @ (List.map (fun vif -> VIF_plug vif.Vif.id)
 			(VIF_DB.vifs id |> vif_plug_order)
@@ -836,8 +827,6 @@ let rec atomics_of_operation = function
 			VM_create (id, None);
 			VM_restore (id, data);
 		] @ (atomics_of_operation (VM_restore_devices id)
-		) @ (List.map (fun vbd -> VBD_unpause vbd.Vbd.id)
-			(VBD_DB.vbds id |> vbd_plug_order)
 		) @ [
 			(* At this point the domain is considered survivable. *)
 			VM_set_domain_action_request(id, None)			
@@ -878,13 +867,9 @@ let perform_atomic ~progress_callback ?subtask (op: atomic) (t: Xenops_task.t) :
 				) (fun () -> VIF_DB.signal id)
 		| VM_hook_script(id, script, reason) ->
 			Xenops_hooks.vm ~script ~reason ~id
-		| VBD_plug_paused id ->
-			debug "VBD.plug_paused %s" (VBD_DB.string_of_id id);
-			B.VBD.plug_paused t (VBD_DB.vm_of id) (VBD_DB.read_exn id);
-			VBD_DB.signal id
-		| VBD_unpause id ->
-			debug "VBD.unpause %s" (VBD_DB.string_of_id id);
-			B.VBD.unpause t (VBD_DB.vm_of id) (VBD_DB.read_exn id);
+		| VBD_plug id ->
+			debug "VBD.plug %s" (VBD_DB.string_of_id id);
+			B.VBD.plug t (VBD_DB.vm_of id) (VBD_DB.read_exn id);
 			VBD_DB.signal id
 		| VBD_epoch_begin id ->
 			debug "VBD.epoch_begin %s" (VBD_DB.string_of_id id);
@@ -1056,10 +1041,6 @@ let perform_atomics atomics t =
 let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 	let module B = (val get_backend () : S) in
 	let one = function
-		| VBD_plug id ->
-			debug "VBD.plug %s.%s" (fst id) (snd id);
-			perform_atomics (atomics_of_operation op) t;
-			VBD_DB.signal id
 		| VM_start id ->
 			debug "VM.start %s" id;
 			begin try
@@ -1181,32 +1162,23 @@ let rec perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 			debug "Synchronisation point 1";
 
 			debug "VM.receive_memory calling create";
-			perform_atomics ([
+			perform_atomics [
 				VM_create (id, Some memory_limit);
-			] @ (atomics_of_operation (VM_restore_devices id)) @ [
 				VM_restore (id, FD s);
-			]) t;
+			] t;
 			debug "VM.receive_memory restore complete";
 			debug "Synchronisation point 2";
-
-			(* The VM can be unpaused and the network stack woken up because
-			   the remote domain has now shutdown. Note disk I/O is still frozen. *)
-			perform_atomics ([
-				VM_unpause id;
-			]) t;
 
 			begin try
 				(* Receive the all-clear to unpause *)
 				Handshake.recv_success ~verbose:true s;
 				debug "Synchronisation point 3";
 
-				perform_atomics (
-					(List.map (fun vbd -> VBD_unpause vbd.Vbd.id)
-						(VBD_DB.vbds id |> vbd_plug_order)
-					) @ [
-						VM_set_domain_action_request(id, None)
-					]
-				) t;
+				perform_atomics ([
+				] @ (atomics_of_operation (VM_restore_devices id)) @ [
+					VM_unpause id;
+					VM_set_domain_action_request(id, None)
+				]) t;
 
 				Handshake.send s Handshake.Success;
 				debug "Synchronisation point 4";
@@ -1386,7 +1358,7 @@ module VBD = struct
 		Debug.with_thread_associated dbg
 			(fun () -> add' x ) ()
 
-	let plug _ dbg id = queue_operation dbg (DB.vm_of id) (VBD_plug id)
+	let plug _ dbg id = queue_operation dbg (DB.vm_of id) (Atomic(VBD_plug id))
 	let unplug _ dbg id force = queue_operation dbg (DB.vm_of id) (Atomic(VBD_unplug (id, force)))
 
 	let insert _ dbg id disk = queue_operation dbg (DB.vm_of id) (Atomic(VBD_insert(id, disk)))
