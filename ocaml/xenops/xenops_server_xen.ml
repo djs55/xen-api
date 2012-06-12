@@ -244,13 +244,10 @@ module Storage = struct
 				Client.VDI.epoch_end task.Xenops_task.debug_info sr vdi
 			) ()
 
-	let attach_and_activate ~xc ~xs task vm dp sr vdi read_write =
+	let attach ~xc ~xs task vm dp sr vdi read_write =
 		let result =
 			Xenops_task.with_subtask task (Printf.sprintf "VDI.attach %s" dp)
 				(transform_exception (fun () -> Client.VDI.attach "attach_and_activate" dp sr vdi read_write)) in
-
-		Xenops_task.with_subtask task (Printf.sprintf "VDI.activate %s" dp)
-			(transform_exception (fun () -> Client.VDI.activate "attach_and_activate" dp sr vdi));
 		let backend = Xenops_task.with_subtask task (Printf.sprintf "Policy.get_backend_vm %s %s %s" vm sr vdi)
 			(transform_exception (fun () -> Client.Policy.get_backend_vm "attach_and_activate" vm sr vdi)) in
 		match domid_of_uuid ~xc ~xs Newest (Uuid.uuid_of_string backend) with
@@ -258,6 +255,16 @@ module Storage = struct
 				failwith (Printf.sprintf "Driver domain disapppeared: %s" backend)
 			| Some domid ->
 				{ domid = domid; attach_info = result }
+
+	let activate ~xc ~xs task vm dp sr vdi =
+		Xenops_task.with_subtask task (Printf.sprintf "VDI.activate %s" dp)
+			(transform_exception (fun () -> Client.VDI.activate "attach_and_activate" dp sr vdi))
+
+	let attach_and_activate ~xc ~xs task vm dp sr vdi read_write =
+		let result = attach ~xc ~xs task vm dp sr vdi read_write in
+		activate ~xc ~xs task vm dp sr vdi;
+		result
+
 
 	let deactivate task dp sr vdi =
 		debug "Deactivating disk %s %s" sr vdi;
@@ -1455,7 +1462,7 @@ module VBD = struct
 
 	let id_of vbd = snd vbd.id
 
-	let attach_and_activate task xc xs frontend_domid vbd = function
+	let attach task xc xs frontend_domid vbd = function
 		| None ->
 			(* XXX: do something better with CDROMs *)
 			{ domid = this_domid ~xs; attach_info = { Storage_interface.params=""; xenstore_data=[]; } }
@@ -1465,7 +1472,17 @@ module VBD = struct
 			let sr, vdi = Storage.get_disk_by_name task path in
 			let dp = Storage.id_of frontend_domid vbd.id in
 			let vm = fst vbd.id in
-			Storage.attach_and_activate ~xc ~xs task vm dp sr vdi (vbd.mode = ReadWrite)
+			Storage.attach ~xc ~xs task vm dp sr vdi (vbd.mode = ReadWrite)
+
+	let activate task xc xs frontend_domid vbd = function
+		| None
+		| Some (Local _) ->
+			()
+		| Some (VDI path) ->
+			let sr, vdi = Storage.get_disk_by_name task path in
+			let dp = Storage.id_of frontend_domid vbd.id in
+			let vm = fst vbd.id in
+			Storage.activate ~xc ~xs task vm dp sr vdi
 
 	let frontend_domid_of_device device = device.Device_common.frontend.Device_common.domid
 
@@ -1484,7 +1501,7 @@ module VBD = struct
 			Storage.epoch_end task sr vdi
 		| _ -> ()		
 
-	let plug task vm vbd =
+	let plug_paused task vm vbd =
 		(* Dom0 doesn't have a vm_t - we don't need this currently, but when we have storage driver domains, 
 		   we will. Also this causes the SMRT tests to fail, as they demand the loopback VBDs *)
 		let vm_t = DB.read vm in 
@@ -1493,7 +1510,7 @@ module VBD = struct
 				if vbd.backend = None && not hvm
 				then info "VM = %s; an empty CDROM drive on a PV guest is simulated by unplugging the whole drive" vm
 				else begin
-					let vdi = attach_and_activate task xc xs frontend_domid vbd vbd.backend in
+					let vdi = attach task xc xs frontend_domid vbd vbd.backend in
 
 					let extra_backend_keys = List.fold_left (fun acc (k,v) ->
 						let k = "sm-data/" ^ k in
@@ -1553,6 +1570,14 @@ module VBD = struct
 				end
 			) Newest vm
 
+	let unpause task vm vbd =
+		on_frontend
+			(fun xc xs frontend_domid hvm ->
+				if vbd.backend = None && not hvm
+				then info "VM = %s; an empty CDROM drive on a PV guest is simulated by unplugging the whole drive" vm
+				else activate task xc xs frontend_domid vbd vbd.backend
+			) Newest vm
+
 	let unplug task vm vbd force =
 		let vm_t = DB.read vm in
 		with_xc_and_xs
@@ -1591,10 +1616,13 @@ module VBD = struct
 		on_frontend
 			(fun xc xs frontend_domid hvm ->
 				if not hvm
-				then plug task vm { vbd with backend = Some disk }
-				else begin
+				then begin
+					plug_paused task vm { vbd with backend = Some disk };
+					unpause task vm { vbd with backend = Some disk }
+				end else begin
 					let (device: Device_common.device) = device_by_id xc xs vm Device_common.Vbd Newest (id_of vbd) in
-					let vdi = attach_and_activate task xc xs frontend_domid vbd (Some disk) in
+					let vdi = attach task xc xs frontend_domid vbd (Some disk) in
+					activate task xc xs frontend_domid vbd (Some disk);
 					let device_number = device_number_of_device device in
 					let phystype = Device.Vbd.Phys in
 					Device.Vbd.media_insert ~xs ~device_number ~params:vdi.attach_info.Storage_interface.params ~phystype frontend_domid
