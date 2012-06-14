@@ -627,7 +627,7 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 				| Vdi_automaton.Activated _, Some attach_info ->
 					attach_info
 				| _ -> 
-					raise (Internal_error (Printf.sprintf "sr: %s vdi: %s Datapath %s not attached" sr vdi dp))
+					raise (Internal_error (Printf.sprintf "sr: %s vdi: %s Datapath %s not activated" sr vdi dp))
 
 
 		let stat_vdi context ~dbg ~sr ~vdi () =
