@@ -173,6 +173,9 @@ type query_result = {
 module Query = struct
 	(** [query ()] returns information about this storage driver *)
 	external query: dbg:string -> query_result = ""
+
+	(** [diagnostics ()] returns diagnostic information about this storage driver *)
+	external diagnostics: dbg:string -> string = ""
 end
 
 module DP = struct
@@ -329,6 +332,9 @@ module DATA = struct
 
 end
 
+module Policy = struct
+	external get_backend_vm: dbg:debug_info -> vm:string -> sr:sr -> vdi:vdi -> string = ""
+end
 
 module TASK = struct
 	external stat: dbg:debug_info -> task:Task.id -> Task.t = ""

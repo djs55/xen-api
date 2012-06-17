@@ -28,6 +28,7 @@ module Proxy = functor(RPC: RPC) -> struct
 
 	module Query = struct
 		let query _ = Client.Query.query
+		let diagnostics _ = Client.Query.diagnostics
 	end
 	module DP = struct
 		let create _ = Client.DP.create
@@ -67,6 +68,10 @@ module Proxy = functor(RPC: RPC) -> struct
 	end
 
 	let get_by_name _ = Client.get_by_name
+
+	module Policy = struct
+		let get_backend_vm _ = Client.Policy.get_backend_vm
+	end
 
 	module DATA = struct
 		let copy_into _ = Client.DATA.copy_into

@@ -40,7 +40,6 @@ let find_content ~__context ?sr name =
 		(fun (_, vdi_rec) ->
 			false
 			|| (vdi_rec.API.vDI_location = name) (* PR-1255 *)
-			|| (List.mem_assoc "content_id" vdi_rec.API.vDI_other_config && (List.assoc "content_id" vdi_rec.API.vDI_other_config = name))
 		) all
 
 let redirect sr =
@@ -72,6 +71,9 @@ module SMAPIv1 = struct
 			features = [];
 			configuration = []
 		}
+
+		let diagnostics context ~dbg =
+			"No diagnostics are available for SMAPIv1 plugins"
 	end
 
 	module DP = struct
@@ -97,6 +99,8 @@ module SMAPIv1 = struct
 								| Smint.Not_implemented_in_backend ->
 									error "SR.create failed SR:%s Not_implemented_in_backend" (Ref.string_of sr);
 									raise (Storage_interface.Backend_error(Api_errors.sr_operation_not_supported, [ Ref.string_of sr ]))
+								| Api_errors.Server_error(code, params) ->
+									raise (Backend_error(code, params))
 								| e ->
 									let e' = ExnHelper.string_of_exn e in
 									error "SR.create failed SR:%s error:%s" (Ref.string_of sr) e';
@@ -570,6 +574,10 @@ module SMAPIv1 = struct
 		end
 	end
 
+	module Policy = struct
+		let get_backend_vm context ~dbg ~vm ~sr ~vdi = assert false
+	end
+
 	module TASK = struct
 		let stat context ~dbg ~task = assert false
 		let destroy context ~dbg ~task = assert false
@@ -586,16 +594,71 @@ module type SERVER = sig
     val process : Smint.request -> Rpc.call -> Rpc.response
 end
 
-let make_smapiv1 _ =
-    (module Server(SMAPIv1) : SERVER)
+module Driver_kind = struct
+	type t =
+		| SMAPIv1
+		| SMAPIv2_unix of string
+		| SMAPIv2_tcp of string
 
-let make_smapiv2_tcp host path =
-	let open Xmlrpc_client in
-    (module Server(Storage_proxy.Proxy(struct let rpc call = XMLRPC_protocol.rpc ~srcstr:"smapiv2" ~dststr:"smapiv1" ~transport:(TCP(host, 8080)) ~http:(xmlrpc ~version:"1.0" path) call end)) : SERVER)
+	let to_server kind path =
+		let open Xmlrpc_client in
+		match kind with
+			| SMAPIv1 ->
+				(module Server(SMAPIv1) : SERVER)
+			| SMAPIv2_unix fs ->
+				(module Server(Storage_proxy.Proxy(struct let rpc call = XMLRPC_protocol.rpc ~srcstr:"smapiv2" ~dststr:"smapiv2" ~transport:(Unix fs) ~http:(xmlrpc ~version:"1.0" path) call end)) : SERVER)
+			| SMAPIv2_tcp ip ->
+				(module Server(Storage_proxy.Proxy(struct let rpc call = XMLRPC_protocol.rpc ~srcstr:"smapiv2" ~dststr:"smapiv1" ~transport:(TCP(ip, 80)) ~http:(xmlrpc ~version:"1.0" path) call end)) : SERVER)
 
-let make_smapiv2_unix path =
-	let open Xmlrpc_client in
-    (module Server(Storage_proxy.Proxy(struct let rpc call = XMLRPC_protocol.rpc ~srcstr:"smapiv2" ~dststr:"smapiv2" ~transport:(Unix path) ~http:(xmlrpc ~version:"1.0" "/") call end)) : SERVER)
+	let to_sockaddr = function
+		| SMAPIv1 -> None
+		| SMAPIv2_unix path -> Some (Unix.ADDR_UNIX path)
+		| SMAPIv2_tcp ip -> Some (Unix.ADDR_INET(Unix.inet_addr_of_string ip, 80))
+
+	let classify ~__context driver ty =
+		let dom0 = Helpers.get_domain_zero ~__context in
+		if driver = dom0 then begin
+			(* Look for an SMAPIv1 plugin first *)
+			if List.mem ty (Sm.supported_drivers ())
+			then SMAPIv1
+			else begin
+				let socket = Filename.concat Fhs.vardir (Printf.sprintf "sm/%s" ty) in
+				if not(Sys.file_exists socket) then begin
+					error "SM plugin unix domain socket does not exist: %s" socket;
+					raise (Api_errors.Server_error(Api_errors.sr_unknown_driver, [ ty ]));
+				end;
+				if not(System_domains.queryable ~__context (Xmlrpc_client.Unix socket) ()) then begin
+					error "SM plugin did not respond to a query on: %s" socket;
+					raise (Api_errors.Server_error(Api_errors.sm_plugin_communication_failure, [ ty ]));
+				end;
+				SMAPIv2_unix socket
+			end
+		end else SMAPIv2_tcp(System_domains.ip_of ~__context driver)
+
+	let query kind ty path =
+		let open Xmlrpc_client in
+		match kind with
+		| SMAPIv1 ->
+			Sm.info_of_driver ty |> Smint.query_result_of_sr_driver_info
+		| SMAPIv2_unix fs ->
+			let module C = Client(struct
+				let rpc = XMLRPC_protocol.rpc ~srcstr:"smapiv2" ~dststr:"smapiv2" ~transport:(Unix fs) ~http:(xmlrpc ~version:"1.0" path)
+			end) in
+			C.Query.query ~dbg:"dbg"
+		| SMAPIv2_tcp ip ->
+			let module C = Client(struct
+				let rpc = XMLRPC_protocol.rpc ~srcstr:"smapiv2" ~dststr:"smapiv1" ~transport:(TCP(ip, 80)) ~http:(xmlrpc ~version:"1.0" path)
+			end) in
+			C.Query.query ~dbg:"dbg"
+end
+
+let make_service uuid ty =
+	{
+		System_domains.uuid = uuid;
+		ty = Constants._SM;
+		instance = ty;
+		url = Constants.path [ Constants._services; Constants._driver; uuid; Constants._SM; ty ];
+	}
 
 let bind ~__context ~pbd =
     (* Start the VM if necessary, record its uuid *)
@@ -610,55 +673,32 @@ let bind ~__context ~pbd =
 			(* ignore for now *)
     end;
 	let uuid = Db.VM.get_uuid ~__context ~self:driver in
-    let ip_of driver =
-        (* Find the VIF on the Host internal management network *)
-        let vifs = Db.VM.get_VIFs ~__context ~self:driver in
-        let hin = Helpers.get_host_internal_management_network ~__context in
-        let ip =
-            let vif =
-                try
-                    List.find (fun vif -> Db.VIF.get_network ~__context ~self:vif = hin) vifs
-                with Not_found -> failwith (Printf.sprintf "PBD %s driver domain %s has no VIF on host internal management network" (Ref.string_of pbd) (Ref.string_of driver)) in
-            match Xapi_udhcpd.get_ip ~__context vif with
-                | Some (a, b, c, d) -> Printf.sprintf "%d.%d.%d.%d" a b c d
-                | None -> failwith (Printf.sprintf "PBD %s driver domain %s has no IP on the host internal management network" (Ref.string_of pbd) (Ref.string_of driver)) in
 
-        info "PBD %s driver domain uuid:%s ip:%s" (Ref.string_of pbd) uuid ip;
-        if not(System_domains.wait_for (System_domains.pingable ip))
-        then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to IP ping" (Ref.string_of pbd) (Ref.string_of driver));
-        if not(System_domains.wait_for (System_domains.queryable ~__context (Xmlrpc_client.TCP(ip, 8080))))
-        then failwith (Printf.sprintf "PBD %s driver domain %s is not responding to XMLRPC query" (Ref.string_of pbd) (Ref.string_of driver));
-        ip in
-    let sr = Db.PBD.get_SR ~__context ~self:pbd in
+	let sr = Db.PBD.get_SR ~__context ~self:pbd in
 	let ty = Db.SR.get_type ~__context ~self:sr in
-    let path = Constants.path [ Constants._services; Constants._SM; ty ] in
-    let dom0 = Helpers.get_domain_zero ~__context in
-	(* Look for an SMAPIv1 plugin first *)
-	let module Impl = (val (
-		if driver = dom0 then begin
-			if List.mem ty (Sm.supported_drivers ())
-			then make_smapiv1 (Constants.path [ Constants._services; Constants._SM; ty ])
-			else begin
-				let socket = Filename.concat Fhs.vardir (Printf.sprintf "sm/%s" ty) in
-				if not(Sys.file_exists socket) then begin
-					error "SM plugin unix domain socket does not exist: %s" socket;
-					raise (Api_errors.Server_error(Api_errors.sr_unknown_driver, [ ty ]));
-				end;
-				if not(System_domains.queryable ~__context (Xmlrpc_client.Unix socket) ()) then begin
-					error "SM plugin did not respond to a query on: %s" socket;
-					raise (Api_errors.Server_error(Api_errors.sm_plugin_communication_failure, [ ty ]));
-				end;
-				make_smapiv2_unix socket
-			end
-		end else make_smapiv2_tcp (ip_of driver) path
-	) : SERVER) in
-    let sr = Db.SR.get_uuid ~__context ~self:(Db.PBD.get_SR ~__context ~self:pbd) in
-    info "SR %s will be implemented by %s in VM %s" sr path (Ref.string_of driver);
-    Storage_mux.register sr (Impl.process (Some path)) uuid
+	let path = Constants.path [ Constants._services; Constants._SM; ty ] in
+	let kind = Driver_kind.classify ~__context driver ty in
+	let module Impl = (val (Driver_kind.to_server kind path): SERVER) in
+	let sr = Db.SR.get_uuid ~__context ~self:sr in
+	info "SR %s will be implemented by %s in VM %s" sr path (Ref.string_of driver);
+	let service = make_service uuid ty in
+	Opt.iter (System_domains.register_service service) (Driver_kind.to_sockaddr kind);
+	let info = Driver_kind.query kind ty path in
+	Storage_mux.register sr (Impl.process (Some path)) uuid info;
+	info
 
 let unbind ~__context ~pbd =
-        let sr = Db.SR.get_uuid ~__context ~self:(Db.PBD.get_SR ~__context ~self:pbd) in
-        Storage_mux.unregister sr
+	let driver = System_domains.storage_driver_domain_of_pbd ~__context ~pbd in
+	let uuid = Db.VM.get_uuid ~__context ~self:driver in
+
+	let sr = Db.PBD.get_SR ~__context ~self:pbd in
+	let ty = Db.SR.get_type ~__context ~self:sr in
+
+	let sr = Db.SR.get_uuid ~__context ~self:sr in
+	Storage_mux.unregister sr;
+
+	let service = make_service uuid ty in
+	System_domains.unregister_service service
 
 let rpc call = Storage_mux.Server.process None call
 
@@ -911,7 +951,13 @@ let deactivate_and_detach ~__context ~vbd ~domid =
 
 
 let diagnostics ~__context =
-	Client.DP.diagnostics ()
+	let dbg = Context.get_task_id __context |> Ref.string_of in
+	String.concat "\n" [
+		"DataPath information:";
+		Client.DP.diagnostics ();
+		"Backend information:";
+		Client.Query.diagnostics dbg
+	]
 
 let dp_destroy ~__context dp allow_leak =
 	transform_storage_exn

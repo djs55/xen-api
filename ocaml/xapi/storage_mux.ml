@@ -32,12 +32,8 @@ let debug_printer rpc call =
 	debug "Rpc.response = %s" (Xmlrpc.string_of_response result);
 	result
 
-let register sr m d =
-	let open Storage_interface in
-	let module Client = Client(struct let rpc = debug_printer m end) in
-	let info = Client.Query.query ~dbg:"mux" in
-	Hashtbl.replace plugins sr { processor = debug_printer m; backend_domain = d; query_result = info };
-	info
+let register sr m d info =
+	Hashtbl.replace plugins sr { processor = debug_printer m; backend_domain = d; query_result = info }
 
 let unregister sr = Hashtbl.remove plugins sr
 
@@ -84,6 +80,15 @@ let success_or f results =
 module Mux = struct
 	type context = Smint.request
 
+	let forall f =
+        let combine results =
+            let all = List.fold_left (fun acc (sr, result) ->
+                (Printf.sprintf "For SR: %s" sr :: (string_of_sm_result (fun s -> s) result) :: acc)) [] results in
+            SMSuccess (String.concat "\n" all) in
+        match fail_or combine (multicast f) with
+			| SMSuccess x -> x
+			| SMFailure e -> raise e
+
 	module Query = struct
 		let query context ~dbg = {
 			driver = "mux";
@@ -96,6 +101,11 @@ module Mux = struct
 			features = [];
 			configuration = []
 		}
+		let diagnostics context ~dbg =
+			forall (fun sr rpc ->
+				let module C = Client(struct let rpc = of_sr sr end) in
+				C.Query.diagnostics dbg
+			)
 	end
 	module DP = struct
 		let create context ~dbg ~id = id (* XXX: is this pointless? *)
@@ -108,15 +118,10 @@ module Mux = struct
 				| SMFailure e -> raise e
 
 		let diagnostics context () =
-			let combine results =
-				let all = List.fold_left (fun acc (sr, result) ->
-					(Printf.sprintf "For SR: %s" sr :: (string_of_sm_result (fun s -> s) result) :: acc)) [] results in
-				SMSuccess (String.concat "\n" all) in
-			match fail_or combine (multicast (fun sr rpc ->
+			forall (fun sr rpc ->
 				let module C = Client(struct let rpc = of_sr sr end) in
-				C.DP.diagnostics ())) with
-				| SMSuccess x -> x
-				| SMFailure e -> raise e
+				C.DP.diagnostics ()
+			)
 
 		let attach_info context ~dbg ~sr ~vdi ~dp =
 			let module C = Client(struct let rpc = of_sr sr end) in
@@ -235,6 +240,14 @@ module Mux = struct
 			let receive_finalize context = Storage_migrate.receive_finalize
 			let receive_cancel context = Storage_migrate.receive_cancel
 		end	
+	end
+
+	module Policy = struct
+		let get_backend_vm context ~dbg ~vm ~sr ~vdi =
+			if not(Hashtbl.mem plugins sr) then begin
+				error "No registered plugin for sr = %s" sr;
+				raise (No_storage_plugin_for_sr sr)				
+			end else (Hashtbl.find plugins sr).backend_domain
 	end
 
 	module TASK = struct

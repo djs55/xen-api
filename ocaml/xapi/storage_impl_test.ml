@@ -38,6 +38,7 @@ module Debug_print_impl = struct
 	type context = Smint.request
 	module Query = struct
 		let query context ~dbg = assert false
+		let diagnostics context ~dbg = assert false
 	end
 	module DP = struct
 		let create context ~dbg ~id = assert false
@@ -203,6 +204,10 @@ module Debug_print_impl = struct
 			info "SR.destroy sr:%s" sr;
 			fail_if_anything_leaked ()
 
+	end
+
+	module Policy = struct
+		let get_backend_vm context ~dbg ~vm ~sr ~vdi = assert false
 	end
 
 	module TASK = struct
