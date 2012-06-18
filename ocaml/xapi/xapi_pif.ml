@@ -21,8 +21,7 @@ open Pervasiveext
 open Stringext
 open Fun
 open Db_filter_types
-
-module Net = (val (Network.get_client ()) : Network.CLIENT)
+open Network
 
 let refresh_internal ~__context ~self =
 
