@@ -639,6 +639,7 @@ let monitor_loop xc =
 
 (* Entry point. *)
 let _ =
+	Debug.set_facility Syslog.Local5;
 	debug "Start.";
 
 	debug "Processing arguments ..";
