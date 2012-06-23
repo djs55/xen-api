@@ -47,7 +47,7 @@ let set_is_system_domain ~__context ~self ~value =
 		) ()
 
 (** If a VM is a driver domain then it hosts backends for either disk or network
-    devices. We link PBD.other_config:storage_driver_domain_key to 
+    devices. We link PBD.device_config:storage_driver_domain_key to 
     VM.other_config:storage_driver_domain_key and we ensure the VM is marked as
     a system domain. *)
 let storage_driver_domain_key = "storage_driver_domain"
@@ -55,8 +55,8 @@ let storage_driver_domain_key = "storage_driver_domain"
 let pbd_set_storage_driver_domain ~__context ~self ~value =
 	Helpers.log_exn_continue (Printf.sprintf "pbd_set_storage_driver_domain self = %s" (Ref.string_of self))
 		(fun () ->
-			Db.PBD.remove_from_other_config ~__context ~self ~key:storage_driver_domain_key;
-			Db.PBD.add_to_other_config ~__context ~self ~key:storage_driver_domain_key ~value
+			Db.PBD.remove_from_device_config ~__context ~self ~key:storage_driver_domain_key;
+			Db.PBD.add_to_device_config ~__context ~self ~key:storage_driver_domain_key ~value
 		) ()
 
 let vm_set_storage_driver_domain ~__context ~self ~value =
@@ -74,15 +74,18 @@ let record_pbd_storage_driver_domain ~__context ~pbd ~domain =
 
 let pbd_of_vm ~__context ~vm =
 	let other_config = Db.VM.get_other_config ~__context ~self:vm in
-	if List.mem_assoc storage_driver_domain_key other_config
-	then Some(Ref.of_string (List.assoc storage_driver_domain_key other_config))
-	else None
+	if List.mem_assoc storage_driver_domain_key other_config then begin
+		let r = Ref.of_string (List.assoc storage_driver_domain_key other_config) in
+		if Db.is_valid_ref __context r
+		then Some r
+		else None
+	end else None
 
 let storage_driver_domain_of_pbd ~__context ~pbd =
-	let other_config = Db.PBD.get_other_config ~__context ~self:pbd in
+	let device_config = Db.PBD.get_device_config ~__context ~self:pbd in
 	let dom0 = Helpers.get_domain_zero ~__context in
-	if List.mem_assoc storage_driver_domain_key other_config then begin
-		let v = List.assoc storage_driver_domain_key other_config in
+	if List.mem_assoc storage_driver_domain_key device_config then begin
+		let v = List.assoc storage_driver_domain_key device_config in
 		if Db.is_valid_ref __context (Ref.of_string v)
 		then Ref.of_string v
 		else
