@@ -532,7 +532,6 @@ module VM = struct
 				| HVM hvm_info ->
 					Domain.BuildHVM {
 						Domain.shadow_multiplier = hvm_info.shadow_multiplier;
-						timeoffset = hvm_info.timeoffset;
 						video_mib = hvm_info.video_mib;
 					}
 				| PV { boot = Direct direct } ->
@@ -936,21 +935,20 @@ module VM = struct
 		(* We should prevent leaking files in our filesystem *)
 		let kernel_to_cleanup = ref None in
 		finally (fun () ->
-			let build_info =
+			let (build_info, timeoffset) =
 				match vm.ty with
 					| HVM hvm_info ->
 						let builder_spec_info = Domain.BuildHVM {
 							Domain.shadow_multiplier = hvm_info.shadow_multiplier;
-							timeoffset = hvm_info.timeoffset;
 							video_mib = hvm_info.video_mib;
 						} in
-						make_build_info Domain.hvmloader builder_spec_info
+						((make_build_info Domain.hvmloader builder_spec_info), hvm_info.timeoffset)
 					| PV { boot = Direct direct } ->
 						let builder_spec_info = Domain.BuildPV {
 							Domain.cmdline = direct.cmdline;
 							ramdisk = direct.ramdisk;
 						} in
-						make_build_info direct.kernel builder_spec_info
+						((make_build_info direct.kernel builder_spec_info), "")
 					| PV { boot = Indirect { devices = [] } } ->
 						raise (No_bootable_device)
 					| PV { boot = Indirect ( { devices = d :: _ } as i ) } ->
@@ -965,9 +963,9 @@ module VM = struct
 									Domain.cmdline = b.Bootloader.kernel_args;
 									ramdisk = b.Bootloader.initrd_path;
 								} in
-								make_build_info b.Bootloader.kernel_path builder_spec_info
+								((make_build_info b.Bootloader.kernel_path builder_spec_info), "")
 							) in
-			let arch = Domain.build task ~xc ~xs build_info domid in
+			let arch = Domain.build task ~xc ~xs build_info timeoffset domid in
 			Int64.(
 				let min = to_int (div vm.Vm.memory_dynamic_min 1024L)
 				and max = to_int (div vm.Vm.memory_dynamic_max 1024L) in
@@ -1205,18 +1203,21 @@ module VM = struct
 				let qemu_domid = Opt.default (this_domid ~xs) (get_stubdom ~xs domid) in
 				let k = vm.Vm.id in
 				let vmextra = DB.read_exn k in
-				let build_info = match vmextra.VmExtra.persistent with
+				let (build_info, timeoffset) = match vmextra.VmExtra.persistent with
 					| { VmExtra.build_info = None } ->
 						error "VM = %s; No stored build_info: cannot safely restore" vm.Vm.id;
 						raise (Does_not_exist("build_info", vm.Vm.id))
-					| { VmExtra.build_info = Some x } ->
+					| { VmExtra.build_info = Some x; VmExtra.ty } ->
 						let initial_target = get_initial_target ~xs domid in
-						{ x with Domain.memory_target = initial_target } in
+						let timeoffset = match ty with
+								Some x -> (match x with HVM hvm_info -> hvm_info.timeoffset | _ -> "")
+							| _ -> "" in
+						({ x with Domain.memory_target = initial_target }, timeoffset) in
 				begin
 					try
 						with_data ~xc ~xs task data false
 							(fun fd ->
-								Domain.restore task ~xc ~xs (* XXX progress_callback *) build_info domid fd
+								Domain.restore task ~xc ~xs (* XXX progress_callback *) build_info timeoffset domid fd
 							);
 					with e ->
 						error "VM %s: restore failed: %s" vm.Vm.id (Printexc.to_string e);
@@ -2003,6 +2004,7 @@ let watch_xenstore () =
 		(fun xc xs ->
 			let domains = ref IntMap.empty in
 			let watches = ref IntMap.empty in
+			let uuids = ref IntMap.empty in
 
 			let watch path =
 				debug "xenstore watch %s" path;
@@ -2018,17 +2020,22 @@ let watch_xenstore () =
 			let add_domU_watches xs domid uuid =
 				debug "Adding watches for: domid %d" domid;
 				List.iter watch (all_domU_watches domid uuid);
+				uuids := IntMap.add domid uuid !uuids;
 				watches := IntMap.add domid [] !watches in
 
-			let remove_domU_watches xs domid uuid =
+			let remove_domU_watches xs domid =
 				debug "Removing watches for: domid %d" domid;
-				List.iter unwatch (all_domU_watches domid uuid);
-				List.iter (fun d ->
-					List.iter unwatch (watches_of_device d)
-				) (try IntMap.find domid !watches with Not_found -> []);
-				watches := IntMap.remove domid !watches in
+				if IntMap.mem domid !uuids then begin
+					let uuid = IntMap.find domid !uuids in
+					List.iter unwatch (all_domU_watches domid uuid);
+					List.iter (fun d ->
+						List.iter unwatch (watches_of_device d)
+					) (try IntMap.find domid !watches with Not_found -> []);
+					watches := IntMap.remove domid !watches;
+					uuids := IntMap.remove domid !uuids;
+				end in
 
-			let cancel_domU_operations xs domid uuid =
+			let cancel_domU_operations xs domid =
 				(* Anyone blocked on a domain/device operation which won't happen because the domain
 				   just shutdown should be cancelled here. *)
 				debug "Cancelling watches for: domid %d" domid;
@@ -2059,8 +2066,14 @@ let watch_xenstore () =
 						let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
 						let id = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.string_of_uuid in
 						if domid > 0 && not (DB.exists id)
-						then debug "However domain %d is not managed by us: ignoring" domid
-						else begin
+						then begin
+							debug "However domain %d is not managed by us: ignoring" domid;
+							if IntMap.mem domid !uuids then begin
+								debug "Cleaning-up the remaining watches for: domid %d" domid;
+								cancel_domU_operations xs domid;
+								remove_domU_watches xs domid;
+							end;
+						end else begin
 							Updates.add (Dynamic.Vm id) updates;
 							(* A domain is 'running' if we know it has not shutdown *)
 							let running = IntMap.mem domid domains' && (not (IntMap.find domid domains').Xenctrl.shutdown) in
@@ -2070,8 +2083,8 @@ let watch_xenstore () =
 								| false, true ->
 									add_domU_watches xs domid id
 								| true, false ->
-									cancel_domU_operations xs domid id;
-									remove_domU_watches xs domid id
+									cancel_domU_operations xs domid;
+									remove_domU_watches xs domid
 						end
 					) different;
 				domains := domains' in
