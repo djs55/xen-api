@@ -54,6 +54,7 @@ exception Script_error of (string * string) list
 exception Read_error of string
 exception Write_error of string
 exception Not_implemented
+exception Cannot_find_driver_domain of string
 
 (** {2 Types} *)
 
@@ -64,8 +65,8 @@ type bridge = string
 type dhcp_options = [`set_gateway | `set_dns]
 type ipv4 = None4 | DHCP4 | Static4 of (Unix.inet_addr * int) list
 type ipv6 = None6 | DHCP6 | Autoconf6 | Static6 of (Unix.inet_addr * int) list
-
 type duplex = Duplex_unknown | Duplex_half | Duplex_full
+type domain = string
 
 let string_of_duplex = function
 	| Duplex_unknown -> "unknown"
@@ -103,7 +104,9 @@ type bridge_config_t = {
 }
 type config_t = {
 	interface_config: (iface * interface_config_t) list;
+	interface_domains: (iface * domain) list;
 	bridge_config: (bridge * bridge_config_t) list;
+	bridge_domains: (bridge * domain) list;
 	gateway_interface: iface option;
 	dns_interface: iface option;
 }
@@ -186,11 +189,15 @@ module Interface = struct
 	external set_ethtool_offload : debug_info -> name:iface -> params:(string * string) list -> unit = ""
 	external is_connected : debug_info -> name:iface -> bool = ""
 	external is_physical : debug_info -> name:iface -> bool = ""
+	external is_vif_front : debug_info -> name:iface -> bool = ""
+	external get_pci_bus_path : debug_info -> name:iface -> string = ""
 	external bring_up : debug_info -> name:iface -> unit = ""
 	external bring_down : debug_info -> name:iface -> unit = ""
 	external is_persistent : debug_info -> name:iface -> bool = ""
 	external set_persistent : debug_info -> name:iface -> value:bool -> unit = ""
 	external make_config : debug_info -> ?conservative:bool -> config:(iface * interface_config_t) list-> unit -> unit = ""
+	external rename : debug_info -> name:iface -> new_name:iface -> unit = ""
+	external set_driver_domain : debug_info -> name:iface -> uuid:domain -> unit = ""
 end
 
 type kind = Openvswitch | Bridge
@@ -221,5 +228,6 @@ module Bridge = struct
 	external get_interfaces : debug_info -> name:bridge -> iface list = ""
 	external get_fail_mode : debug_info -> name:bridge -> fail_mode option = ""
 	external make_config : debug_info -> ?conservative:bool -> config:(bridge * bridge_config_t) list-> unit -> unit = ""
+	external set_driver_domain : debug_info -> name:bridge -> uuid:domain -> unit = ""
 end
 

@@ -18,6 +18,7 @@ open Network_interface
 open Fun
 open Stringext
 open Listext
+open Xmlrpc_client
 
 module D = Debug.Debugger(struct let name = "network_server" end)
 open D
@@ -26,7 +27,15 @@ let config_file_path = Filename.concat Fhs.vardir "networkd.db"
 
 type context = unit
 
-let empty_config = {interface_config = []; bridge_config = []; gateway_interface = None; dns_interface = None}
+let empty_config = {
+	interface_config = [];
+	interface_domains = [];
+	bridge_config = [];
+	bridge_domains = [];
+	gateway_interface = None;
+	dns_interface = None
+}
+
 let config : config_t ref = ref empty_config
 
 let read_management_conf () =
@@ -69,7 +78,8 @@ let read_management_conf () =
 		ports = [device, {default_port with interfaces = [device]}];
 		persistent_b = true
 	} in
-	{interface_config = [device, phy_interface; bridge_name, bridge_interface];
+	{empty_config with
+		interface_config = [device, phy_interface; bridge_name, bridge_interface];
 		bridge_config = [bridge_name, bridge];
 		gateway_interface = Some bridge_name; dns_interface = Some bridge_name}
 
@@ -130,7 +140,53 @@ let set_dns_interface _ dbg ~name =
 	debug "Setting DNS interface to %s" name;
 	config := {!config with dns_interface = Some name}
 
+module type CLIENT = module type of Client(struct let rpc call = assert false end)
+
+let maybe_forward remote_f local_f = function
+	| None ->
+		local_f ()
+	| Some uuid ->
+		let ip =
+			try
+				with_xs (fun xs ->
+					let path = "/vm/" ^ uuid ^ "/domains" in
+					let domains = xs.Xenstore.Xs.directory path in
+					match domains with
+					| [] -> raise (Cannot_find_driver_domain uuid)
+					| domid :: _ ->
+						let domain_path = xs.Xenstore.Xs.read (path ^ "/" ^ domid) in
+						xs.Xenstore.Xs.read (domain_path ^ "/attr/xenapi/ip")
+				)
+			with _ ->
+				raise (Cannot_find_driver_domain uuid)
+		in
+		debug "Forwarding call to driver domain (%s, %s)" uuid ip;
+		let transport = (TCP (ip, 4094)) in
+		let module Remote = Client(
+			struct
+				let rpc call =
+					XMLRPC_protocol.rpc ~srcstr:"networkd" ~dststr:"dst_networkd" ~transport
+						~http:(xmlrpc ~version:"1.0" "/") call
+			end
+		) in
+		remote_f (module Remote : CLIENT)
+
 module Interface = struct
+	let set_driver_domain _ dbg ~name ~uuid =
+		Debug.with_thread_associated dbg (fun () ->
+			debug "Setting driver domain for interface %s to %s" name uuid;
+			config := {!config with interface_domains = update_config !config.interface_domains name uuid}
+		) ()
+
+	let maybe_forward' name remote_f local_f =
+		let driver_domain =
+			if List.mem_assoc name !config.interface_domains then
+				Some (List.assoc name !config.interface_domains)
+			else
+				None
+		in
+		maybe_forward remote_f local_f driver_domain
+
 	let get_config name =
 		get_config !config.interface_config default_interface name
 
@@ -139,252 +195,426 @@ module Interface = struct
 
 	let get_all _ dbg () =
 		Debug.with_thread_associated dbg (fun () ->
-			Sysfs.list ()
+			let domains = List.setify (List.map (fun (_, domain) -> domain) !config.bridge_domains) in
+			let remote_ifaces = List.map (fun domain ->
+				try
+					maybe_forward
+						(fun x -> let module Remote = (val x : CLIENT) in
+							Remote.Interface.get_all dbg ()
+						)
+						(fun () -> assert false)
+						(Some domain)
+				with _ -> []
+			) domains in
+			let local_ifaces = Sysfs.list () in
+			let ifaces = local_ifaces @ (List.flatten remote_ifaces) in
+			debug "Found the following interfaces: %s" (String.concat ", " ifaces);
+			ifaces
 		) ()
 
 	let exists _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			List.mem name (Sysfs.list ())
+			List.mem name (get_all () dbg ())
 		) ()
 
 	let get_mac _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			Ip.get_mac name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_mac dbg ~name
+				)
+				(fun () ->
+					Ip.get_mac name
+				)
 		) ()
 
 	let is_up _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			if List.mem name (Sysfs.list ()) then
-				Ip.is_up name
-			else
-				false
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.is_up dbg ~name
+				)
+				(fun () ->
+					if List.mem name (Sysfs.list ()) then
+						Ip.is_up name
+					else
+						false
+				)
 		) ()
 
 	let get_ipv4_addr _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			Ip.get_ipv4 name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_ipv4_addr dbg ~name
+				)
+				(fun () ->
+					Ip.get_ipv4 name
+				)
 		) ()
 
 	let set_ipv4_conf _ dbg ~name ~conf =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring IPv4 address for %s: %s" name (conf |> rpc_of_ipv4 |> Jsonrpc.to_string);
-			update_config name {(get_config name) with ipv4_conf = conf};
-			match conf with
-			| None4 ->
-				if List.mem name (Sysfs.list ()) then begin
-					if Dhclient.is_running name then
-						ignore (Dhclient.stop name);
-					Ip.flush_ip_addr name
-				end
-			| DHCP4 ->
-				let gateway =
-					if !config.gateway_interface = None || !config.gateway_interface = Some name then begin
-						debug "%s is the default gateway interface" name;
-						[`set_gateway]
-					end else begin
-						debug "%s is NOT the default gateway interface" name;
-						[]
-					end
-				in
-				let dns =
-					if !config.dns_interface = None || !config.dns_interface = Some name then begin
-						debug "%s is the DNS interface" name;
-						[`set_dns]
-					end else begin
-						debug "%s is NOT the DNS interface" name;
-						[]
-					end
-				in
-				let options = gateway @ dns in
-				Dhclient.ensure_running name options
-			| Static4 addrs ->
-				if Dhclient.is_running name then
-					ignore (Dhclient.stop name);
-				Ip.flush_ip_addr name;
-				List.iter (Ip.set_ip_addr name) addrs
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ipv4_conf dbg ~name ~conf
+				)
+				(fun () ->
+					debug "Configuring IPv4 address for %s: %s" name (conf |> rpc_of_ipv4 |> Jsonrpc.to_string);
+					update_config name {(get_config name) with ipv4_conf = conf};
+					match conf with
+					| None4 ->
+						if List.mem name (Sysfs.list ()) then begin
+							if Dhclient.is_running name then
+								ignore (Dhclient.stop name);
+							Ip.flush_ip_addr name
+						end
+					| DHCP4 ->
+						let gateway =
+							if !config.gateway_interface = None || !config.gateway_interface = Some name then begin
+								debug "%s is the default gateway interface" name;
+								[`set_gateway]
+							end else begin
+								debug "%s is NOT the default gateway interface" name;
+								[]
+							end
+						in
+						let dns =
+							if !config.dns_interface = None || !config.dns_interface = Some name then begin
+								debug "%s is the DNS interface" name;
+								[`set_dns]
+							end else begin
+								debug "%s is NOT the DNS interface" name;
+								[]
+							end
+						in
+						let options = gateway @ dns in
+						Dhclient.ensure_running name options
+					| Static4 addrs ->
+						if Dhclient.is_running name then
+							ignore (Dhclient.stop name);
+						Ip.flush_ip_addr name;
+						List.iter (Ip.set_ip_addr name) addrs
+			)
 		) ()
 
 	let get_ipv4_gateway _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			let output = Ip.route_show ~version:Ip.V4 name in
-			try
-				let line = List.find (fun s -> String.startswith "default via" s) (String.split '\n' output) in
-				let addr = List.nth (String.split ' ' line) 2 in
-				Some (Unix.inet_addr_of_string addr)
-			with Not_found -> None
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_ipv4_gateway dbg ~name
+				)
+				(fun () ->
+					let output = Ip.route_show ~version:Ip.V4 name in
+					try
+						let line = List.find (fun s -> String.startswith "default via" s) (String.split '\n' output) in
+						let addr = List.nth (String.split ' ' line) 2 in
+						Some (Unix.inet_addr_of_string addr)
+					with Not_found -> None
+				)
 		) ()
 
 	let set_ipv4_gateway _ dbg ~name ~address =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring IPv4 gateway for %s: %s" name (Unix.string_of_inet_addr address);
-			update_config name {(get_config name) with ipv4_gateway = Some address};
-			if !config.gateway_interface = None || !config.gateway_interface = Some name then begin
-				debug "%s is the default gateway interface" name;
-				Ip.set_gateway name address
-			end else
-				debug "%s is NOT the default gateway interface" name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ipv4_gateway dbg ~name ~address
+				)
+				(fun () ->
+					debug "Configuring IPv4 gateway for %s: %s" name (Unix.string_of_inet_addr address);
+					update_config name {(get_config name) with ipv4_gateway = Some address};
+					if !config.gateway_interface = None || !config.gateway_interface = Some name then begin
+						debug "%s is the default gateway interface" name;
+						Ip.set_gateway name address
+					end else
+						debug "%s is NOT the default gateway interface" name
+				)
 		) ()
 
 	let get_ipv6_addr _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			Ip.get_ipv6 name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_ipv6_addr dbg ~name
+				)
+				(fun () ->
+					Ip.get_ipv6 name
+				)
 		) ()
 
 	let set_ipv6_conf _ dbg ~name ~conf =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring IPv6 address for %s: %s" name (conf |> rpc_of_ipv6 |> Jsonrpc.to_string);
-			update_config name {(get_config name) with ipv6_conf = conf};
-			match conf with
-			| None6 ->
-				if List.mem name (Sysfs.list ()) then begin
-					Dhcp6c.stop name;
-					Sysctl.set_ipv6_autoconf name false;
-					Ip.flush_ip_addr ~ipv6:true name
-				end
-			| DHCP6 ->
-				Dhcp6c.stop name;
-				Sysctl.set_ipv6_autoconf name false;
-				Ip.flush_ip_addr ~ipv6:true name;
-				Dhcp6c.start name
-			| Autoconf6 ->
-				Dhcp6c.stop name;
-				Ip.flush_ip_addr ~ipv6:true name;
-				Sysctl.set_ipv6_autoconf name true;
-				if Ip.is_up name then begin
-					Ip.link_set_down name;
-					Ip.link_set_up name
-				end
-			| Static6 addrs ->
-				Dhcp6c.stop name;
-				Sysctl.set_ipv6_autoconf name false;
-				Ip.flush_ip_addr ~ipv6:true name;
-				List.iter (Ip.set_ip_addr name) addrs
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ipv6_conf dbg ~name ~conf
+				)
+				(fun () ->
+					debug "Configuring IPv6 address for %s: %s" name (conf |> rpc_of_ipv6 |> Jsonrpc.to_string);
+					update_config name {(get_config name) with ipv6_conf = conf};
+					match conf with
+					| None6 ->
+						if List.mem name (Sysfs.list ()) then begin
+							Dhcp6c.stop name;
+							Sysctl.set_ipv6_autoconf name false;
+							Ip.flush_ip_addr ~ipv6:true name
+						end
+					| DHCP6 ->
+						Dhcp6c.stop name;
+						Sysctl.set_ipv6_autoconf name false;
+						Ip.flush_ip_addr ~ipv6:true name;
+						Dhcp6c.start name
+					| Autoconf6 ->
+						Dhcp6c.stop name;
+						Ip.flush_ip_addr ~ipv6:true name;
+						Sysctl.set_ipv6_autoconf name true;
+						if Ip.is_up name then begin
+							Ip.link_set_down name;
+							Ip.link_set_up name
+						end
+					| Static6 addrs ->
+						Dhcp6c.stop name;
+						Sysctl.set_ipv6_autoconf name false;
+						Ip.flush_ip_addr ~ipv6:true name;
+						List.iter (Ip.set_ip_addr name) addrs
+				)
 		) ()
 
 	let get_ipv6_gateway _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			let output = Ip.route_show ~version:Ip.V6 name in
-			try
-				let line = List.find (fun s -> String.startswith "default via" s) (String.split '\n' output) in
-				let addr = List.nth (String.split ' ' line) 2 in
-				Some (Unix.inet_addr_of_string addr)
-			with Not_found -> None
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_ipv6_gateway dbg ~name
+				)
+				(fun () ->
+					let output = Ip.route_show ~version:Ip.V6 name in
+					try
+						let line = List.find (fun s -> String.startswith "default via" s) (String.split '\n' output) in
+						let addr = List.nth (String.split ' ' line) 2 in
+						Some (Unix.inet_addr_of_string addr)
+					with Not_found -> None
+				)
 		) ()
 
 	let set_ipv6_gateway _ dbg ~name ~address =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring IPv6 gateway for %s: %s" name (Unix.string_of_inet_addr address);
-			update_config name {(get_config name) with ipv6_gateway = Some address};
-			if !config.gateway_interface = None || !config.gateway_interface = Some name then begin
-				debug "%s is the default gateway interface" name;
-				Ip.set_gateway name address
-			end else
-				debug "%s is NOT the default gateway interface" name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ipv6_gateway dbg ~name ~address
+				)
+				(fun () ->
+					debug "Configuring IPv6 gateway for %s: %s" name (Unix.string_of_inet_addr address);
+					update_config name {(get_config name) with ipv6_gateway = Some address};
+					if !config.gateway_interface = None || !config.gateway_interface = Some name then begin
+						debug "%s is the default gateway interface" name;
+						Ip.set_gateway name address
+					end else
+						debug "%s is NOT the default gateway interface" name
+				)
 		) ()
 
 	let set_ipv4_routes _ dbg ~name ~routes =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring IPv4 static routes for %s: %s" name (String.concat ", " (List.map (fun (i, p, g) ->
-				Printf.sprintf "%s/%d/%s" (Unix.string_of_inet_addr i) p (Unix.string_of_inet_addr g)) routes));
-			update_config name {(get_config name) with ipv4_routes = routes};
-			List.iter (fun (i, p, g) -> Ip.set_route ~network:(i, p) name g) routes
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ipv4_routes dbg ~name ~routes
+				)
+				(fun () ->
+					debug "Configuring IPv4 static routes for %s: %s" name (String.concat ", " (List.map (fun (i, p, g) ->
+						Printf.sprintf "%s/%d/%s" (Unix.string_of_inet_addr i) p (Unix.string_of_inet_addr g)) routes));
+					update_config name {(get_config name) with ipv4_routes = routes};
+					List.iter (fun (i, p, g) -> Ip.set_route ~network:(i, p) name g) routes
+				)
 		) ()
 
 	let get_dns _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			let nameservers, domains = Unixext.file_lines_fold (fun (nameservers, domains) line ->
-				if String.startswith "nameserver" line then
-					let server = List.nth (String.split_f String.isspace line) 1 in
-					(Unix.inet_addr_of_string server) :: nameservers, domains
-				else if String.startswith "search" line then
-					let domains = List.tl (String.split_f String.isspace line) in
-					nameservers, domains
-				else
-					nameservers, domains
-			) ([], []) resolv_conf in
-			List.rev nameservers, domains
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_dns dbg ~name
+				)
+				(fun () ->
+					let nameservers, domains = Unixext.file_lines_fold (fun (nameservers, domains) line ->
+						if String.startswith "nameserver" line then
+							let server = List.nth (String.split_f String.isspace line) 1 in
+							(Unix.inet_addr_of_string server) :: nameservers, domains
+						else if String.startswith "search" line then
+							let domains = List.tl (String.split_f String.isspace line) in
+							nameservers, domains
+						else
+							nameservers, domains
+					) ([], []) resolv_conf in
+					List.rev nameservers, domains
+				)
 		) ()
 
 	let set_dns _ dbg ~name ~nameservers ~domains =
 		Debug.with_thread_associated dbg (fun () ->
-			update_config name {(get_config name) with dns = nameservers, domains};
-			if (nameservers <> [] || domains <> []) then begin
-				debug "Configuring DNS for %s: nameservers: %s; domains: %s" name
-					(String.concat ", " (List.map Unix.string_of_inet_addr nameservers)) (String.concat ", " domains);
-				if (!config.dns_interface = None || !config.dns_interface = Some name) then begin
-					debug "%s is the DNS interface" name;
-					let domains' = if domains <> [] then ["search " ^ (String.concat " " domains)] else [] in
-					let nameservers' = List.map (fun ip -> "nameserver " ^ (Unix.string_of_inet_addr ip)) nameservers in
-					let lines = domains' @ nameservers' in
-					Unixext.write_string_to_file resolv_conf ((String.concat "\n" lines) ^ "\n")
-				end else
-					debug "%s is NOT the DNS interface" name
-			end
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_dns dbg ~name ~nameservers ~domains
+				)
+				(fun () ->
+					update_config name {(get_config name) with dns = nameservers, domains};
+					if (nameservers <> [] || domains <> []) then begin
+						debug "Configuring DNS for %s: nameservers: %s; domains: %s" name
+							(String.concat ", " (List.map Unix.string_of_inet_addr nameservers)) (String.concat ", " domains);
+						if (!config.dns_interface = None || !config.dns_interface = Some name) then begin
+							debug "%s is the DNS interface" name;
+							let domains' = if domains <> [] then ["search " ^ (String.concat " " domains)] else [] in
+							let nameservers' = List.map (fun ip -> "nameserver " ^ (Unix.string_of_inet_addr ip)) nameservers in
+							let lines = domains' @ nameservers' in
+							Unixext.write_string_to_file resolv_conf ((String.concat "\n" lines) ^ "\n")
+						end else
+							debug "%s is NOT the DNS interface" name
+					end
+				)
 		) ()
 
 	let get_mtu _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			Ip.get_mtu name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_mtu dbg ~name
+				)
+				(fun () ->
+					Ip.get_mtu name
+				)
 		) ()
 
 	let set_mtu _ dbg ~name ~mtu =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring MTU for %s: %d" name mtu;
-			update_config name {(get_config name) with mtu};
-			ignore (Ip.link_set_mtu name mtu)
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_mtu dbg ~name ~mtu
+				)
+				(fun () ->
+					debug "Configuring MTU for %s: %d" name mtu;
+					update_config name {(get_config name) with mtu};
+					ignore (Ip.link_set_mtu name mtu)
+				)
 		) ()
 
 	let set_ethtool_settings _ dbg ~name ~params =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring ethtool settings for %s: %s" name
-				(String.concat ", " (List.map (fun (k, v) -> k ^ "=" ^ v) params));
-			let add_defaults = List.filter (fun (k, v) -> not (List.mem_assoc k params)) default_interface.ethtool_settings in
-			let params = params @ add_defaults in
-			update_config name {(get_config name) with ethtool_settings = params};
-			Ethtool.set_options name params
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ethtool_settings dbg ~name ~params
+				)
+				(fun () ->
+					debug "Configuring ethtool settings for %s: %s" name
+						(String.concat ", " (List.map (fun (k, v) -> k ^ "=" ^ v) params));
+					let add_defaults = List.filter (fun (k, v) -> not (List.mem_assoc k params)) default_interface.ethtool_settings in
+					let params = params @ add_defaults in
+					update_config name {(get_config name) with ethtool_settings = params};
+					Ethtool.set_options name params
+				)
 		) ()
 
 	let set_ethtool_offload _ dbg ~name ~params =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Configuring ethtool offload settings for %s: %s" name
-				(String.concat ", " (List.map (fun (k, v) -> k ^ "=" ^ v) params));
-			let add_defaults = List.filter (fun (k, v) -> not (List.mem_assoc k params)) default_interface.ethtool_offload in
-			let params = params @ add_defaults in
-			update_config name {(get_config name) with ethtool_offload = params};
-			Ethtool.set_offload name params
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_ethtool_offload dbg ~name ~params
+				)
+				(fun () ->
+					debug "Configuring ethtool offload settings for %s: %s" name
+						(String.concat ", " (List.map (fun (k, v) -> k ^ "=" ^ v) params));
+					let add_defaults = List.filter (fun (k, v) -> not (List.mem_assoc k params)) default_interface.ethtool_offload in
+					let params = params @ add_defaults in
+					update_config name {(get_config name) with ethtool_offload = params};
+					Ethtool.set_offload name params
+				)
 		) ()
 
 	let is_connected _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			Sysfs.get_carrier name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.is_connected dbg ~name
+				)
+				(fun () ->
+					Sysfs.get_carrier name
+				)
 		) ()
 
 	let is_physical _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			Sysfs.is_physical name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.is_physical dbg ~name
+				)
+				(fun () ->
+					Sysfs.is_physical name
+				)
+		) ()
+
+	let is_vif_front _ dbg ~name =
+		Debug.with_thread_associated dbg (fun () ->
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.is_vif_front dbg ~name
+				)
+				(fun () ->
+					Sysfs.is_vif_front name
+				)
+		) ()
+
+	let get_pci_bus_path _ dbg ~name =
+		Debug.with_thread_associated dbg (fun () ->
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.get_pci_bus_path dbg ~name
+				)
+				(fun () ->
+					Sysfs.get_pcibuspath name
+				)
 		) ()
 
 	let bring_up _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Bringing up interface %s" name;
-			Ip.link_set_up name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.bring_up dbg ~name
+				)
+				(fun () ->
+					debug "Bringing up interface %s" name;
+					Ip.link_set_up name
+				)
 		) ()
 
 	let bring_down _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Bringing down interface %s" name;
-			Ip.link_set_down name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.bring_down dbg ~name
+				)
+				(fun () ->
+					debug "Bringing down interface %s" name;
+					Ip.link_set_down name
+				)
 		) ()
 
 	let is_persistent _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			(get_config name).persistent_i
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.is_persistent dbg ~name
+				)
+				(fun () ->
+					(get_config name).persistent_i
+				)
 		) ()
 
 	let set_persistent _ dbg ~name ~value =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Making interface %s %spersistent" name (if value then "" else "non-");
-			update_config name {(get_config name) with persistent_i = value}
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.set_persistent dbg ~name ~value
+				)
+				(fun () ->
+					debug "Making interface %s %spersistent" name (if value then "" else "non-");
+					update_config name {(get_config name) with persistent_i = value}
+				)
 		) ()
 
 	let make_config _ dbg ?(conservative=false) ~config () =
@@ -405,24 +635,56 @@ module Interface = struct
 			let exec f = if conservative then (try f () with _ -> ()) else f () in
 			List.iter (function (name, ({ipv4_conf; ipv4_gateway; ipv6_conf; ipv6_gateway; ipv4_routes; dns=nameservers,domains; mtu;
 				ethtool_settings; ethtool_offload; _} as c)) ->
-				update_config name c;
-				exec (fun () -> set_ipv4_conf () dbg ~name ~conf:ipv4_conf);
-				exec (fun () -> match ipv4_gateway with None -> () | Some gateway ->
-					set_ipv4_gateway () dbg ~name ~address:gateway);
-				(try set_ipv6_conf () dbg ~name ~conf:ipv6_conf with _ -> ());
-				(try match ipv6_gateway with None -> () | Some gateway ->
-					set_ipv6_gateway () dbg ~name ~address:gateway with _ -> ());
-				exec (fun () -> set_ipv4_routes () dbg ~name ~routes:ipv4_routes);
-				exec (fun () -> set_dns () dbg ~name ~nameservers ~domains);
-				exec (fun () -> set_mtu () dbg ~name ~mtu);
-				exec (fun () -> bring_up () dbg ~name);
-				exec (fun () -> set_ethtool_settings () dbg ~name ~params:ethtool_settings);
-				exec (fun () -> set_ethtool_offload () dbg ~name ~params:ethtool_offload)
+				maybe_forward' name
+					(fun x -> let module Remote = (val x : CLIENT) in
+						Remote.Interface.make_config dbg ~conservative ~config:[name, c] ()
+					)
+					(fun () ->
+						update_config name c;
+						exec (fun () -> set_ipv4_conf () dbg ~name ~conf:ipv4_conf);
+						exec (fun () -> match ipv4_gateway with None -> () | Some gateway ->
+							set_ipv4_gateway () dbg ~name ~address:gateway);
+						(try set_ipv6_conf () dbg ~name ~conf:ipv6_conf with _ -> ());
+						(try match ipv6_gateway with None -> () | Some gateway ->
+							set_ipv6_gateway () dbg ~name ~address:gateway with _ -> ());
+						exec (fun () -> set_ipv4_routes () dbg ~name ~routes:ipv4_routes);
+						exec (fun () -> set_dns () dbg ~name ~nameservers ~domains);
+						exec (fun () -> set_mtu () dbg ~name ~mtu);
+						exec (fun () -> bring_up () dbg ~name);
+						exec (fun () -> set_ethtool_settings () dbg ~name ~params:ethtool_settings);
+						exec (fun () -> set_ethtool_offload () dbg ~name ~params:ethtool_offload)
+					)
 			) config
+		) ()
+
+	let rename _ dbg ~name ~new_name =
+		Debug.with_thread_associated dbg (fun () ->
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Interface.rename dbg ~name ~new_name
+				)
+				(fun () ->
+					Ip.link_rename name new_name
+				)
 		) ()
 end
 
 module Bridge = struct
+	let set_driver_domain _ dbg ~name ~uuid =
+		Debug.with_thread_associated dbg (fun () ->
+			debug "Setting driver domain for bridge %s to %s" name uuid;
+			config := {!config with bridge_domains = update_config !config.bridge_domains name uuid}
+		) ()
+
+	let maybe_forward' name remote_f local_f =
+		let driver_domain =
+			if List.mem_assoc name !config.bridge_domains then
+				Some (List.assoc name !config.bridge_domains)
+			else
+				None
+		in
+		maybe_forward remote_f local_f driver_domain
+
 	let kind = ref Openvswitch
 	let add_default = ref []
 
@@ -448,127 +710,161 @@ module Bridge = struct
 
 	let get_bond_links_up _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch -> Ovs.get_bond_links_up name
-			| Bridge -> Proc.get_bond_links_up name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.get_bond_links_up dbg ~name
+				)
+				(fun () ->
+					match !kind with
+					| Openvswitch -> Ovs.get_bond_links_up name
+					| Bridge -> Proc.get_bond_links_up name
+				)
 		) ()
 
 	let get_all _ dbg () =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch -> Ovs.list_bridges ()
-			| Bridge -> Sysfs.get_all_bridges ()
+			let domains = List.setify (List.map (fun (_, domain) -> domain) !config.bridge_domains) in
+			let remote_bridges = List.map (fun domain ->
+				try
+					maybe_forward
+						(fun x -> let module Remote = (val x : CLIENT) in
+							Remote.Bridge.get_all dbg ()
+						)
+						(fun () -> assert false)
+						(Some domain)
+				with _ -> []
+			) domains in
+			let local_bridges =
+				match !kind with
+				| Openvswitch -> Ovs.list_bridges ()
+				| Bridge -> Sysfs.get_all_bridges ()
+			in
+			let bridges = local_bridges @ (List.flatten remote_bridges) in
+			debug "Found the following bridges: %s" (String.concat ", " bridges);
+			bridges
 		) ()
 
 	let create _ dbg ?vlan ?mac ?(other_config=[]) ~name () =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Creating bridge %s%s" name (match vlan with
-				| None -> ""
-				| Some (parent, vlan) -> Printf.sprintf " (VLAN %d on bridge %s)" vlan parent
-			);
-			update_config name {get_config name with vlan; bridge_mac=mac; other_config};
-			begin match !kind with
-			| Openvswitch ->
-				let fail_mode =
-					if not (List.mem_assoc "vswitch-controller-fail-mode" other_config) then
-						"standalone"
-					else
-						let mode = List.assoc "vswitch-controller-fail-mode" other_config in
-						if mode = "secure" || mode = "standalone" then begin
-							(try if mode = "secure" && Ovs.get_fail_mode name <> "secure" then
-								add_default := name :: !add_default
-							with _ -> ());
-							mode
-						end else begin
-							debug "%s isn't a valid setting for other_config:vswitch-controller-fail-mode; \
-								defaulting to 'standalone'" mode;
-							"standalone"
-						end
-				in
-				let vlan_bug_workaround =
-					if List.mem_assoc "vlan-bug-workaround" other_config then
-						Some (List.assoc "vlan-bug-workaround" other_config = "true")
-					else
-						None
-				in
-				let external_id =
-					if List.mem_assoc "network-uuids" other_config then
-						Some ("xs-network-uuids", List.assoc "network-uuids" other_config)
-					else
-						None
-				in
-				let disable_in_band =
-					if not (List.mem_assoc "vswitch-disable-in-band" other_config) then
-						Some None
-					else
-						let dib = List.assoc "vswitch-disable-in-band" other_config in
-						if dib = "true" || dib = "false" then
-							Some (Some dib)
-						else
-							(debug "%s isn't a valid setting for other_config:vswitch-disable-in-band" dib;
-							None)
-				in
-				ignore (Ovs.create_bridge ?mac ~fail_mode ?external_id ?disable_in_band
-					vlan vlan_bug_workaround name)
-			| Bridge ->
-				ignore (Brctl.create_bridge name);
-				Opt.iter (Ip.set_mac name) mac;
-				match vlan with
-				| None -> ()
-				| Some (parent, vlan) ->
-					let interface = List.hd (List.filter (fun n ->
-						String.startswith "eth" n || String.startswith "bond" n
-					) (Sysfs.bridge_to_interfaces parent)) in
-					Ip.create_vlan interface vlan;
-					let vlan_name = Ip.vlan_name interface vlan in
-					Interface.bring_up () dbg ~name:vlan_name;
-					Brctl.create_port name vlan_name
-			end;
-			Interface.bring_up () dbg ~name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.create dbg ?vlan ?mac ~other_config ~name ()
+				)
+				(fun () ->
+					debug "Creating bridge %s%s" name (match vlan with
+						| None -> ""
+						| Some (parent, vlan) -> Printf.sprintf " (VLAN %d on bridge %s)" vlan parent
+					);
+					update_config name {get_config name with vlan; bridge_mac=mac; other_config};
+					begin match !kind with
+					| Openvswitch ->
+						let fail_mode =
+							if not (List.mem_assoc "vswitch-controller-fail-mode" other_config) then
+								"standalone"
+							else
+								let mode = List.assoc "vswitch-controller-fail-mode" other_config in
+								if mode = "secure" || mode = "standalone" then begin
+									(try if mode = "secure" && Ovs.get_fail_mode name <> "secure" then
+										add_default := name :: !add_default
+									with _ -> ());
+									mode
+								end else begin
+									debug "%s isn't a valid setting for other_config:vswitch-controller-fail-mode; \
+										defaulting to 'standalone'" mode;
+									"standalone"
+								end
+						in
+						let vlan_bug_workaround =
+							if List.mem_assoc "vlan-bug-workaround" other_config then
+								Some (List.assoc "vlan-bug-workaround" other_config = "true")
+							else
+								None
+						in
+						let external_id =
+							if List.mem_assoc "network-uuids" other_config then
+								Some ("xs-network-uuids", List.assoc "network-uuids" other_config)
+							else
+								None
+						in
+						let disable_in_band =
+							if not (List.mem_assoc "vswitch-disable-in-band" other_config) then
+								Some None
+							else
+								let dib = List.assoc "vswitch-disable-in-band" other_config in
+								if dib = "true" || dib = "false" then
+									Some (Some dib)
+								else
+									(debug "%s isn't a valid setting for other_config:vswitch-disable-in-band" dib;
+									None)
+						in
+						ignore (Ovs.create_bridge ?mac ~fail_mode ?external_id ?disable_in_band
+							vlan vlan_bug_workaround name)
+					| Bridge ->
+						ignore (Brctl.create_bridge name);
+						Opt.iter (Ip.set_mac name) mac;
+						match vlan with
+						| None -> ()
+						| Some (parent, vlan) ->
+							let interface = List.hd (List.filter (fun n ->
+								String.startswith "eth" n || String.startswith "bond" n
+							) (Sysfs.bridge_to_interfaces parent)) in
+							Ip.create_vlan interface vlan;
+							let vlan_name = Ip.vlan_name interface vlan in
+							Interface.bring_up () dbg ~name:vlan_name;
+							Brctl.create_port name vlan_name
+					end;
+					Interface.bring_up () dbg ~name
+				)
 		) ()
 
 	let destroy _ dbg ?(force=false) ~name () =
 		Debug.with_thread_associated dbg (fun () ->
-			Interface.bring_down () dbg ~name;
-			match !kind with
-			| Openvswitch ->
-				if Ovs.get_vlans name = [] || force then begin
-					debug "Destroying bridge %s" name;
-					remove_config name;
-					List.iter (fun dev ->
-						Interface.set_ipv4_conf () dbg ~name:dev ~conf:None4;
-						Interface.bring_down () dbg ~name:dev
-					) (Ovs.bridge_to_interfaces name);
-					Interface.set_ipv4_conf () dbg ~name ~conf:None4;
-					ignore (Ovs.destroy_bridge name)
-				end else
-					debug "Not destroying bridge %s, because it has VLANs on top" name
-			| Bridge ->
-				let ifs = Sysfs.bridge_to_interfaces name in
-				let vlans_on_this_parent =
-					let interfaces = List.filter (fun n ->
-						String.startswith "eth" n || String.startswith "bond" n
-					) ifs in
-					match interfaces with
-					| [] -> []
-					| interface :: _ ->
-						List.filter (String.startswith (interface ^ ".")) (Sysfs.list ())
-				in
-				if vlans_on_this_parent = [] || force then begin
-					debug "Destroying bridge %s" name;
-					remove_config name;
-					List.iter (fun dev ->
-						Interface.set_ipv4_conf () dbg ~name:dev ~conf:None4;
-						Interface.bring_down () dbg ~name:dev;
-						if Linux_bonding.is_bond_device dev then
-							Linux_bonding.remove_bond_master dev;
-						if String.startswith "eth" dev && String.contains dev '.' then
-							ignore (Ip.destroy_vlan dev)
-					) ifs;
-					Interface.set_ipv4_conf () dbg ~name ~conf:None4;
-					ignore (Brctl.destroy_bridge name)
-				end else
-					debug "Not destroying bridge %s, because it has VLANs on top" name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.destroy dbg ~force ~name ()
+				)
+				(fun () ->
+					Interface.bring_down () dbg ~name;
+					match !kind with
+					| Openvswitch ->
+						if Ovs.get_vlans name = [] || force then begin
+							debug "Destroying bridge %s" name;
+							remove_config name;
+							List.iter (fun dev ->
+								Interface.set_ipv4_conf () dbg ~name:dev ~conf:None4;
+								Interface.bring_down () dbg ~name:dev
+							) (Ovs.bridge_to_interfaces name);
+							Interface.set_ipv4_conf () dbg ~name ~conf:None4;
+							ignore (Ovs.destroy_bridge name)
+						end else
+							debug "Not destroying bridge %s, because it has VLANs on top" name
+					| Bridge ->
+						let ifs = Sysfs.bridge_to_interfaces name in
+						let vlans_on_this_parent =
+							let interfaces = List.filter (fun n ->
+								String.startswith "eth" n || String.startswith "bond" n
+							) ifs in
+							match interfaces with
+							| [] -> []
+							| interface :: _ ->
+								List.filter (String.startswith (interface ^ ".")) (Sysfs.list ())
+						in
+						if vlans_on_this_parent = [] || force then begin
+							debug "Destroying bridge %s" name;
+							remove_config name;
+							List.iter (fun dev ->
+								Interface.set_ipv4_conf () dbg ~name:dev ~conf:None4;
+								Interface.bring_down () dbg ~name:dev;
+								if Linux_bonding.is_bond_device dev then
+									Linux_bonding.remove_bond_master dev;
+								if String.startswith "eth" dev && String.contains dev '.' then
+									ignore (Ip.destroy_vlan dev)
+							) ifs;
+							Interface.set_ipv4_conf () dbg ~name ~conf:None4;
+							ignore (Brctl.destroy_bridge name)
+						end else
+							debug "Not destroying bridge %s, because it has VLANs on top" name
+				)
 		) ()
 
 	let get_kind _ dbg () =
@@ -578,11 +874,18 @@ module Bridge = struct
 
 	let get_ports _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch -> Ovs.bridge_to_ports name
-			| Bridge -> raise Not_implemented
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.get_ports dbg ~name
+				)
+				(fun () ->
+					match !kind with
+					| Openvswitch -> Ovs.bridge_to_ports name
+					| Bridge -> raise Not_implemented
+				)
 		) ()
 
+	(* TODO: forward this call? *)
 	let get_all_ports _ dbg ?(from_cache=false) () =
 		Debug.with_thread_associated dbg (fun () ->
 			if from_cache then
@@ -596,11 +899,18 @@ module Bridge = struct
 
 	let get_bonds _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch -> Ovs.bridge_to_ports name
-			| Bridge -> raise Not_implemented
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.get_bonds dbg ~name
+				)
+				(fun () ->
+					match !kind with
+					| Openvswitch -> Ovs.bridge_to_ports name
+					| Bridge -> raise Not_implemented
+				)
 		) ()
 
+	(* TODO: forward this call? *)
 	let get_all_bonds _ dbg ?(from_cache=false) () =
 		Debug.with_thread_associated dbg (fun () ->
 			if from_cache then
@@ -615,9 +925,15 @@ module Bridge = struct
 
 	let get_vlan _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch -> Ovs.bridge_to_vlan name
-			| Bridge -> raise Not_implemented
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.get_vlan dbg ~name
+				)
+				(fun () ->
+					match !kind with
+					| Openvswitch -> Ovs.bridge_to_vlan name
+					| Bridge -> raise Not_implemented
+				)
 		) ()
 
 	let add_default_flows _ dbg bridge mac interfaces =
@@ -629,98 +945,134 @@ module Bridge = struct
 
 	let add_port _ dbg ?(mac="") ~bridge ~name ~interfaces ?(bond_properties=[]) () =
 		Debug.with_thread_associated dbg (fun () ->
-			let config = get_config bridge in
-			let ports =
-				if List.mem_assoc name config.ports then
-					List.remove_assoc name config.ports
-				else
-					config.ports
-			in
-			let ports = (name, {interfaces; mac; bond_properties}) :: ports in
-			update_config bridge {config with ports};
-			debug "Adding port %s to bridge %s with interfaces %s%s" name bridge
-				(String.concat ", " interfaces)
-				(if mac <> "" then " and MAC " ^ mac else "");
-			match !kind with
-			| Openvswitch ->
-				if List.length interfaces = 1 then begin
-					List.iter (fun name -> Interface.bring_up () dbg ~name) interfaces;
-					ignore (Ovs.create_port (List.hd interfaces) bridge)
-				end else begin
-					ignore (Ovs.create_bond name interfaces bridge mac bond_properties);
-					List.iter (fun name -> Interface.bring_up () dbg ~name) interfaces
-				end;
-				if List.mem bridge !add_default then begin
-					add_default_flows () dbg bridge mac interfaces;
-					add_default := List.filter ((<>) bridge) !add_default
-				end
-			| Bridge ->
-				if List.length interfaces = 1 then begin
-					List.iter (fun name -> Interface.bring_up () dbg ~name) interfaces;
-					ignore (Brctl.create_port bridge name)
-				end else begin
-					if not (List.mem name (Sysfs.bridge_to_interfaces bridge)) then begin
-						Linux_bonding.add_bond_master name;
-						if mac <> "" then Ip.set_mac name mac;
-						List.iter (fun name -> Interface.bring_down () dbg ~name) interfaces;
-						List.iter (Linux_bonding.add_bond_slave name) interfaces;
-						let bond_properties =
-							if List.mem_assoc "mode" bond_properties && List.assoc "mode" bond_properties = "lacp" then
-								List.replace_assoc "mode" "802.3ad" bond_properties
-							else bond_properties
-						in
-						Linux_bonding.set_bond_properties name bond_properties
-					end;
-					Interface.bring_up () dbg ~name;
-					ignore (Brctl.create_port bridge name)
-				end
+			maybe_forward' bridge
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.add_port dbg ~mac ~bridge ~name ~interfaces ~bond_properties ()
+				)
+				(fun () ->
+					let config = get_config bridge in
+					let ports =
+						if List.mem_assoc name config.ports then
+							List.remove_assoc name config.ports
+						else
+							config.ports
+					in
+					let ports = (name, {interfaces; mac; bond_properties}) :: ports in
+					update_config bridge {config with ports};
+					debug "Adding port %s to bridge %s with interfaces %s%s" name bridge
+						(String.concat ", " interfaces)
+						(if mac <> "" then " and MAC " ^ mac else "");
+					match !kind with
+					| Openvswitch ->
+						if List.length interfaces = 1 then begin
+							List.iter (fun name -> Interface.bring_up () dbg ~name) interfaces;
+							ignore (Ovs.create_port (List.hd interfaces) bridge)
+						end else begin
+							ignore (Ovs.create_bond name interfaces bridge mac bond_properties);
+							List.iter (fun name -> Interface.bring_up () dbg ~name) interfaces
+						end;
+						if List.mem bridge !add_default then begin
+							add_default_flows () dbg bridge mac interfaces;
+							add_default := List.filter ((<>) bridge) !add_default
+						end
+					| Bridge ->
+						if List.length interfaces = 1 then begin
+							List.iter (fun name -> Interface.bring_up () dbg ~name) interfaces;
+							ignore (Brctl.create_port bridge name)
+						end else begin
+							if not (List.mem name (Sysfs.bridge_to_interfaces bridge)) then begin
+								Linux_bonding.add_bond_master name;
+								if mac <> "" then Ip.set_mac name mac;
+								List.iter (fun name -> Interface.bring_down () dbg ~name) interfaces;
+								List.iter (Linux_bonding.add_bond_slave name) interfaces;
+								let bond_properties =
+									if List.mem_assoc "mode" bond_properties && List.assoc "mode" bond_properties = "lacp" then
+										List.replace_assoc "mode" "802.3ad" bond_properties
+									else bond_properties
+								in
+								Linux_bonding.set_bond_properties name bond_properties
+							end;
+							Interface.bring_up () dbg ~name;
+							ignore (Brctl.create_port bridge name)
+						end
+				)
 		) ()
 
 	let remove_port _ dbg ~bridge ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Removing port %s from bridge %s" name bridge;
-			let config = get_config bridge in
-			if List.mem_assoc name config.ports then begin
-				let ports = List.remove_assoc name config.ports in
-				update_config bridge {config with ports}
-			end;
-			match !kind with
-			| Openvswitch ->
-				ignore (Ovs.destroy_port name)
-			| Bridge ->
-				ignore (Brctl.destroy_port bridge name)
+			maybe_forward' bridge
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.remove_port dbg ~bridge ~name
+				)
+				(fun () ->
+					debug "Removing port %s from bridge %s" name bridge;
+					let config = get_config bridge in
+					if List.mem_assoc name config.ports then begin
+						let ports = List.remove_assoc name config.ports in
+						update_config bridge {config with ports}
+					end;
+					match !kind with
+					| Openvswitch ->
+						ignore (Ovs.destroy_port name)
+					| Bridge ->
+						ignore (Brctl.destroy_port bridge name)
+				)
 		) ()
 
 	let get_interfaces _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch ->
-				Ovs.bridge_to_interfaces name
-			| Bridge ->
-				Sysfs.bridge_to_interfaces name
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.get_interfaces dbg ~name
+				)
+				(fun () ->
+					match !kind with
+					| Openvswitch ->
+						Ovs.bridge_to_interfaces name
+					| Bridge ->
+						Sysfs.bridge_to_interfaces name
+				)
 		) ()
 
 	let get_fail_mode _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			match !kind with
-			| Openvswitch ->
-				begin match Ovs.get_fail_mode name with
-				| "standalone" -> Some Standalone
-				| "secure" -> Some Secure
-				| _ -> None
-				end
-			| Bridge -> raise Not_implemented
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.get_fail_mode dbg ~name
+				)
+				(fun () ->
+					match !kind with
+					| Openvswitch ->
+						begin match Ovs.get_fail_mode name with
+						| "standalone" -> Some Standalone
+						| "secure" -> Some Secure
+						| _ -> None
+						end
+					| Bridge -> raise Not_implemented
+				)
 		) ()
 
 	let is_persistent _ dbg ~name =
 		Debug.with_thread_associated dbg (fun () ->
-			(get_config name).persistent_b
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.is_persistent dbg ~name
+				)
+				(fun () ->
+					(get_config name).persistent_b
+				)
 		) ()
 
 	let set_persistent _ dbg ~name ~value =
 		Debug.with_thread_associated dbg (fun () ->
-			debug "Making bridge %s %spersistent" name (if value then "" else "non-");
-			update_config name {(get_config name) with persistent_b = value}
+			maybe_forward' name
+				(fun x -> let module Remote = (val x : CLIENT) in
+					Remote.Bridge.set_persistent dbg ~name ~value
+				)
+				(fun () ->
+					debug "Making bridge %s %spersistent" name (if value then "" else "non-");
+					update_config name {(get_config name) with persistent_b = value}
+				)
 		) ()
 
 	let make_config _ dbg ?(conservative=false) ~config () =
@@ -756,11 +1108,17 @@ module Bridge = struct
 			debug "** Configuring the following bridges: %s"
 				(String.concat ", " (List.map (fun (name, _) -> name) config));
 			List.iter (function (bridge_name, ({ports; vlan; bridge_mac; other_config; _} as c)) ->
-				update_config bridge_name c;
-				create () dbg ?vlan ?mac:bridge_mac ~other_config ~name:bridge_name ();
-				List.iter (fun (port_name, {interfaces; bond_properties; mac}) ->
-					add_port () dbg ~mac ~bridge:bridge_name ~name:port_name ~interfaces ~bond_properties ()
-				) ports
+				maybe_forward' bridge_name
+					(fun x -> let module Remote = (val x : CLIENT) in
+						Remote.Bridge.make_config dbg ~conservative ~config:[bridge_name, c] ()
+					)
+					(fun () ->
+						update_config bridge_name c;
+						create () dbg ?vlan ?mac:bridge_mac ~other_config ~name:bridge_name ();
+						List.iter (fun (port_name, {interfaces; bond_properties; mac}) ->
+							add_port () dbg ~mac ~bridge:bridge_name ~name:port_name ~interfaces ~bond_properties ()
+						) ports
+					)
 			) config
 		) ()
 end
