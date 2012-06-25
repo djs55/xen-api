@@ -15,6 +15,7 @@
 let name = "xcp-networkd"
 
 open Pervasiveext
+open Stringext
 open Fun
 open Network_utils
 
@@ -56,6 +57,33 @@ let start_server path process =
 	()
 
 let start () =
+	(* NERO: rename HIMN interface to xenapi and start listening on it *)
+	List.iter (fun name ->
+		let name =
+			if Sysfs.is_vif_front name && name <> "xenapi" && not (String.startswith "veth" name) then begin
+				Ip.link_rename name "xenapi";
+				"xenapi"
+			end else name
+		in
+		if name = "xenapi" then begin
+			Ip.link_set_up name;
+			if not (Dhclient.is_running name) then
+				ignore (Dhclient.start name []);
+			try
+				let ip, _ = List.hd (Ip.get_ipv4 name) in
+				let himn_sock = Http_svr.bind (Unix.ADDR_INET(ip, 4094)) "HIMN-RPC" in
+				with_xs (fun xs ->
+					let domid = xs.Xenstore.Xs.read "domid" in
+					let path = "/local/domain/" ^ domid ^ "/attr/xenapi/ip" in
+					let ip = Unix.string_of_inet_addr ip in
+					debug "writing IP %s to %s" ip path;
+					xs.Xenstore.Xs.write path ip
+				);
+				Http_svr.start server himn_sock
+			with _ -> ()
+		end
+	) (Sysfs.list ());
+
 	Network_monitor_thread.start ();
 	Network_server.on_startup ();
 	start_server path Server.process

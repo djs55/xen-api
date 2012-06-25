@@ -43,11 +43,10 @@ open Monitor_rrds
 open Ds
 open Rrd_shared
 open Network_monitor
+open Network
 
 module D=Debug.Debugger(struct let name="monitor" end)
 open D
-
-module Net = (val (Network.get_client ()) : Network.CLIENT)
 
 let timeslice = ref 5
 
