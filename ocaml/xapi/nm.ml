@@ -351,6 +351,10 @@ let bring_pif_up ~__context ?(management_interface=false) (pif: API.ref_PIF) =
 		let rc = Db.PIF.get_record ~__context ~self:pif in
 		let net_rc = Db.Network.get_record ~__context ~self:rc.API.pIF_network in
 		let bridge = net_rc.API.network_bridge in
+		let driver_domain =
+			Opt.map (fun self -> Db.VM.get_uuid ~__context ~self)
+				(Network.get_driver_domain ~__context pif)
+		in
 
 		(* Call networkd even if currently_attached is false, just to update its state *)
 		debug "Making sure that PIF %s is up" rc.API.pIF_uuid;
@@ -372,8 +376,18 @@ let bring_pif_up ~__context ?(management_interface=false) (pif: API.ref_PIF) =
 			Opt.iter (fun name -> Net.set_gateway_interface dbg ~name) gateway_if;
 			Opt.iter (fun name -> Net.set_dns_interface dbg ~name) dns_if;
 
-			(* Setup network infrastructure *)
+			(* Get network infrastructure configuration *)
 			let cleanup, bridge_config, interface_config = create_bridges ~__context rc net_rc in
+
+			(* Set driver domains *)
+			List.iter (fun (name, _) ->
+				Opt.iter (fun uuid -> Net.Bridge.set_driver_domain dbg ~name ~uuid) driver_domain
+			) bridge_config;
+			List.iter (fun (name, _) ->
+				Opt.iter (fun uuid -> Net.Interface.set_driver_domain dbg ~name ~uuid) driver_domain
+			) interface_config;
+
+			(* Make it happen *)
 			List.iter (fun (name, force) -> Net.Bridge.destroy dbg ~name ~force ()) cleanup;
 			Net.Bridge.make_config dbg ~config:bridge_config ();
 			Net.Interface.make_config dbg ~config:interface_config ();
@@ -442,6 +456,13 @@ let bring_pif_up ~__context ?(management_interface=false) (pif: API.ref_PIF) =
 			let (ethtool_settings, ethtool_offload) = determine_ethtool_settings net_rc.API.network_other_config in
 			let interface_config = [bridge, {ipv4_conf; ipv4_gateway; ipv6_conf; ipv6_gateway;
 				ipv4_routes; dns; ethtool_settings; ethtool_offload; mtu; persistent_i=persistent}] in
+
+			(* Set driver domains *)
+			List.iter (fun (name, _) ->
+				Opt.iter (fun uuid -> Net.Interface.set_driver_domain dbg ~name ~uuid) driver_domain
+			) interface_config;
+
+			(* Make it happen *)
 			Net.Interface.make_config dbg ~config:interface_config ()
 		);
 
