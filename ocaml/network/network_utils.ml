@@ -12,6 +12,7 @@
  * GNU Lesser General Public License for more details.
  *)
 
+open Pervasiveext
 open Listext
 open Stringext
 open Fun
@@ -54,6 +55,10 @@ let call_script ?(log_successful_output=false) script args =
 		raise (Script_error ["script", script; "args", String.concat " " args; "code",
 			string_of_int n; "stdout", stdout; "stderr", stderr])
 
+let with_xs f =
+	let xs = Xenstore.Xs.domain_open () in
+	finally (fun () -> f xs) (fun () -> Xenstore.Xs.close xs)
+
 module Sysfs = struct
 	let list () =
 		let all = Array.to_list (Sys.readdir "/sys/class/net") in
@@ -82,6 +87,12 @@ module Sysfs = struct
 			let link = Unix.readlink (getpath name "device") in
 			(* filter out device symlinks which look like /../../../devices/xen-backend/vif- *)
 			not(List.mem "xen-backend" (String.split '/' link))
+		with _ -> false
+
+	let is_vif_front name =
+		try
+			let link = Unix.readlink (getpath name "device") in
+			String.has_substr link "xen/vif"
 		with _ -> false
 
 	let get_carrier name =
@@ -189,6 +200,11 @@ module Ip = struct
 	let link_set_down dev =
 		if is_up dev then
 			ignore (link_set dev ["down"])
+
+	let link_rename dev name =
+		link_set_down dev;
+		link_set dev ["name"; name];
+		link_set_up name
 
 	let addr ?(version=V46) dev attr =
 		let v = string_of_version version in
