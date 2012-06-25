@@ -1204,8 +1204,10 @@ let bind pcidevs =
 	let bind_to_pciback device =
 		let newslot = "/sys/bus/pci/drivers/pciback/new_slot" in
 		let bind = "/sys/bus/pci/drivers/pciback/bind" in
+		let permissive = "/sys/bus/pci/drivers/pciback/permissive" in
 		write_string_to_file newslot device;
 		write_string_to_file bind device;
+		write_string_to_file permissive device;
 		do_flr device;
 		in
 	List.iter (fun (domain, bus, slot, func) ->
