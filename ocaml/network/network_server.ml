@@ -224,7 +224,7 @@ module Interface = struct
 					Remote.Interface.get_mac dbg ~name
 				)
 				(fun () ->
-					Ip.get_mac name
+					Sysfs.get_mac name
 				)
 		) ()
 

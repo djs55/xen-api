@@ -107,6 +107,11 @@ module Sysfs = struct
 			List.hd (List.rev (String.split '/' devpath))
 		with exn -> "N/A"
 
+	let get_mac name =
+		try
+			read_one_line (getpath name "address")
+		with _ -> ""
+
 	let get_pci_ids name =
 		let read_id_from path =
 			try
