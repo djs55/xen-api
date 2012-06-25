@@ -1035,6 +1035,15 @@ module VM = struct
 					Device.Vkbd.add ~xc ~xs di.Xenctrl.domid;
 					Device.Dm.start_vnconly task ~xs ~dmpath:_qemu_dm info di.Xenctrl.domid
 		) (create_device_model_config vbds vifs vmextra);
+		(* Attempt to dynamically unplug the qemu frontends to free event channel resources.
+		   Note the actual unplug will block until qemu closes the files. *)
+		List.iter
+			(function
+				| (_, (_, Device d)) ->
+					debug "Requesting early shutdown of dom0 frontend";
+					Device.Vbd.clean_shutdown_async ~xs d
+				| _ -> ()
+			) vmextra.VmExtra.non_persistent.VmExtra.qemu_vbds;
 		match vm.Vm.ty with
 			| Vm.PV { vncterm = true; vncterm_ip = ip } -> Device.PV_Vnc.start ~xs ?ip di.Xenctrl.domid
 			| _ -> ()
