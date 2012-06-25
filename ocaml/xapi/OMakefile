@@ -47,8 +47,8 @@ OCamlProgram(storage_impl_test, sparse_encoding sparse_dd_wrapper ../xenops/upda
 COMMON = \
 	xapi_templates \
 	../idl/api_lowlevel \
+	network \
 	../network/network_interface \
-	../network/network \
 	../network/network_monitor \
 	nm \
 	xapi_mgmt_iface \
