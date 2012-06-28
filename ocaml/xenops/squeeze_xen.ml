@@ -523,11 +523,9 @@ let execute_action ~xc ~xs action =
 		  Domain.set_maxmem_noexn cnx domid target_kib;
 		  if can_balloon
 		  then Domain.set_target_noexn cnx domid target_kib
-		  else debug "Not setting target for domid: %d since no feature-balloon. Setting maxmem to %Ld" domid target_kib;
 		end else begin
 		  if can_balloon
-		  then Domain.set_target_noexn cnx domid target_kib
-		  else debug "Not setting target for domid: %d since no feature-balloon. Setting maxmem to %Ld" domid target_kib;
+		  then Domain.set_target_noexn cnx domid target_kib;
 		  Domain.set_maxmem_noexn cnx domid target_kib;
 		end
 	with e ->

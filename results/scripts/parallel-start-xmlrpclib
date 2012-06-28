@@ -1,0 +1,53 @@
+#!/usr/bin/env python
+
+import xmlrpclib
+from threading import Thread
+import time, sys
+
+iso8601 = "%Y%m%dT%H:%M:%SZ"
+
+class Starter(Thread):
+  def __init__(self, server, session, vm_refs):
+    Thread.__init__(self)
+    self.server = server
+    self.session = session
+    self.vm_refs = vm_refs
+  def run(self):
+    global iso8601
+    for vm_ref in self.vm_refs:
+      name = self.server.VM.get_name_label(self.session, vm_ref)["Value"]
+      start = time.strftime(iso8601, time.gmtime(time.time ()))
+      result = self.server.VM.start(self.session, vm_ref, False, False)
+      end = time.strftime(iso8601, time.gmtime(time.time ()))
+      if result["Status"] == "Success":
+        print "SUCCESS ",
+	print "%s %s %s" % (name, start, end)
+      else:
+	descr = result["ErrorDescription"]
+        print "%s %s %s %s" % (descr[0], name, start, end)
+      sys.stdout.flush()
+
+if __name__ == "__main__":
+  if len(sys.argv) <> 2:
+    print "Usage:"
+    print "  %s <URL>" % (sys.argv[0])
+    print "  -- performs an 8-way parallel start of all Halted VMs"
+    sys.exit(1)
+  x = xmlrpclib.Server(sys.argv[1])
+  session = x.session.login_with_password("root", "xenroot")["Value"]
+  vms = x.VM.get_all_records(session)["Value"]
+  queues = [ [],[],[],[],[],[],[],[] ]
+  n = 0
+  for vm_ref in vms.keys():
+    if not(vms[vm_ref]["is_control_domain"]) and not(vms[vm_ref]["is_a_template"]):
+      queues[n].append(vm_ref)
+      n = (n + 1) % len(queues)
+  threads = []
+  for q in queues:
+    t = Starter(x, session, q)
+    threads.append(t)
+  for t in threads:
+    t.start()
+  for t in threads:
+    t.join()
+  
