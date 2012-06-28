@@ -1,0 +1,3 @@
+st30
+nfs 1.5GiB, 500000 AIO slots
+16MiB basic_vbd no feature-balloon
