@@ -1,4 +1,4 @@
-set terminal postscript
+set terminal png 
 set ydata time
 set timefmt y "%Y%m%dT%H:%M:%SZ"
 set title "Time to boot lots of miniOS VMs with NFS driver domain"
