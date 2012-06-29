@@ -240,6 +240,7 @@ module Everything = struct
 	let to_file filename h =
 		let rpc = Mutex.execute Host.m (fun () -> rpc_of_t h) in
 		let s = Jsonrpc.to_string rpc in
+		debug "AAA Everything.to_file %s" s;
 		Unixext.write_string_to_file filename s
 	let of_file filename =
 		let s = Unixext.string_of_file filename in
@@ -808,12 +809,13 @@ module Local_domain_socket = struct
 	let path = Filename.concat Fhs.vardir "storage"
 
 	let xmlrpc_handler process req bio _ =
+		debug "XXX Got connection";
 		let body = Http_svr.read_body req bio in
 		let s = Buf_io.fd_of bio in
 		let rpc = Xmlrpc.call_of_string body in
-		(* Printf.fprintf stderr "Request: %s %s\n%!" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params)); *)
+		debug "XXX Request: %s %s" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params));
 		let result = process (Some req.Http.Request.uri) rpc in
-		(* Printf.fprintf stderr "Response: %s\n%!" (Rpc.to_string result.Rpc.contents); *)
+		debug "XXX Response: %s" (Rpc.to_string result.Rpc.contents);
 		let str = Xmlrpc.string_of_response result in
 		Http_svr.response_str req s str
 
