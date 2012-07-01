@@ -147,7 +147,16 @@ let di_of_uuid ~xc ~xs domain_selection uuid =
 			Some x
 
 let domid_of_uuid ~xc ~xs domain_selection uuid =
-	Opt.map (fun di -> di.Xenctrl.domid) (di_of_uuid ~xc ~xs domain_selection uuid)
+	(* We don't fully control the domain lifecycle because libxenguest will actually
+	   destroy a domain on suspend. Therefore we only rely on state in xenstore *)
+	let dir = Printf.sprintf "/vm/%s/domains" (Uuid.string_of_uuid uuid) in
+	try
+		match xs.Xs.directory dir |> List.map int_of_string |> List.sort compare with
+			| [] -> None
+			| x -> Some (if domain_selection = Oldest then List.hd x else (List.hd (List.rev x)))
+	with e ->
+		error "Failed to read %s: has this domain already been cleaned up?" dir;
+		None
 
 let get_uuid ~xc domid = uuid_of_di (Xenctrl.domain_getinfo xc domid)
 
