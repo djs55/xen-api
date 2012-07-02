@@ -1,0 +1,6 @@
+beavis
+2GiB NFS driver domain, ely
+default dom0 memory 752
+800k AIO slots
+600 VMs
+XenDesktop configuration (3 VDIs 1 VIF)
