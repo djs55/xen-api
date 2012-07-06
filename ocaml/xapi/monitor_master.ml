@@ -48,7 +48,7 @@ let set_vm_metrics ~__context ~vm ~memory ~cpus =
 	let metrics = Db.VM.get_metrics ~__context ~self:vm in
 	let v = List.mapi (fun i e -> (Int64.of_int i), e) (Array.to_list cpus.vcpu_vcpus) in
 	Db.VM_metrics.set_VCPUs_utilisation ~__context ~self:metrics ~value:v;
-	Db.VM_metrics.set_last_updated ~__context ~self:metrics ~value:(Date.of_float (Unix.gettimeofday ()));
+	Db.VM_metrics.set_last_updated ~__context ~self:metrics ~value:(Date.now ());
 	match memory with 
 	  | Some memory ->
 	      Db.VM_metrics.set_memory_actual ~__context ~self:metrics ~value:memory.memory_mem
@@ -75,7 +75,7 @@ let update_vm_stats ~__context uuid cpus vbds vifs memory =
 			     begin
 			       let ref = Ref.make() in
 			       Db.VIF_metrics.create ~__context ~ref ~uuid:(Uuid.to_string (Uuid.make_uuid ()))
-				 ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.) ~other_config:[];
+				 ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:Date.never ~other_config:[];
 			       Db.VIF.set_metrics ~__context ~self ~value:ref
 			     end;
 
@@ -84,7 +84,7 @@ let update_vm_stats ~__context uuid cpus vbds vifs memory =
 			     Db.VIF_metrics.set_io_write_kbs ~__context ~self:metrics ~value:io_write;
 			     Db.VIF_metrics.set_io_read_kbs ~__context ~self:metrics ~value:io_read;
 			     Db.VIF_metrics.set_last_updated ~__context ~self:metrics
-			       ~value:(Date.of_float (Unix.gettimeofday ()));
+			       ~value:(Date.now ());
 			   end
 			) vm_vifs;
 	    let vm_vbds = Db.VM.get_VBDs ~__context ~self:vm in
@@ -103,7 +103,7 @@ let update_vm_stats ~__context uuid cpus vbds vifs memory =
 			     begin
 			       let ref = Ref.make() in
 			       Db.VBD_metrics.create ~__context ~ref ~uuid:(Uuid.to_string (Uuid.make_uuid ()))
-				 ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.) ~other_config:[];
+				 ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:Date.never ~other_config:[];
 			       Db.VBD.set_metrics ~__context ~self ~value:ref
 			     end;
 			   
@@ -111,7 +111,7 @@ let update_vm_stats ~__context uuid cpus vbds vifs memory =
 			   Db.VBD_metrics.set_io_write_kbs ~__context ~self:metrics ~value:io_write;
 			   Db.VBD_metrics.set_io_read_kbs ~__context ~self:metrics ~value:io_read;
 			   Db.VBD_metrics.set_last_updated ~__context ~self:metrics
-			     ~value:(Date.of_float (Unix.gettimeofday ()));
+			     ~value:(Date.now ());
 	                ) vm_vbds
 	with e ->
 	  begin
@@ -188,7 +188,7 @@ let set_pif_metrics ~__context ~self ~vendor ~device
 	if io_read >= 0.0 then
 	  Db.PIF_metrics.set_io_read_kbs ~__context ~self ~value:io_read;
 	Db.PIF_metrics.set_last_updated ~__context ~self
-	                                ~value:(Date.of_float (Unix.gettimeofday ()))
+	                                ~value:(Date.now ())
 
 
 (* Nb, the following function is actually called on the slave most of the time now - 
@@ -256,7 +256,7 @@ let update_pifs ~__context host pifs =
 					Db.PIF_metrics.create ~__context ~ref ~uuid:(Uuid.to_string (Uuid.make_uuid ())) ~carrier:false
 						~device_name:"" ~vendor_name:"" ~device_id:"" ~vendor_id:""
 						~speed:0L ~duplex:false ~pci_bus_path:""
-						~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.)
+						~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:Date.never
 						~other_config:[];
 					Db.PIF.set_metrics ~__context ~self:pifdev ~value:ref;
 					ref

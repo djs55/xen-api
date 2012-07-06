@@ -502,11 +502,7 @@ let write_patch_applied ~__context ~self =
           debug "error from patch application: %s" log;
           raise exn      
 
-let write_patch_applied_db ~__context ?date ~self ~host () =
-  let date = match date with
-    | Some d -> d
-    | None -> Unix.gettimeofday ()
-  in
+let write_patch_applied_db ~__context ?(date = Date.now ()) ~self ~host () =
   let uuid = Uuid.make_uuid () in
   let r = Ref.make () in
     Db.Host_patch.create ~__context
@@ -514,7 +510,7 @@ let write_patch_applied_db ~__context ?date ~self ~host () =
       ~uuid:(Uuid.to_string uuid)
       ~host
       ~pool_patch:self
-      ~timestamp_applied:(Date.of_float date)
+      ~timestamp_applied:date
       ~name_label:""
       ~name_description:""
       ~version:""
@@ -537,7 +533,7 @@ let update_db ~__context =
       (* Full paths of the /var/patch/applied files *)
       let stampfiles = List.map (Filename.concat patch_applied_dir) (try Array.to_list (Sys.readdir patch_applied_dir) with _ -> []) in
       let parse x = 
-	try [ patch_info_of_string (Unixext.string_of_file x), (Unix.stat x).Unix.st_mtime ]
+	try [ patch_info_of_string (Unixext.string_of_file x), Date.parse_float ((Unix.stat x).Unix.st_mtime) ]
 	with e -> warn "Error parsing patch stampfile %s: %s" x (ExnHelper.string_of_exn e); [] in
       List.concat (List.map parse stampfiles) in
 

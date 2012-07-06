@@ -97,7 +97,7 @@ let xs_read_bytes_from_kib_key xs path = match xs_read xs path with
 (** {2 Host fields} *)
 
 let host_time h =
-	Date.to_string (Date.of_float (Unix.gettimeofday ()))
+	Date.to_string (Date.now())
 let host_total_bytes h = Int64.to_string
 	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.total_pages))
 let host_free_bytes h = Int64.to_string

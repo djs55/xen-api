@@ -610,7 +610,7 @@ let create ~__context ~uuid ~name_label ~name_description ~hostname ~address ~ex
 	~local_cache_sr
   ;
   (* If the host we're creating is us, make sure its set to live *)
-  Db.Host_metrics.set_last_updated ~__context ~self:metrics ~value:(Date.of_float (Unix.gettimeofday ()));
+  Db.Host_metrics.set_last_updated ~__context ~self:metrics ~value:(Date.now ());
   Db.Host_metrics.set_live ~__context ~self:metrics ~value:(uuid=(Helpers.get_localhost_uuid ()));
   host
 
@@ -911,8 +911,7 @@ let backup_rrds ~__context ~host ~delay =
   Xapi_periodic_scheduler.add_to_queue "RRD backup" Xapi_periodic_scheduler.OneShot
 	delay (fun () -> Monitor_rrds.backup ~save_stats_locally:(Pool_role.is_master ()) ())
 
-let get_servertime ~__context ~host =
-  Date.of_float (Unix.gettimeofday ())
+let get_servertime ~__context ~host = Date.now ()
 
 let get_server_localtime ~__context ~host =
   let gmt_time= Unix.gettimeofday () in

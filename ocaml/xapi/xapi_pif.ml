@@ -273,7 +273,7 @@ let make_pif_metrics ~__context =
 		~__context ~ref:metrics ~uuid:metrics_uuid ~carrier:false
 		~device_name:"" ~vendor_name:"" ~device_id:"" ~vendor_id:""
 		~speed:0L ~duplex:false ~pci_bus_path:""
-		~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.)
+		~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:Date.never
 		~other_config:[] in
 	metrics
 

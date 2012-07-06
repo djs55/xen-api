@@ -298,7 +298,7 @@ let copy ~__context ?vdi ~vm vbd =
 		~uuid:metrics_uuid
 		~io_read_kbs:0.
 		~io_write_kbs:0.
-		~last_updated:(Date.of_float 0.)
+		~last_updated:(Date.never)
 		~other_config:[];
 	Db.VBD.create ~__context
 		~ref:new_vbd

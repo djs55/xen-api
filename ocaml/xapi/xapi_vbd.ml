@@ -143,7 +143,7 @@ let create  ~__context ~vM ~vDI ~userdevice ~bootable ~mode ~_type ~unpluggable 
 
 	     let metrics = Ref.make () and metrics_uuid = Uuid.to_string (Uuid.make_uuid ()) in
 	     Db.VBD_metrics.create ~__context ~ref:metrics ~uuid:metrics_uuid
-	       ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.)
+	       ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:Date.never
 	       ~other_config:[];
 
 	     Db.VBD.create ~__context ~ref ~uuid:(Uuid.to_string uuid)

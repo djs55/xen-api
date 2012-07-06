@@ -127,7 +127,7 @@ module TASK = struct
 	let task x = {
 		Task.id = x.id;
 		debug_info = x.debug_info;
-		ctime = x.ctime;
+		ctime = x.ctime |> Date.to_float;
 		state = x.state;
 		subtasks = x.subtasks;
 	}
@@ -583,7 +583,7 @@ module WorkerPool = struct
 		} with rpc
 		let of_task t = {
 				id = t.Xenops_task.id;
-				ctime = t.Xenops_task.ctime |> Date.of_float |> Date.to_string;
+				ctime = t.Xenops_task.ctime |> Date.to_string;
 				debug_info = t.Xenops_task.debug_info;
 				subtasks = List.map (fun (name, state) -> name, state |> Task.rpc_of_state |> Jsonrpc.to_string) t.Xenops_task.subtasks |> List.rev;
 			}

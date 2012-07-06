@@ -148,7 +148,7 @@ let handler (req: Http.Request.t) s _ =
 								  Unix.close ofd)
 					  in
 					  Db.Blob.set_size ~__context ~self ~value:size;
-					  Db.Blob.set_last_updated ~__context ~self ~value:(Date.of_float (Unix.gettimeofday ()))
+					  Db.Blob.set_last_updated ~__context ~self ~value:(Date.now ());
 				  | _ -> failwith "Unsupported method for BLOB"
 					  
 		  in

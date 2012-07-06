@@ -193,7 +193,7 @@ let create ~__context ~device ~network ~vM
 	
 	let metrics = Ref.make () and metrics_uuid = Uuid.to_string (Uuid.make_uuid ()) in
 	Db.VIF_metrics.create ~__context ~ref:metrics ~uuid:metrics_uuid
-	  ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.) ~other_config:[];
+	  ~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.never) ~other_config:[];
 	
 	let (_:unit) = Db.VIF.create ~__context ~ref ~uuid:(Uuid.to_string uuid)
 	  ~current_operations:[] ~allowed_operations:[] ~reserved:false

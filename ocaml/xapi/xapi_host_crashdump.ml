@@ -94,7 +94,7 @@ let resynchronise ~__context ~host =
 						  tm_hour; tm_min; tm_sec; tm_wday=0; tm_yday=0; tm_isdst=false }))
 			with _ ->
 				(Unix.stat (Filename.concat crash_dir filename)).Unix.st_ctime in
-		let timestamp = Date.of_float timestamp in
+		let timestamp = Date.parse_float timestamp in
 		let r = Ref.make () and uuid = Uuid.to_string (Uuid.make_uuid ()) in
 		Db.Host_crashdump.create ~__context ~ref:r ~uuid ~other_config:[]
 			~host ~timestamp ~size ~filename) arrived

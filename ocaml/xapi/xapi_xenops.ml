@@ -903,9 +903,9 @@ let update_vm ~__context id =
 						try
 							Opt.iter
 								(fun (_, state) ->
-									debug "xenopsd event: Updating VM %s last_start_time <- %s" id (Date.to_string (Date.of_float state.last_start_time));
+									debug "xenopsd event: Updating VM %s last_start_time <- %s" id (Date.to_string (Date.parse_float state.last_start_time));
 									let metrics = Db.VM.get_metrics ~__context ~self in
-									let start_time = Date.of_float state.last_start_time in
+									let start_time = Date.parse_float state.last_start_time in
 									Db.VM_metrics.set_start_time ~__context ~self:metrics ~value:start_time;
 									begin
 										try

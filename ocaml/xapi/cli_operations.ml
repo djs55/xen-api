@@ -196,16 +196,16 @@ type host_license = {
 	rstr: Features.feature list;
 	edition: string;
 	edition_short: string;
-	expiry: float;
+	expiry: Date.iso8601;
 }
 let host_license_of_r host_r editions =
 	let params = host_r.API.host_license_params in
 	let rstr = Features.of_assoc_list params in
 	let expiry =
 		if List.mem_assoc "expiry" params then
-			Date.to_float (Date.of_string (List.assoc "expiry" params))
+			(Date.of_string (List.assoc "expiry" params))
 		else
-			0.
+			Date.never
 	in
 	let edition = host_r.API.host_edition in
 	let edition_short = List.hd
@@ -245,8 +245,8 @@ let diagnostic_license_status printer rpc session_id params =
 		Features.to_compact_string h.rstr;
 		h.edition_short;
 		string_of_bool (h.edition = "free");
-		Date.to_string (Date.of_float h.expiry);
-		Printf.sprintf "%.1f" ((h.expiry -. now) /. (24. *. 60. *. 60.));
+		Date.to_string h.expiry;
+		Printf.sprintf "%.1f" ((Date.to_float h.expiry -. now) /. (24. *. 60. *. 60.));
 	]) host_licenses in
 	let invalid_hosts = List.map (fun (_, host_r) -> [ host_r.API.host_hostname;
 	String.sub host_r.API.host_uuid 0 8;
@@ -1784,9 +1784,9 @@ let format_message msg =
 		(msg.API.message_priority) (msg.API.message_name)
 
 let wrap_op printer pri rpc session_id op e =
-	let now = (Unix.gettimeofday ()) in
+	let now = Date.now () in
 	let result = op e in
-	let msgs = try Client.Message.get ~rpc ~session_id ~cls:`VM ~obj_uuid:(safe_get_field (field_lookup e.fields "uuid")) ~since:(Date.of_float now) with _ -> [] in
+	let msgs = try Client.Message.get ~rpc ~session_id ~cls:`VM ~obj_uuid:(safe_get_field (field_lookup e.fields "uuid")) ~since:now with _ -> [] in
 	List.iter (fun (ref,msg) ->
 		if msg.API.message_priority > pri
 		then printer (Cli_printer.PStderr (format_message msg ^ "\n"))) msgs;
@@ -2792,14 +2792,14 @@ let host_apply_edition printer rpc session_id params =
 			Client.Host.add_to_license_server rpc session_id host "port" port
 		end
 	end;
-	let now = (Unix.gettimeofday ()) in
+	let now = Date.now () in
 	try
 		Client.Host.apply_edition rpc session_id host edition
 	with
 		| Api_errors.Server_error (name, args) as e when name = Api_errors.license_checkout_error ->
 			(* Put back original license server details *)
 			Client.Host.set_license_server rpc session_id host current_license_server;
-			let alerts = Client.Message.get_since rpc session_id (Date.of_float now) in
+			let alerts = Client.Message.get_since rpc session_id now in
 			let print_if_checkout_error (ref, msg) =
 				if msg.API.message_name = "LICENSE_NOT_AVAILABLE" || msg.API.message_name = "LICENSE_SERVER_UNREACHABLE" then
 					(* the body of the alert message is specified in the v6 daemon *)

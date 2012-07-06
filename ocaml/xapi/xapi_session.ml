@@ -161,7 +161,7 @@ let revalidate_external_session ~__context ~session =
 	else begin (* otherwise, we try to revalidate it against the external authentication service *)
 		let session_lifespan = 60.0 *. 30.0 in (* allowed session lifespan = 30 minutes *)
 		let random_lifespan = Random.float 60.0 *. 10.0 in (* extra random (up to 10min) lifespan to spread access to external directory *)
-		
+
 		(* 2. has the external session expired/does it need revalidation? *)
 		let session_last_validation_time = Date.to_float (Db.Session.get_validation_time ~__context ~self:session) in
 		let now = (Unix.time ()) in
@@ -211,7 +211,7 @@ let revalidate_external_session ~__context ~session =
 					(* 2c. update session state *)
 					
 					(* session passed revalidation, let's update its last revalidation time *)
-					Db.Session.set_validation_time ~__context ~self:session ~value:(Date.of_float now);
+					Db.Session.set_validation_time ~__context ~self:session ~value:(Date.now ());
 					debug "updated validation time for session %s, sid %s " (trackid session) authenticated_user_sid;
 					
 					(* let's also update the session's subject ref *)
@@ -286,9 +286,9 @@ let login_no_password ~__context ~uname ~host ~pool ~is_local_superuser ~subject
 		(trackid session_id) pool (match uname with None->""|Some u->u) is_local_superuser auth_user_sid (trackid parent);
 	Db.Session.create ~__context ~ref:session_id ~uuid
 	                  ~this_user:user ~this_host:host ~pool:pool
-	                  ~last_active:(Date.of_float (Unix.time ())) ~other_config:[] 
+	                  ~last_active:(Date.now ()) ~other_config:[] 
 	                  ~subject:subject ~is_local_superuser:is_local_superuser
-	                  ~auth_user_sid ~validation_time:(Date.of_float (Unix.time ()))
+	                  ~auth_user_sid ~validation_time:(Date.now ())
 	                  ~auth_user_name ~rbac_permissions ~parent;
 	Rbac_audit.session_create ~__context ~session_id ~uname;
 	(* At this point, the session is created, but with an incorrect time *)

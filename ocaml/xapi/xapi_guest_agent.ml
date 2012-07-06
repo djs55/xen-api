@@ -110,7 +110,7 @@ let other all_control =
     the results of these lookups differ *)
 
 type m = (string * string) list
-let cache : (int, (m*m*m*m*m*m*float)) Hashtbl.t = Hashtbl.create 20
+let cache : (int, (m*m*m*m*m*m*Date.iso8601)) Hashtbl.t = Hashtbl.create 20
 let memory_targets : (int, int64) Hashtbl.t = Hashtbl.create 20
 let dead_domains : IntSet.t ref = ref IntSet.empty
 let mutex = Mutex.create ()
@@ -130,7 +130,7 @@ let all (lookup: string -> string option) (list: string -> string list) ~__conte
   and networks = to_map (networks "attr" list)
   and other = to_map (other all_control)
   and memory = to_map memory
-  and last_updated = Unix.gettimeofday () in
+  and last_updated = Date.now () in
 
   (* let num = Mutex.execute mutex (fun () -> Hashtbl.fold (fun _ _ c -> 1 + c) cache 0) in 
   debug "Number of entries in hashtbl: %d" num; *)
@@ -163,7 +163,7 @@ let all (lookup: string -> string option) (list: string -> string list) ~__conte
 	dead_domains := IntSet.remove domid !dead_domains
       else
 	dead_domains := IntSet.add domid !dead_domains;
-      ([],[],[],[],[],[],0.0)) in
+      ([],[],[],[],[],[],Date.never)) in
 
   (* Consider the data valid IF the data/updated key exists AND the pv_drivers_version map
      contains a major and minor version-- this prevents a migration mid-way through an update
@@ -205,7 +205,7 @@ let all (lookup: string -> string option) (list: string -> string list) ~__conte
 	      let new_ref = Ref.make () and new_uuid = Uuid.to_string (Uuid.make_uuid ()) in
 	      Db.VM_guest_metrics.create ~__context ~ref:new_ref ~uuid:new_uuid
 		~os_version:os_version ~pV_drivers_version:pv_drivers_version ~pV_drivers_up_to_date:false ~memory:[] ~disks:[] ~networks:networks ~other:other
-		~last_updated:(Date.of_float last_updated) ~other_config:[] ~live:true;
+		~last_updated:last_updated ~other_config:[] ~live:true;
 	      Db.VM.set_guest_metrics ~__context ~self ~value:new_ref; 
 	      (* We've just set the thing to live, let's make sure it's not in the dead list *)
 		  let sl xs = String.concat "; " (List.map (fun (k, v) -> k ^ ": " ^ v) xs) in
@@ -228,7 +228,7 @@ let all (lookup: string -> string option) (list: string -> string list) ~__conte
 (*	  if(memory_cached <> memory) then
 	    Db.VM_guest_metrics.set_memory ~__context ~self:gm ~value:memory; *)
 	  
-	  Db.VM_guest_metrics.set_last_updated ~__context ~self:gm ~value:(Date.of_float last_updated);
+	  Db.VM_guest_metrics.set_last_updated ~__context ~self:gm ~value:last_updated;
 	  
     if(device_id_cached <> device_id) then begin
       if(List.mem_assoc Xapi_globs.device_id_key_name device_id) then begin

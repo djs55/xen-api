@@ -103,7 +103,7 @@ end
 
 let indent x = "    " ^ x
 
-let string_of_date x = Date.to_string (Date.of_float x)
+let string_of_date x = Date.to_string (Date.parse_float x)
 
 module Vdi = struct
 	(** Represents the information known about a VDI *)
@@ -754,7 +754,7 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 		let t x = {
 			Task.id = x.id;
 			debug_info = x.debug_info;
-			ctime = x.ctime;
+			ctime = Date.to_float x.ctime;
 			state = x.state;
 			subtasks = x.subtasks;
 		}

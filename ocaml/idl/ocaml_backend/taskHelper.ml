@@ -20,8 +20,6 @@ open Threadext
 
 type t = API.ref_task
 
-let now () = Date.of_float (Unix.time ())
-
 let string_of_task task_name task_id = 
   let sep = if task_name = "" then "" else " " in
   Printf.sprintf "%s%s%s" task_name sep (Ref.really_pretty_and_small task_id)
@@ -39,8 +37,8 @@ let make ~__context ?(description="") ?session_id ?subtask_of label : (t * t Uui
   let (_ : unit) = Db_actions.DB_Action.Task.create
     ~ref
     ~__context
-    ~created:(Date.of_float (Unix.time()))
-    ~finished:(Date.of_float 0.0)
+    ~created:(Date.now())
+    ~finished:(Date.never)
     ~current_operations:[]
     ~_type:"<none/>"
     ~session:(Pervasiveext.default Ref.null session_id)
@@ -164,7 +162,7 @@ let complete ~__context (result: Xml.xml list) =
 		let status = Db_actions.DB_Action.Task.get_status ~__context ~self in
 		if status = `pending then begin
 			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[];
-			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
+			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.now());
 			Db_actions.DB_Action.Task.set_progress ~__context ~self ~value:1.;
 			set_result_on_task ~__context self result;
 			Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`success
@@ -196,7 +194,7 @@ let cancel ~__context =
 		let status = Db_actions.DB_Action.Task.get_status ~__context ~self in
 		if status = `pending then begin
 			Db_actions.DB_Action.Task.set_progress ~__context ~self ~value:1.;
-			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
+			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.now());
 			Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`cancelled;
 			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[]
 		end else
@@ -211,7 +209,7 @@ let failed ~__context (code, params) =
 		if status = `pending then begin
 			Db_actions.DB_Action.Task.set_progress ~__context ~self ~value:1.;
 			Db_actions.DB_Action.Task.set_error_info ~__context ~self ~value:(code::params);
-			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
+			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.now());
 			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[];
 			if code=Api_errors.task_cancelled 
 			then Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`cancelled

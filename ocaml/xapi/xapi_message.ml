@@ -358,15 +358,14 @@ let create ~__context ~name ~priority ~cls ~obj_uuid ~body =
 	let _ref = Ref.make () in
 	let uuid = Uuid.to_string (Uuid.make_uuid ()) in
 
-	let timestamp = Mutex.execute event_mutex (fun () ->
-		Unix.gettimeofday ()) in
+	let timestamp = Date.now () in
 
 	let message = {API.message_name=name;
 				   API.message_uuid=uuid;
 				   API.message_priority=priority;
 				   API.message_cls=cls;
 				   API.message_obj_uuid=obj_uuid;
-				   API.message_timestamp=Date.of_float timestamp;
+				   API.message_timestamp=timestamp;
 				   API.message_body=body;}
 	in
 
@@ -407,7 +406,7 @@ let destroy_real basefilename =
   let xml = API.To.message_t message in
   Mutex.execute event_mutex 
 	  (fun () ->
-		   deleted := (Date.of_float (Unix.gettimeofday ()), _ref) :: !deleted;
+		   deleted := (Date.now (), _ref) :: !deleted;
 		   ndeleted := !ndeleted + 1;
 		   if !ndeleted > 1024
 		   then
@@ -561,10 +560,10 @@ let rss_handler (req: Http.Request.t) (bio: Buf_io.t) _ =
       let now = Unix.gettimeofday () in      
       let since = 
 	if List.mem_assoc "since" query then
-	  Date.of_float (float_of_string (List.assoc "since" query))
+	  Date.parse_float (float_of_string (List.assoc "since" query))
 	else
 	  let since=now -. (3600.0 *. 24.0) in
-	  Date.of_float since
+	  Date.parse_float since
       in
       let messages = 
 	if List.mem_assoc "cls" query then
@@ -590,7 +589,7 @@ let rss_handler (req: Http.Request.t) (bio: Buf_io.t) _ =
 	{Rss.chan_title="XenServer Messages";
 	 Rss.chan_description="Message from the XenServer";
 	 Rss.chan_language="en";
-	 Rss.chan_pubdate=Date.to_string (Date.of_float now);
+	 Rss.chan_pubdate=Date.to_string (Date.parse_float now);
 	 Rss.chan_items=items;}
       in
       let body = Xml.to_string (Rss.to_xml [channel]) in
@@ -656,7 +655,7 @@ let handler (req: Http.Request.t) fd _ =
 
 (* Export messages and send to another host/pool over http. *)
 let send_messages ~__context ~cls ~obj_uuid ~session_id ~remote_address =
-	let msgs = get ~__context ~cls ~obj_uuid ~since:(Date.of_float 0.0) in
+	let msgs = get ~__context ~cls ~obj_uuid ~since:(Date.never) in
 	let body = export_xml msgs in
 	let query = [ "session_id", Ref.string_of session_id
 				; "cls", "VM"

@@ -123,7 +123,7 @@ let get_alerts ~__context ~vmpp ~hours_from_now =
   let tmp_filename = Filename.temp_file "vmpp-alerts-" ".dat" in
   let fd = Unix.openfile tmp_filename [Unix.O_RDWR] 0o600 in
   let now = (Unix.time ()) in
-  let since = Date.to_string (Date.of_float (now -. ( (Int64.to_float hours_from_now) *. 3600.0))) in
+  let since = Date.to_string (Date.parse_float (now -. ( (Int64.to_float hours_from_now) *. 3600.0))) in
   let ()=Audit_log.transfer_all_audit_files fd ~filter since in
   let cout = Unix.out_channel_of_descr fd in
   flush cout;
@@ -642,11 +642,11 @@ let create ~__context ~name_label ~name_description ~is_policy_enabled
     ~name_label ~name_description ~is_policy_enabled
     ~backup_type ~backup_retention_value
     ~backup_frequency ~backup_schedule
-    ~backup_last_run_time:(Date.of_float 0.)
+    ~backup_last_run_time:(Date.never)
     ~is_backup_running:false ~is_archive_running:false
     ~archive_target_type ~archive_target_config
     ~archive_frequency ~archive_schedule
-    ~archive_last_run_time:(Date.of_float 0.)
+    ~archive_last_run_time:(Date.never)
     ~is_alarm_enabled ~alarm_config ~recent_alerts:[];
   ref
 

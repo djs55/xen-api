@@ -210,7 +210,7 @@ let ensure_vm_metrics_records_exist __context =
 					   ~start_time:Date.never
 					   ~install_time:Date.never
 					   ~state: []
-					   ~last_updated:(Date.of_float 0.)
+					   ~last_updated:Date.never
 					   ~other_config:[];
 				   Db.VM.set_metrics ~__context ~self:vm ~value:m
 				 end

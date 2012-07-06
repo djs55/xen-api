@@ -74,15 +74,15 @@ let update_snapshots () =
 	let a = make_vm ~__context ~name_label:"a" () in
 	let a_snap = make_vm ~__context ~name_label:"a snap" () in
 	Db.VM.set_snapshot_of ~__context ~self:a_snap ~value:a;
-	Db.VM.set_snapshot_time ~__context ~self:a_snap ~value:(Date.of_float 1.);
+	Db.VM.set_snapshot_time ~__context ~self:a_snap ~value:(Date.of_string "20120706T14:12:00Z");
 
 	let b = make_vm ~__context ~name_label:"b" () in
 	let b_snap = make_vm ~__context ~name_label:"b snap" () in
 	Db.VM.set_snapshot_of ~__context ~self:b_snap ~value:b;
-	Db.VM.set_snapshot_time ~__context ~self:b_snap ~value:(Date.of_float 1.);
+	Db.VM.set_snapshot_time ~__context ~self:b_snap ~value:(Date.of_string "20120706T14:12:01Z");
 	let b_snap2 = make_vm ~__context ~name_label:"b snap2" () in
 	Db.VM.set_snapshot_of ~__context ~self:b_snap2 ~value:b;
-	Db.VM.set_snapshot_time ~__context ~self:b_snap2 ~value:(Date.of_float 2.);
+	Db.VM.set_snapshot_time ~__context ~self:b_snap2 ~value:(Date.of_string "20120706T14:12:02Z");
 	
 	update_snapshots.fn ~__context;
 	

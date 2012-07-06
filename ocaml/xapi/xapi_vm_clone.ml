@@ -274,7 +274,7 @@ let copy_vm_record ?(snapshot_info_record) ~__context ~vm ~disk_op ~new_name ~ne
 		~is_a_template: (is_a_snapshot || all.Db_actions.vM_is_a_template)
 		~is_a_snapshot: is_a_snapshot
 		~snapshot_of:(if is_a_snapshot then vm else Ref.null)
-		~snapshot_time:(if is_a_snapshot then Date.of_float (Unix.gettimeofday ()) else Date.never)
+		~snapshot_time:(if is_a_snapshot then Date.now () else Date.never)
 		~snapshot_info:(match snapshot_info_record with
 				None -> (snapshot_info ~power_state ~is_a_snapshot)
 			| Some s -> s)

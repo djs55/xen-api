@@ -46,7 +46,7 @@ let check ~intra_pool_only ~session_id =
 	    
 	    if (Pool_role.is_master ()) then
 	      Db_actions.DB_Action.Session.set_last_active ~__context ~self:session_id
-		~value:(Date.of_float (Unix.time()))
+		~value:(Date.now())
 	  with 
 	  | Db_exn.DBCache_NotFound (_, tblname, reference) ->
 	      debug "Session check failed: missing reference; tbl = %s, ref = %s" tblname reference;

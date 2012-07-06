@@ -1145,7 +1145,7 @@ let rec propose_new_master_internal ~__context ~address ~manual =
 				propose_new_master_internal ~__context ~address ~manual
 			end else
 				issue_abort (Printf.sprintf "Already agreed to commit host address '%s' at %s ('%f' secs ago)"
-					x (Date.to_string (Date.of_float !proposed_master_time)) diff)
+					x (Date.to_string (Date.parse_float !proposed_master_time)) diff)
 		end
 		| None ->
 			(* XXX no more automatic transititions *)

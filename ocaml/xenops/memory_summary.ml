@@ -51,7 +51,7 @@ let _ =
 	  in
 	  
 	  if not !hash then begin
-	    Printf.printf "%s %Ld %Ld" (Date.to_string (Date.of_float (Unix.gettimeofday ()))) (total_pages ** one_page) (free_pages ** one_page);
+	    Printf.printf "%s %Ld %Ld" (Date.to_string (Date.now ())) (total_pages ** one_page) (free_pages ** one_page);
 	    let domains = List.stable_sort (fun (a, _) (b, _) -> compare a b) domains in
 	    List.iter
 	      (fun (_, total) -> Printf.printf " %Ld" (total ** one_page))

@@ -104,7 +104,7 @@ let set_is_a_template ~__context ~self ~value =
 	info "VM.set_is_a_template('%b')" value;
 	let m = Db.VM.get_metrics ~__context ~self in
 	if not(value) then begin
-	  (try Db.VM_metrics.set_install_time ~__context ~self:m ~value:(Date.of_float (Unix.gettimeofday ()))
+	  (try Db.VM_metrics.set_install_time ~__context ~self:m ~value:(Date.now ())
 	   with _ -> warn "Could not update VM install time because metrics object was missing")
 	end else (
 	  (* delete the vm metrics associated with the vm if it exists, when we templat'ize it *)

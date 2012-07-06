@@ -62,7 +62,7 @@ let get_start_time () =
     let uptime = String.split ' ' uptime in
     let uptime = List.hd uptime in
     let uptime = float_of_string uptime in
-    let boot_time = Date.of_float (now -. uptime) in
+    let boot_time = Date.parse_float (now -. uptime) in
       debug " system booted at %s" (Date.to_string boot_time);
       boot_time
   with
