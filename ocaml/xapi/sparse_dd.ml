@@ -263,7 +263,7 @@ module Nbd_writer = struct
 								inflight_requests := Int64Set.remove offset !inflight_requests;
 								let request_sent_time = Int64Map.find offset !request_sent_times in
 								request_sent_times := Int64Map.remove offset !request_sent_times;
-								let rtt = Unix.gettimeofday () -. request_sent_time in
+								let rtt = Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) request_sent_time) /. 1e9) in
 								Stats.sample "rtt" rtt;
 								(* debug "REPLY offset = %Ld num_inflight_requests = %Ld [ %s ]" offset !num_inflight_requests (string_of_inflight_requests ()); *)
 								(* Wake up the main thread, waiting for us to finish *)
@@ -306,7 +306,7 @@ module Nbd_writer = struct
 				done;
 				num_inflight_requests := Int64.add !num_inflight_requests 1L;
 				inflight_requests := Int64Set.add offset !inflight_requests;
-				request_sent_times := Int64Map.add offset (Unix.gettimeofday ()) !request_sent_times;
+				request_sent_times := Int64Map.add offset (Oclock.gettime Oclock.monotonic) !request_sent_times;
 			);
 		(* debug "REQUEST offset=%Ld buf ofs=%d len=%d num_inflight_requests=%Ld [ %s ]" offset ofs len reqs (string_of_inflight_requests ()); *)
 		Nbd.write_async fd' offset buf ofs len offset
@@ -582,7 +582,7 @@ let bat vhd =
 		Bat.of_list b')
 
 (* Record when the binary started for performance measuring *)
-let start = Unix.gettimeofday ()
+let start = Oclock.gettime Oclock.monotonic
 
 (* Helper function to print nice progress info *)
 let progress_cb =
@@ -694,7 +694,7 @@ let _ =
 	let erase = not !prezeroed in
 	let write_zeroes = not !prezeroed || !base <> None in
 	let stats = file_dd ~progress_cb ?size ?bat erase write_zeroes (Opt.unbox !src) (Opt.unbox !dest) in
-	let time = Unix.gettimeofday () -. start in
+	let time = Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9) in
 	debug "Time: %.2f seconds" time;
 	debug "Number of writes: %d" stats.writes;
 	debug "Number of bytes transferred: %Ld (%.0f MiB/sec)" stats.bytes (Int64.(to_float (div stats.bytes 1048576L) /. time));

@@ -16,10 +16,10 @@
 open Binpack
 
 let time f = 
-  let start = Unix.gettimeofday () in
-  let result = f () in
-  let time = Unix.gettimeofday () -. start in
-  Printf.printf "result: %Ld time taken: %.2f\n" result time
+	let start = Oclock.gettime Oclock.monotonic in
+	let result = f () in
+	let time = Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9) in
+	Printf.printf "result: %Ld time taken: %.2f\n" result time
   
 (* Return a table of hosts or VMs *)
 let make_thing base extra n = List.map (fun x -> x, Int64.add base (Random.int64 extra)) (mkints n)
@@ -157,12 +157,12 @@ let check_planning_performance filename n' r' i =
 	if r < n then begin
 	  let c = make_config n 8000L 4000L (16 * n) 500L 250L r in
 	  let h = choose_heuristic c in
-	  let start = Unix.gettimeofday () in
+	  let start = Oclock.gettime Oclock.monotonic in
 	  let always = h.plan_always_possible c in
 	  (* If it should always be possible then look for a proof. Don't fail if we can't find one; only fail if we find
 	     a counterexample showing it doesn't work *)
 	  if always then ignore(prove_plan_is_possible_via_counterexample_search h c);
-	  let time = Unix.gettimeofday () -. start in
+	  let time = Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9) in
 	  if always then set successes n r (get successes n r + 1);
 	  set max_time n r (max (get max_time n r) time);
 	  (* Assumes heuristic choice is a function of n and r only *)

@@ -125,27 +125,6 @@ let is_in_use ~__context ~self =
 			else false
 		)
 
-(* [wait_for ?timeout f] returns true if [f()] (called at 1Hz) returns true within
-   the [timeout] period and false otherwise *)
-let wait_for ?(timeout=120.) f =
-	let start = Unix.gettimeofday () in
-	let finished = ref false in
-	let success = ref false in
-	while not(!finished) do
-		let remaining = timeout -. (Unix.gettimeofday () -. start) in
-		if remaining < 0. 
-		then finished := true
-		else 
-			try
-				if f () then begin
-					success := true;
-					finished := true
-				end else Thread.delay 1.
-			with _ ->
-				Thread.delay 1.
-	done;
-	!success
-
 let pingable ip () =
 	try
 		let (_: string * string) = Forkhelpers.execute_command_get_output "/bin/ping" [ "-c"; "1"; "-w"; "1"; ip ] in
@@ -178,9 +157,9 @@ let ip_of ~__context driver =
             | None -> failwith (Printf.sprintf "driver domain %s has no IP on the host internal management network" (Ref.string_of driver)) in
 
     info "driver domain uuid:%s ip:%s" (Db.VM.get_uuid ~__context ~self:driver) ip;
-    if not(wait_for (pingable ip))
+    if not(Sleep.until (pingable ip) 120. 1.)
     then failwith (Printf.sprintf "driver domain %s is not responding to IP ping" (Ref.string_of driver));
-    if not(wait_for (queryable ~__context (Xmlrpc_client.TCP(ip, 80))))
+    if not(Sleep.until (queryable ~__context (Xmlrpc_client.TCP(ip, 80))) 120. 1.)
     then failwith (Printf.sprintf "driver domain %s is not responding to XMLRPC query" (Ref.string_of driver));
     ip
 

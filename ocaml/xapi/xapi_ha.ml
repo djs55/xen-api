@@ -242,7 +242,7 @@ module Monitor = struct
 	(** Control the background HA monitoring thread *)
 
 	let request_shutdown = ref false
-	let prevent_failover_actions_until = ref 0. (* protected by the request_shutdown_m too *)
+	let prevent_failover_actions_until = ref 0L (* protected by the request_shutdown_m too *)
 	let block_delay_calls = ref false (* set to true when Pool.ha_prevent_restarts_for calls must wait *)
 	let block_delay_calls_c = Condition.create () (* used to wake up all Pool.ha_prevent_restarts_for threads *)
 	let m = Mutex.create ()
@@ -318,7 +318,7 @@ module Monitor = struct
 					Api_messages.ha_statefile_lost_priority)) in
 
 			let last_liveset_uuids = ref [] in
-			let last_plan_time = ref 0. in
+			let last_plan_time = ref 0L in
 
 			(* Called on all hosts to query the liveset and update statistics + messages *)
 			(* WARNING: must not touch the database or perform blocking I/O              *)
@@ -519,8 +519,8 @@ module Monitor = struct
 
 				end;
 
-				let now = Unix.gettimeofday () in
-				let plan_too_old = now -. !last_plan_time > !Xapi_globs.ha_monitor_plan_interval in
+				let now = Oclock.gettime Oclock.monotonic in
+				let plan_too_old = Int64.(to_float (sub now !last_plan_time) /. 1e9) > !Xapi_globs.ha_monitor_plan_interval in
 				if plan_too_old || !plan_out_of_date then begin
 					let changed = Xapi_ha_vm_failover.update_pool_status ~__context in
 
@@ -542,7 +542,7 @@ module Monitor = struct
 						done);
 
 				info "Master HA startup waiting for up to %.2f for slaves in the liveset to report in and enable themselves" !Xapi_globs.ha_monitor_startup_timeout;
-				let start = Unix.gettimeofday () in
+				let start = Oclock.gettime Oclock.monotonic in
 				let finished = ref false in
 				while Mutex.execute m (fun () -> not(!request_shutdown)) && not(!finished) do
 					try
@@ -559,7 +559,7 @@ module Monitor = struct
 								finished := true;
 							end;
 
-							if Unix.gettimeofday () -. start > !Xapi_globs.ha_monitor_startup_timeout && disabled <> [] then begin
+							if Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9) > !Xapi_globs.ha_monitor_startup_timeout && disabled <> [] then begin
 								info "Master HA startup: Timed out waiting for all live slaves to enable themselves (have some hosts failed to attach storage?) Live but disabled hosts: [ %s ]"
 									(String.concat "; " (List.map fst disabled));
 								finished := true
@@ -595,9 +595,9 @@ module Monitor = struct
 									(* FIST *)
 									while Xapi_fist.simulate_blocking_planner () do Thread.delay 1. done;
 
-									let now = Unix.gettimeofday () in
+									let now = Oclock.gettime Oclock.monotonic in
 									if now < until
-									then debug "Blocking VM restart thread for at least another %.0f seconds" (until -. now)
+									then debug "Blocking VM restart thread for at least another %.0f seconds" (Int64.(to_float (sub until now)) /. 1e9)
 									else process_liveset_on_master liveset)
 								(fun () ->
 									(* Safe to unblock callers of 'delay' now *)
@@ -630,7 +630,7 @@ module Monitor = struct
 			(fun () ->
 				while !block_delay_calls = true do Condition.wait block_delay_calls_c m done;
 				debug "Blocking VM restart actions for another %Ld seconds" seconds;
-				prevent_failover_actions_until := Unix.gettimeofday () +. (Int64.to_float seconds);
+				prevent_failover_actions_until := Int64.(add (Oclock.gettime Oclock.monotonic) (mul seconds 1_000_000_000L));
 				(* If we get a value of 0 then we immediately trigger a VM restart *)
 				if seconds < 1L then Delay.signal delay
 			)
@@ -1120,7 +1120,7 @@ let proposed_master : string option ref = ref None
 	(* The time the proposal was received. XXX need to be quite careful with timeouts to handle
 	   the case where the proposed new master dies in the middle of the protocol. Once we believe
 	   he has fenced himself then we can abort the transaction. *)
-let proposed_master_time = ref 0.
+let proposed_master_time = ref 0L
 
 let proposed_master_m = Mutex.create ()
 
@@ -1132,12 +1132,12 @@ let rec propose_new_master_internal ~__context ~address ~manual =
 	in
 	match !proposed_master with
 		| Some x when address = x ->
-			proposed_master_time := Unix.gettimeofday ()
+			proposed_master_time := Oclock.gettime Oclock.monotonic
 		| Some x -> begin
 			(* XXX: check if we're past the fencing time *)
-			let now = Unix.gettimeofday () in
-			let diff = now -. !proposed_master_time in
-			let ten_minutes = 10. *. 60. in (* TO TEST: change to 60 secs *)
+			let now = Oclock.gettime Oclock.monotonic in
+			let diff = Int64.sub now !proposed_master_time in
+			let ten_minutes = 600_000_000_000L in (* TO TEST: change to 60 secs *)
 
 			if diff > ten_minutes
 			then begin
@@ -1145,13 +1145,13 @@ let rec propose_new_master_internal ~__context ~address ~manual =
 				propose_new_master_internal ~__context ~address ~manual
 			end else
 				issue_abort (Printf.sprintf "Already agreed to commit host address '%s' at %s ('%f' secs ago)"
-					x (Date.to_string (Date.parse_float !proposed_master_time)) diff)
+					x (Date.to_string (Date.parse_float (Int64.to_float !proposed_master_time /. 1e9))) (Int64.to_float diff /. 1e9))
 		end
 		| None ->
 			(* XXX no more automatic transititions *)
 
 			proposed_master := Some address;
-			proposed_master_time := Unix.gettimeofday ()
+			proposed_master_time := Oclock.gettime Oclock.monotonic
 
 (* First phase of a two-phase commit of a new master *)
 let propose_new_master ~__context ~address ~manual =
@@ -1616,9 +1616,9 @@ let before_clean_shutdown_or_reboot ~__context ~host =
 			(* Attempt to issue a reboot and kill the control stack *)
 			Xapi_fuse.light_fuse_and_reboot ();
 			info "Waiting for reboot";
-			let start = Unix.gettimeofday () in
+			let start = Oclock.gettime Oclock.monotonic in
 			while true do
 				Thread.delay 300.;
-				info "Still waiting to reboot after %.2f seconds" (Unix.gettimeofday () -. start)
+				info "Still waiting to reboot after %.2f seconds" (Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9))
 			done
 	end

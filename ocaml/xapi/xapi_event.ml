@@ -74,7 +74,7 @@ type subscription_record = {
 	m: Mutex.t;                       (** protects access to the mutable fields in this record *)
 	session: API.ref_session;         (** session which owns this subscription *)
 	mutable session_invalid: bool;    (** set to true if the associated session has been deleted *)
-	mutable timeout: float;           (** Timeout *)
+	mutable timeout_ns: int64;        (** Timeout in nanoseconds *)
 }
 
 
@@ -155,7 +155,7 @@ let get_subscription ~__context =
 	(fun () ->
 	   if Hashtbl.mem subscriptions session then Hashtbl.find subscriptions session
 	   else 
-		   let subscription = { last_id = !id; last_timestamp=(Unix.gettimeofday ()); last_generation=0L; cur_id = 0L; subs = []; m = Mutex.create(); session = session; session_invalid = false; timeout=0.0; } in
+		   let subscription = { last_id = !id; last_timestamp=(Unix.gettimeofday ()); last_generation=0L; cur_id = 0L; subs = []; m = Mutex.create(); session = session; session_invalid = false; timeout_ns=0L; } in
 	     Hashtbl.replace subscriptions session subscription;
 	     subscription)
 
@@ -213,9 +213,9 @@ let wait2 subscription from_id =
 	let timeoutname = Printf.sprintf "event_from_timeout_%s" (Ref.string_of subscription.session) in
   Mutex.execute event_lock
 	(fun () ->
-	  while from_id = subscription.cur_id && not (session_is_invalid subscription) && Unix.gettimeofday () < subscription.timeout 
+	  while from_id = subscription.cur_id && not (session_is_invalid subscription) && Oclock.gettime Oclock.monotonic < subscription.timeout_ns
 	  do 
-		  Xapi_periodic_scheduler.add_to_queue timeoutname Xapi_periodic_scheduler.OneShot (subscription.timeout -. Unix.gettimeofday () +. 0.5) (fun () -> Condition.broadcast newevents);
+		  Xapi_periodic_scheduler.add_to_queue timeoutname Xapi_periodic_scheduler.OneShot (Int64.(to_float (sub subscription.timeout_ns (Oclock.gettime Oclock.monotonic)) +. 0.5)) (fun () -> Condition.broadcast newevents);
 		  Condition.wait newevents event_lock; 
 		  Xapi_periodic_scheduler.remove_from_queue timeoutname
 	  done;
@@ -289,7 +289,7 @@ let from ~__context ~classes ~token ~timeout =
 	let subs = List.map subscription_of_string classes in
 	let sub = get_subscription ~__context in
 
-	sub.timeout <- Unix.gettimeofday () +. timeout;
+	sub.timeout_ns <- Int64.(add (Oclock.gettime Oclock.monotonic) (of_float (timeout *. 1e9)));
 
 	sub.last_timestamp <- from_t;
 	sub.last_generation <- from;
@@ -332,7 +332,7 @@ let from ~__context ~classes ~token ~timeout =
 
 	let rec grab_nonempty_range () =
 		let (timestamp, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Db_backend.make ())) in
-		if List.length creates = 0 && List.length mods = 0 && List.length deletes = 0 && List.length messages = 0 && Unix.gettimeofday () < sub.timeout
+		if List.length creates = 0 && List.length mods = 0 && List.length deletes = 0 && List.length messages = 0 && Oclock.gettime Oclock.monotonic < sub.timeout_ns
 		then
 			(
 				sub.last_generation <- last; (* Cur_id was bumped, but nothing relevent fell out of the db. Therefore the *)

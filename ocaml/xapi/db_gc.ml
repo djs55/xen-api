@@ -28,7 +28,7 @@ let db_GC_TIMER = 30.0
 let use_host_heartbeat_for_liveness = ref true
 let use_host_heartbeat_for_liveness_m = Mutex.create ()
 
-let host_heartbeat_table : (API.ref_host,float) Hashtbl.t = Hashtbl.create 16
+let host_heartbeat_table : (API.ref_host,int64) Hashtbl.t = Hashtbl.create 16
 let host_skew_table : (API.ref_host,float) Hashtbl.t = Hashtbl.create 16
 let host_uncooperative_domains_table : (API.ref_host,string list) Hashtbl.t = Hashtbl.create 16
 let host_table_m = Mutex.create ()
@@ -175,23 +175,23 @@ let check_host_liveness ~__context =
 	let hmetric = Db.Host.get_metrics ~__context ~self:host in
 	let live = Db.Host_metrics.get_live ~__context ~self:hmetric in
 	(* See if the host is using the new HB mechanism, if so we'll use that *)
-	let new_heartbeat_time = 
-	    try
-	      Mutex.execute host_table_m (fun () -> Hashtbl.find host_heartbeat_table host)
-	    with _ -> 0.0 (* never *)
-	in
-	let old_heartbeat_time = 
-		if rum && (Version.platform_version <> (Helpers.version_string_of ~__context host)) then
-			(debug "Host %s considering using metrics last update time as heartbeat" (Ref.string_of host);
+	let new_heartbeat_delta_s =
+		try
+			let heartbeat = Mutex.execute host_table_m (fun () -> Hashtbl.find host_heartbeat_table host) in
+			Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) heartbeat) /. 1e9)
+		with Not_found ->
+			!Xapi_globs.host_assumed_dead_interval +. 1. in
+	let old_heartbeat_delta_s =
+		let heartbeat = 
+			if rum && (Version.platform_version <> (Helpers.version_string_of ~__context host)) then
+				(debug "Host %s considering using metrics last update time as heartbeat" (Ref.string_of host);
 				Date.to_float (Db.Host_metrics.get_last_updated ~__context ~self:hmetric))
-		else 0.0 in
-	(* Use whichever value is the most recent to determine host liveness *)
-	let host_time = max old_heartbeat_time new_heartbeat_time in
+			else 0.0 in
+		Unix.gettimeofday () -. heartbeat in
+	(* Use whichever delta is smallest *)
+	let delta_s = min new_heartbeat_delta_s old_heartbeat_delta_s in
 
-	let now = Unix.gettimeofday () in
-	(* we can now compare 'host_time' with 'now' *) 
-
-	if now -. host_time < !Xapi_globs.host_assumed_dead_interval then begin
+	if delta_s < !Xapi_globs.host_assumed_dead_interval then begin
 	  (* From the heartbeat PoV the host looks alive. We try to (i) minimise database sets; and (ii) 
 	     avoid toggling the host back to live if it has been marked as shutting_down. *)
 	  Mutex.execute Xapi_globs.hosts_which_are_shutting_down_m
@@ -204,7 +204,7 @@ let check_host_liveness ~__context =
 	    )
 	end else begin
 	  if live then begin
-	    debug "Assuming host is offline since the heartbeat/metrics haven't been updated for %.2f seconds; setting live to false" (now -. host_time);
+	    debug "Assuming host is offline since the heartbeat/metrics haven't been updated for %.2f seconds; setting live to false" delta_s;
 	    Xapi_hooks.host_pre_declare_dead ~__context ~host ~reason:Xapi_hooks.reason__assume_failed;
 	    Db.Host_metrics.set_live ~__context ~self:hmetric ~value:false;
 	    Xapi_host_helpers.update_allowed_operations ~__context ~self:host;
@@ -355,17 +355,6 @@ let timeout_tasks ~__context =
   if List.length lucky > Xapi_globs.max_tasks
   then warn "There are more pending tasks than the maximum allowed: %d > %d" (List.length lucky) Xapi_globs.max_tasks
 
-(*
-let timeout_alerts ~__context =
-  let all_alerts = Db.Alert.get_all ~__context in
-  let now = Unix.gettimeofday() in
-  List.iter (fun alert ->
-    let alert_time = Date.to_float (Db.Alert.get_timestamp ~__context ~self:alert) in
-    if now -. alert_time > Xapi_globs.alert_timeout then
-      Db.Alert.destroy ~__context ~self:alert
-  ) all_alerts
-*)
-
 (* Compare this host's (the master's) version with that reported by all other hosts
    and mark the Pool with an other_config key if we are in a rolling upgrade mode. If
    we detect the beginning or end of a rolling upgrade, call out to an external script. *)
@@ -434,13 +423,12 @@ let tickle_heartbeat ~__context host stuff =
 				if use_host_heartbeat_for_liveness
 				then Xapi_host_helpers.mark_host_as_dead ~__context ~host ~reason
 			end else begin
-				let now = Unix.gettimeofday () in
-				Hashtbl.replace host_heartbeat_table host now;
+				Hashtbl.replace host_heartbeat_table host (Oclock.gettime Oclock.monotonic);
 				(* compute the clock skew for later analysis *)
 				if List.mem_assoc _time stuff then begin
 					try
 						let slave = float_of_string (List.assoc _time stuff) in
-						let skew = abs_float (now -. slave) in
+						let skew = abs_float (Unix.gettimeofday () -. slave) in
 						Hashtbl.replace host_skew_table host skew
 					with _ -> ()
 				end;

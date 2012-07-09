@@ -1,4 +1,4 @@
-OCAMLPACKS    = xml-light2 cdrom pciutil sexpr log stunnel http-svr rss xen-utils netdev tapctl vhd rpc-light nbd
+OCAMLPACKS    = oclock xml-light2 cdrom pciutil sexpr log stunnel http-svr rss xen-utils netdev tapctl vhd rpc-light nbd
 OCAML_LIBS    = ../fhs ../util/version ../util/vm_memory_constraints ../util/sanitycheck ../util/stats \
 	../idl/ocaml_backend/common ../idl/ocaml_backend/client ../idl/ocaml_backend/server ../util/ocamltest
 OCAMLINCLUDES = ../idl ../idl/ocaml_backend \
@@ -60,7 +60,7 @@ COMMON = \
 
 #OCamlProgram(upload_receive, $(COMMON) fileupload upload_receive)
 
-OCamlProgram(quicktestbin, quicktest quicktest_common quicktest_ocamltest quicktest_storage quicktest_http quicktest_encodings quicktest_vm_placement vm_placement ../xenops/squeeze ../xenops/squeeze_test quicktest_vm_memory_constraints ../util/vm_memory_constraints quicktest_lifecycle)
+OCamlProgram(quicktestbin, quicktest quicktest_common quicktest_ocamltest quicktest_storage quicktest_http quicktest_encodings quicktest_vm_placement vm_placement ../xenops/squeeze ../xenops/squeeze_test quicktest_vm_memory_constraints ../util/vm_memory_constraints ../util/sleep quicktest_lifecycle)
 
 OCamlProgram(xenstore_copy, xenstore_dump xenstore_copy)
 
@@ -68,6 +68,7 @@ OCamlProgram(rrddump, rrddump rrd)
 
 XAPI_MODULES = $(COMMON) \
 	../util/table \
+    ../util/sleep \
 	balloon \
 	system_domains \
 	local_work_queue \

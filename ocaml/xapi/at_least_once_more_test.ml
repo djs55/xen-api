@@ -58,8 +58,7 @@ let _ =
   List.iter Thread.join threads;
   (* Wait for the total to settle *)
   let total_should_be = List.fold_left Int64.add 0L (List.map get inputs) in
-  let now = Unix.gettimeofday () in
-  while Unix.gettimeofday () -. now < 5. && (get total) <> total_should_be do Thread.delay 1. done;
+  let (_: bool) = Sleep.until (fun () -> get total = total_should_be) 1. in
   let total_is = get total in
   Printf.printf "total_should_be = %Ld; total_is = %Ld\n" total_should_be total_is;
   let num_invocations = get num_invocations in

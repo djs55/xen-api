@@ -119,7 +119,7 @@ let send_all refresh_session ofd ~__context rpc session_id (prefix_vdis: vdi lis
   let progress = new_progress_record __context prefix_vdis in
 
   (* Remember when we last wrote something so that we can work around firewalls which close 'idle' connections *)
-  let last_transmission_time = ref 0. in
+  let last_transmission_time = ref 0L in
 
   let send_one ofd (__context:Context.t) (prefix, vdi_ref, size) = 
     let size = Db.VDI.get_virtual_size ~__context ~self:vdi_ref in
@@ -142,13 +142,13 @@ let send_all refresh_session ofd ~__context rpc session_id (prefix_vdis: vdi lis
 	       let this_chunk = Int64.to_int this_chunk in
 	       let filename = Printf.sprintf "%s/%08d" prefix chunk_no in
 
-		   let now = Unix.gettimeofday () in
-		   let time_since_transmission = now -. !last_transmission_time in
+		   let now = Oclock.gettime Oclock.monotonic in
+		   let time_since_transmission_ns = Int64.sub now !last_transmission_time in
 		   
 		   (* We always include the first and last blocks *)
 		   let first_or_last = chunk_no = 0 || last_chunk in
 
-		   if time_since_transmission > 5. && not first_or_last then begin
+		   if time_since_transmission_ns > 5_000_000_000L && not first_or_last then begin
 			 last_transmission_time := now;
 			 write_block ~__context filename "" ofd 0;
 			 (* no progress has been made *)

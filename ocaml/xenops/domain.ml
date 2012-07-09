@@ -416,24 +416,19 @@ let destroy (task: Xenops_task.t) ~xc ~xs ~qemu_domid domid =
 	then log_exn_rm ~xs (Hotplug.get_private_path domid);
 
 	(* Block waiting for the dying domain to disappear: aim is to catch shutdown errors early*)
-	let still_exists () = 
+	let gone () = 
 	  try
 	    let _ = Xenctrl.domain_getinfo xc domid in
 	    debug "VM = %s; domid = %d; Domain still exist, waiting for it to disappear." (Uuid.to_string uuid) domid;
-	    true
+	    false
 	  with 
 	  | Xenctrl.Error err ->
 		  debug "VM = %s; domid = %d; Domain nolonger exists (%s)" (Uuid.to_string uuid) domid err;
-	      false
+	      true
 	  | e ->
 		  error "VM = %s; domid = %d; Xenctrl.domain_getinfo threw: %s" (Uuid.to_string uuid) domid (Printexc.to_string e);
 	      raise e in
-	let start = Unix.gettimeofday () in
-	let timeout = 60. in
-	while still_exists () && (Unix.gettimeofday () -. start < timeout) do
-	  Thread.delay 5.
-	done;
-	if still_exists () then begin
+	if not(Sleep.until gone 60. 5.) then begin
 	  (* CA-13801: to avoid confusing people, we shall change this domain's uuid *)
 	  let s = Printf.sprintf "deadbeef-dead-beef-dead-beef0000%04x" domid in
 	  error "VM = %s; domid = %d; Domain stuck in dying state after 30s; resetting UUID to %s. This probably indicates a backend driver bug." (Uuid.to_string uuid) domid s;

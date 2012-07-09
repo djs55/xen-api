@@ -236,15 +236,14 @@ let bind inetaddr =
 	(* Sometimes we see failures which we hope are transient. If this
 	   happens then we'll retry a couple of times before failing. *)
 	let result = ref None in
-	let start = Unix.gettimeofday () in
-	let timeout = 30.0 in (* 30s *)
-	while !result = None && (Unix.gettimeofday () -. start < timeout) do
+	let (_: bool) = Sleep.until (fun () ->
 		try
 			result := Some (Http_svr.bind ~listen_backlog:Xapi_globs.listen_backlog inetaddr description);
+			true
 		with Unix.Unix_error(code, _, _) ->
-			debug "While binding %s: %s" description (Unix.error_message code);
-			Thread.delay 5.
-	done;
+			debug "While binding %s: %s" description (Unix.error_message code);		
+			false
+	) 30. 5. in
 	match !result with
 		| None -> failwith (Printf.sprintf "Repeatedly failed to bind: %s" description)
 		| Some s -> 

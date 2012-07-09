@@ -415,7 +415,7 @@ let assert_new_vm_preserves_ha_plan ~__context new_vm =
 let restart_failed : (API.ref_VM, unit) Hashtbl.t = Hashtbl.create 10
 
 (* We also limit the rate we attempt to retry starting the VM. *)
-let last_start_attempt : (API.ref_VM, float) Hashtbl.t = Hashtbl.create 10
+let last_start_attempt : (API.ref_VM, int64) Hashtbl.t = Hashtbl.create 10
 
 (* Takes the current live_set and number of hosts we're planning to handle, updates the host records in the database 
    and restarts any offline protected VMs *)
@@ -550,11 +550,11 @@ let restart_auto_run_vms ~__context live_set n =
 					(* If we tried before and failed, don't retry again within 2 minutes *)
 					let attempt_restart = 
 						if Hashtbl.mem last_start_attempt vm 
-						then Unix.gettimeofday () -. (Hashtbl.find last_start_attempt vm) > 120.
+						then Int64.sub (Oclock.gettime Oclock.monotonic) (Hashtbl.find last_start_attempt vm) > 120_000_000_000L
 						else true in
 
 					if attempt_restart then begin
-						Hashtbl.replace last_start_attempt vm (Unix.gettimeofday ());
+						Hashtbl.replace last_start_attempt vm (Oclock.gettime Oclock.monotonic);
 						match host with
 							| None -> Client.Client.VM.start rpc session_id vm false true
 							| Some h -> Client.Client.VM.start_on rpc session_id vm h false true

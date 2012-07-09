@@ -134,17 +134,11 @@ let safe_unplug rpc session_id self =
     Client.VBD.unplug rpc session_id self
   with 
   | Api_errors.Server_error(error, _) as e when error = Api_errors.device_detach_rejected ->
-    debug "safe_unplug caught device_detach_rejected: polling the currently_attached flag of the VBD";
-    let start = Unix.gettimeofday () in
-    let unplugged = ref false in
-    while not(!unplugged) && (Unix.gettimeofday () -. start < timeout) do
-      Thread.delay 5.;
-      unplugged := not(Client.VBD.get_currently_attached rpc session_id self)
-    done;
-    if not(!unplugged) then begin
-      debug "Timeout waiting for dom0 device to be unplugged";
-      raise e
-    end
+      debug "safe_unplug caught device_detach_rejected: polling the currently_attached flag of the VBD";
+	  if not(Sleep.until (fun () -> not(Client.VBD.get_currently_attached rpc session_id self)) timeout 5.) then begin
+		  debug "Timeout waiting for dom0 device to be unplugged";
+		  raise e
+	  end
   | Api_errors.Server_error(error, _) when error = Api_errors.device_already_detached ->
       debug "safe_unplug caught device_already_detached: ignoring"
 
@@ -192,10 +186,10 @@ let with_new_vdi rpc session sr size name_label name_description f =
     (fun () -> Client.VDI.destroy ~rpc ~session_id:session ~self:vdi)
 
 let time f x =
-  let before = Unix.gettimeofday () in
+  let before = Oclock.gettime Oclock.monotonic in
   let result = f x in
-  let after = Unix.gettimeofday () in
-  (result, after -. before)
+  let after = Oclock.gettime Oclock.monotonic in
+  (result, Int64.(to_float (sub after before) /. 1e9))
 
 (* Clone an existing VM, pass it to the function and destroy it on the way out *)
 let with_sacrificial_vm rpc session f =

@@ -442,12 +442,12 @@ let test_vhd_locking_hook session_id vm =
 		~qos_algorithm_type:"" ~qos_algorithm_params:[] in
 	
 	(* In a background thread plug/unplug the new VBD to cause some transient locking failures *)
-	let start = Unix.gettimeofday () in
+	let start = Oclock.gettime Oclock.monotonic in
 	debug test "Starting up conflicting thread in the background";
 	let total_bg_ops = ref 0 in
 	let t = Thread.create
 		(fun () ->
-			while Unix.gettimeofday () -. start < 30. do
+			while Int64.sub (Oclock.gettime Oclock.monotonic) start < 30_000_000_000L do
 				(* We throw away exceptions because unplugs can fail (if the guest isn't ready) and this causes the
 				   next plug to fail. We use asynchronous operations because we are sharing a single HTTP connection to the
 				   master and we genuinely want the operations to (attempt to) execute in parallel *)
@@ -570,10 +570,10 @@ let vdi_test session_id =
   let pool = get_pool session_id in
   let default_SR = Client.Pool.get_default_SR !rpc session_id pool in
   debug test (Printf.sprintf "default_SR=%s%!" (Ref.string_of default_SR));
-  let t = Unix.gettimeofday () in
+  let t = Oclock.gettime Oclock.monotonic in
   let newvdi = Client.VDI.create !rpc session_id "testvdi"
     "description" default_SR 4194304L `user false false [] [] [] [] in
-  let createtime = Unix.gettimeofday () -. t in
+  let createtime = Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) t)) /. 1e9 in
   debug test (Printf.sprintf "Time to create: %f%!" createtime);
   let pbd = List.hd (Client.SR.get_PBDs !rpc session_id default_SR) in
   let host = Client.PBD.get_host !rpc session_id pbd in
@@ -586,10 +586,10 @@ let vdi_test session_id =
   debug test (Printf.sprintf "Creating a VBD connecting the VDI to localhost%!");
   let vbd = Client.VBD.create ~rpc:!rpc ~session_id ~vM:dom0 ~vDI:newvdi ~userdevice:device ~bootable:false
     ~mode:`RW ~_type:`Disk ~unpluggable:true ~empty:false ~other_config:[] ~qos_algorithm_type:"" ~qos_algorithm_params:[] in
-  let t = Unix.gettimeofday () in
+  let t = Oclock.gettime Oclock.monotonic in
   debug test (Printf.sprintf "Attempting to copy the VDI%!");
   let newvdi2 = Client.VDI.copy !rpc session_id newvdi default_SR in
-  let copytime = Unix.gettimeofday () -. t in
+  let copytime = Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) t)) /. 1e9 in
   debug test (Printf.sprintf "Time to copy: %f%!" copytime);
   Client.VBD.destroy !rpc session_id vbd;
   debug test (Printf.sprintf "Destroying original VDI%!");

@@ -488,7 +488,7 @@ let get_since ~__context ~since =
   get_real message_dir (fun _ -> true) (Date.to_float since)
 
 let get_since_for_events ~__context since =
-	let now = Mutex.execute event_mutex (fun () -> Unix.gettimeofday ()) in
+	let now = Unix.gettimeofday () in
 	let result = Mutex.execute in_memory_cache_mutex
 		(fun () ->
 			 match !in_memory_cache with

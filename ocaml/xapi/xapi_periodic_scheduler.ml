@@ -30,9 +30,11 @@ let delay = Delay.make ()
 let (queue : (t Ipq.t)) = Ipq.create 50
 let lock = Mutex.create ()
 
+let now () = Int64.(to_float (Oclock.gettime Oclock.monotonic) /. 1e9)
+
 let add_to_queue ?(signal=true) name ty start newfunc =
   Mutex.execute lock (fun () ->
-    Ipq.add queue { Ipq.ev={ func=newfunc; ty=ty; name=name}; Ipq.time=((Unix.gettimeofday ()) +. start) });
+    Ipq.add queue { Ipq.ev={ func=newfunc; ty=ty; name=name}; Ipq.time = now () +. start });
   if signal then Delay.signal delay
 
 let remove_from_queue name =
@@ -52,7 +54,7 @@ let loop () =
 	else
 	  begin
 	    let next = Mutex.execute lock (fun () -> Ipq.maximum queue) in
-	    let now = Unix.gettimeofday () in
+	    let now = now () in
 	    if next.Ipq.time < now then begin
 	      let todo = (Mutex.execute lock (fun () -> Ipq.pop_maximum queue)).Ipq.ev in
 	      (try todo.func () with _ -> ());

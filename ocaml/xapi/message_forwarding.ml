@@ -115,7 +115,7 @@ module Repeat_with_uniform_backoff : POLICY = struct
 		let this_timeout = state.minimum_delay +. (state.maximum_delay -. state.minimum_delay) *. (Random.float 1.0) in
 
 		debug "Waiting for up to %f seconds before retrying..." this_timeout;
-		let start = Unix.gettimeofday () in
+		let start = Oclock.gettime Oclock.monotonic in
 		begin
 			match e with
 			| Api_errors.Server_error(code, [ cls; objref ]) when code = Api_errors.other_operation_in_progress ->
@@ -123,7 +123,7 @@ module Repeat_with_uniform_backoff : POLICY = struct
 			| _ ->
 				  Thread.delay this_timeout;
 		end;
-		{ state with wait_so_far = state.wait_so_far +. (Unix.gettimeofday () -. start) }
+		{ state with wait_so_far = state.wait_so_far +. (Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9)) }
 end
 
 (** Could replace this with something fancier which waits for objects to change at the
@@ -2820,15 +2820,8 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 					let (_: Thread.t) = Thread.create (fun () ->
 						Client.PIF.reconfigure_ip rpc session_id self mode iP netmask gateway dNS) () in
 					let task_id = Context.get_task_id __context in
-					let start_time = Unix.gettimeofday () in
-					let progress = ref 0.0 in
-					while !progress = 0.0 do
-						if Unix.gettimeofday () -. start_time > !Xapi_globs.pif_reconfigure_ip_timeout then
-							failwith "Failed to see host on network after timeout expired";
-						Thread.delay 1.0;
-						progress := Db.Task.get_progress ~__context ~self:task_id;
-						debug "Polling task %s progress" (Ref.string_of task_id)
-					done)
+					if not (Sleep.until (fun () -> Db.Task.get_progress ~__context ~self:task_id > 0.0) !Xapi_globs.pif_reconfigure_ip_timeout 1.)
+					then failwith "Failed to see host on network after timeout expired")
 
 		let reconfigure_ipv6 ~__context ~self ~mode ~iPv6 ~gateway ~dNS =
 			info "PIF.reconfigure_ipv6: PIF = '%s'; mode = '%s'; IPv6 = '%s'; gateway = '%s'; DNS = %s"

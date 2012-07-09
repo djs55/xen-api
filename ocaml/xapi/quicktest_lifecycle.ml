@@ -168,14 +168,8 @@ let one s vm test =
 				end;
 				
 				let wait_for_domid p =
-					let start = Unix.gettimeofday () in
-					let finished = ref false in
-					while Unix.gettimeofday () -. start < 300. && (not !finished) do
-						finished := p (Client.VM.get_domid !rpc s vm);
-						if not !finished then Thread.delay 1.
-					done;
-					if not !finished then failwith "timeout"
-				in
+					if not(Sleep.until (fun () -> p (Client.VM.get_domid !rpc s vm)) 200. 1.)
+					then failwith "timeout" in
 				
 				begin match expected_result test with
 					| None -> failwith (Printf.sprintf "Invalid test: %s" (string_of_test test))

@@ -107,17 +107,17 @@ let one () =
   debug "Process: %s" (string_of_process_memory_info pmi);
   debug "System: %s" mi
     
-let last_log = ref 0.
-let log_interval = 60.
+let last_log = ref 0L
+let log_interval = 60_000_000_000L (* 60s in ns *)
 
 (** Called from the main monitoring loop *)
 let go __context = 
-  try
-    (* Only run once every minute to avoid spamming the logs *)
-    let now = Unix.gettimeofday () in
-    if now -. !last_log > log_interval then begin
-      last_log := now;
-      one ()
-    end
-  with e ->
-    debug "Monitor_self caught: %s" (Printexc.to_string e)
+	try
+		(* Only run once every minute to avoid spamming the logs *)
+		let now = Oclock.gettime Oclock.monotonic in
+		if Int64.sub now !last_log > log_interval then begin
+			last_log := now;
+			one ()
+		end
+	with e ->
+		debug "Monitor_self caught: %s" (Printexc.to_string e)

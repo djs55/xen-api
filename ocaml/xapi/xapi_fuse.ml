@@ -19,10 +19,10 @@ open Threadext
 module D = Debug.Debugger(struct let name="xapi_fuse" end)
 open D
 
-let time f = 
-  let start = Unix.gettimeofday () in
-  (try f () with e -> warn "Caught exception while performing timed function: %s" (Printexc.to_string e));
-  Unix.gettimeofday () -. start
+let time f =
+	let start = Oclock.gettime Oclock.monotonic in
+	(try f () with e -> warn "Caught exception while performing timed function: %s" (Printexc.to_string e));
+	Int64.(to_float (sub (Oclock.gettime Oclock.monotonic) start) /. 1e9)
 
 (* give xapi time to reply to API messages by means of a 10 second fuse! *)
 let light_fuse_and_run ?(fuse_length = !Xapi_globs.fuse_time) () =

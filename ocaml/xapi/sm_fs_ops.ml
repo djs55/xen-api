@@ -80,21 +80,15 @@ let timeout = 300. (* 5 minutes: something is seriously wrong if we hit this tim
 exception Umount_timeout
 
 (** Unmount a mountpoint. Retries every 5 secs for a total of 5mins before returning failure *)
-let umount ?(retry=true) dest =
-	let finished = ref false in
-	let start = Unix.gettimeofday () in
-
-	while not(!finished) && (Unix.gettimeofday () -. start < timeout) do
+let umount dest =
+	if not(Sleep.until (fun () ->
 		try
 			ignore(Forkhelpers.execute_command_get_output "/bin/umount" [dest] );
-			finished := true
+			true
 		with e ->
-			if not(retry) then raise e;
-			debug "Caught exception (%s) while unmounting %s: pausing before retrying"
-				(ExnHelper.string_of_exn e) dest;
-			Thread.delay 5.
-	done;
-	if not(!finished) then raise Umount_timeout
+			false
+	) timeout 5.)
+	then raise Umount_timeout
 
 let with_mounted_dir device mount_point rmdir f =
 	finally

@@ -89,16 +89,16 @@ let sample (name: string) (x: float) : unit =
 *)
 
 (** Helper function to time a specific thing *)
-let time_this (name: string) f = 
-  let start_time = Unix.gettimeofday () in
-  finally f
-    (fun () ->
-       try
-	 let end_time = Unix.gettimeofday () in
-	 sample name (end_time -. start_time)
-       with e ->
-	 warn "Ignoring exception %s while timing: %s" (Printexc.to_string e) name
-    )
+let time_this (name: string) f =
+	let start_time = Oclock.gettime Oclock.monotonic in
+	finally f
+		(fun () ->
+			try
+				let end_time = Oclock.gettime Oclock.monotonic in
+				sample name (Int64.(to_float (sub end_time start_time) /. 1e9))
+			with e ->
+				warn "Ignoring exception %s while timing: %s" (Printexc.to_string e) name
+		)
        
 let summarise () = 
   Mutex.execute timings_m

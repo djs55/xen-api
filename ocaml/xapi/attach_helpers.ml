@@ -28,17 +28,11 @@ let safe_unplug rpc session_id self =
 	  | Api_errors.Server_error(error, _) when error = Api_errors.device_already_detached ->
 		  debug "safe_unplug caught DEVICE_ALREADY_DETACHED: this is safe to ignore"
 	  | Api_errors.Server_error(error, _) as e when error = Api_errors.device_detach_rejected ->
-    debug "safe_unplug caught DEVICE_DETACH_REJECTED: polling the currently_attached flag of the VBD";
-    let start = Unix.gettimeofday () in
-    let unplugged = ref false in
-    while not(!unplugged) && (Unix.gettimeofday () -. start < timeout) do
-      Thread.delay 5.;
-      unplugged := not(Client.VBD.get_currently_attached rpc session_id self)
-    done;
-    if not(!unplugged) then begin
-      debug "Timeout waiting for dom0 device to be unplugged";
-      raise e
-    end
+		  debug "safe_unplug caught DEVICE_DETACH_REJECTED: polling the currently_attached flag of the VBD";
+		  if not(Sleep.until (fun () -> not(Client.VBD.get_currently_attached rpc session_id self)) timeout 5.) then begin
+			  debug "Timeout waiting for dom0 device to be unplugged";
+			  raise e
+		  end
 
 (** For a VBD attached to a control domain, it may correspond to a running task
 	(if so the task will be linked via an other_config key) or it may be a qemu

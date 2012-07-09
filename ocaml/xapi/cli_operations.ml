@@ -1333,17 +1333,12 @@ let vbd_unplug printer rpc session_id params =
 			(try float_of_string (List.assoc "timeout" params) with _ -> failwith "Failed to parse parameter 'timeout': expecting a float")
 		else 0. in
 	let force = get_bool_param params "force" in
-	let start = Unix.gettimeofday () in
 	try
 		(if force then Client.VBD.unplug_force else Client.VBD.unplug) rpc session_id vbd
 	with Api_errors.Server_error(code, _) as e when code = Api_errors.device_detach_rejected ->
 		(* enter polling mode *)
-		let unplugged = ref false in
-		while not(!unplugged) && (Unix.gettimeofday () -. start < timeout) do
-			Thread.delay 5.;
-			unplugged := not(Client.VBD.get_currently_attached rpc session_id vbd)
-		done;
-		if not(!unplugged) then raise e
+		if not(Sleep.until (fun () -> not(Client.VBD.get_currently_attached rpc session_id vbd)) timeout 5.)
+		then raise e
 
 let vbd_pause printer rpc session_id params =
 	let vbd = Client.VBD.get_by_uuid ~rpc ~session_id ~uuid:(List.assoc "uuid" params) in

@@ -299,15 +299,15 @@ let login_no_password ~__context ~uname ~host ~pool ~is_local_superuser ~subject
 	session_id
 
 (** Cause the master to update the session last_active every 30s or so *)
-let consider_touching_session rpc session_id = 
-  let time = ref (Unix.gettimeofday ()) in
-  let interval = 30. in (* 30 seconds *)
-  fun () ->
-    if Unix.gettimeofday () -. !time > interval then begin
-      time := Unix.gettimeofday ();
-      (* a side-effect is that the master updates the session *)
-      ignore(Client.Session.get_uuid rpc session_id session_id)
-    end
+let consider_touching_session rpc session_id =
+	let time = ref (Oclock.gettime Oclock.monotonic) in
+	let interval = 30_000_000_000L in (* 30s in ns *)
+	fun () ->
+		if Int64.sub (Oclock.gettime Oclock.monotonic) !time > interval then begin
+			time := Oclock.gettime Oclock.monotonic;
+			(* a side-effect is that the master updates the session *)
+			ignore(Client.Session.get_uuid rpc session_id session_id)
+		end
 
 let pool_authenticate ~__context psecret =
   if psecret = !Xapi_globs.pool_secret then ()
