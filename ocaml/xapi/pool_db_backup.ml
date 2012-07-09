@@ -241,7 +241,6 @@ let fetch_database_backup ~master_address ~pool_secret ~force =
 	   Threadext.Mutex.execute slave_backup_m
 	     (fun () ->
 		Db_connections.flush dbconn db;
-		Slave_backup.notify_write dbconn (* update writes_this_period for this connection *)
 	     )
 	)
 	connections

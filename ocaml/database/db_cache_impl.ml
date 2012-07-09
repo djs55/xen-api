@@ -293,24 +293,8 @@ let spawn_db_flush_threads() =
 					Db_connections.inc_db_flush_thread_refcount();
 					let db_path = dbconn.Parse_db_conf.path in
 					Debug.name_thread ("dbflush ["^db_path^"]");
-					let my_writes_this_period = ref 0 in
 					
-					(* the collesce_period_start records the time of the last write *)
-					let coallesce_period_start = ref (Unix.gettimeofday()) in
-					let period_start = ref (Unix.gettimeofday()) in
-					
-					(* we set a coallesce period of min(5 mins, write_limit_period / write_limit_write_cycles) *)
-					(* if we're not write limiting then set the coallesce period to 5 minutes; otherwise set coallesce period to divide the
-					   number of write cycles across the ... 
-					*)
-					let coallesce_time = float_of_int (5*60) (* coallesce writes for 5 minutes to avoid serializing db to disk all the time. *) in
-					debug "In memory DB flushing thread created [%s]. %s" db_path
-						(if dbconn.Parse_db_conf.mode <> Parse_db_conf.No_limit then
-							"Write limited with coallesce_time="^(string_of_float coallesce_time)
-						else "");
-					(* check if we are currently in a coallescing_period *)
-					let in_coallescing_period() = 
-						(Unix.gettimeofday() -. !coallesce_period_start < coallesce_time) in
+					debug "In memory DB flushing thread created [%s]." db_path;
 					
 					while (true) do
 						try
@@ -322,34 +306,13 @@ let spawn_db_flush_threads() =
 								   set (by a signal handler) we want to do a flush whether or not our write limit has been
 								   exceeded.
 								*)
-								if !Db_connections.exit_on_next_flush (* always flush straight away; this request is urgent *) ||
-									(* otherwise, we only write if (i) "coalesscing period has come to an end"; and (ii) "write limiting requirements are met": *)
-									((not (in_coallescing_period())) (* see (i) above *) &&
-										((!my_writes_this_period < dbconn.Parse_db_conf.write_limit_write_cycles) || dbconn.Parse_db_conf.mode = Parse_db_conf.No_limit (* (ii) above *)
-										)
-									)
+								if !Db_connections.exit_on_next_flush (* always flush straight away; this request is urgent *)
 								then
 									begin
 										(* debug "[%s] considering flush" db_path; *)
-										let was_anything_flushed = Threadext.Mutex.execute Db_lock.global_flush_mutex (fun ()->flush_dirty dbconn) in
-										if was_anything_flushed then
-											begin
-												my_writes_this_period := !my_writes_this_period + 1;
-												(* when we do a write, reset the coallesce_period_start to now -- recall that this
-												   variable tracks the time since last write *)
-												coallesce_period_start := Unix.gettimeofday()
-											end
+										let (_: bool) = Threadext.Mutex.execute Db_lock.global_flush_mutex (fun ()->flush_dirty dbconn) in
+										()
 									end;
-								(* else debug "[%s] not flushing because write-limit exceeded" db_path; *)
-								(* Check to see if the current write period has finished yet.. *)
-								if (Unix.gettimeofday() -. !period_start > (float_of_int dbconn.Parse_db_conf.write_limit_period)) then
-									begin
-										(* debug "[%s] resetting write-limit counters: start of new period" db_path; *)
-										(* We're at the start of a new writing period! *)
-										period_start := Unix.gettimeofday();
-										my_writes_this_period := 0;
-									end
-										(* else debug "[%s] not resetting write-limit counters: not in new period yet" db_path *)
 							end
 						with
 								e -> debug "Exception in DB flushing thread: %s" (Printexc.to_string e)

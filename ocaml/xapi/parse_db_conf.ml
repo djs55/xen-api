@@ -17,27 +17,17 @@ open Stringext
 module D=Debug.Debugger(struct let name="xapi" end)
 open D
 
-type db_connection_mode = Write_limit | No_limit
-
 type db_connection =
     {path:string;
-     mode:db_connection_mode;
      compress:bool;
-     write_limit_period:int;
-     write_limit_write_cycles:int;
      is_on_remote_storage:bool;
      other_parameters:(string*string) list;
 	 mutable last_generation_count: Generation.t;
     }
 
-let default_write_limit_period = 21600 (* 6 hours *)
-let default_write_cycles = 10
-
 (* a useful "empty" config value *)
 let dummy_conf =
-  {path=""; mode=No_limit;
-   write_limit_period=default_write_limit_period;
-   write_limit_write_cycles=default_write_cycles;
+  {path="";
    compress=false;
    is_on_remote_storage=false;
    other_parameters=[];
@@ -61,34 +51,20 @@ let db_snapshot_dbconn = {dummy_conf with
   path=Xapi_globs.snapshot_db
 }
 
-let from_mode v =
-  match v with
-    Write_limit -> "write_limit"
-  | No_limit -> "no_limit"
-
 let from_block r =
-  String.concat ""
-    [
-      Printf.sprintf
-	"[%s]\nmode:%s\nformat:xml\ncompress:%b\nis_on_remote_storage:%b\n"
-	r.path (from_mode r.mode) r.compress
-	r.is_on_remote_storage;
-      if r.mode = Write_limit then
-	Printf.sprintf "write_limit_period:%d\nwrite_limit_write_cycles:%d\n"
-	  r.write_limit_period r.write_limit_write_cycles
-      else "";
-      String.concat "" (List.map (fun (k,v) -> Printf.sprintf "%s:%s\n" k v) r.other_parameters)
-    ]
+	String.concat ""
+		[
+			Printf.sprintf
+				"[%s]\nformat:xml\ncompress:%b\nis_on_remote_storage:%b\n"
+				r.path r.compress
+				r.is_on_remote_storage;
+			"";
+			String.concat "" (List.map (fun (k,v) -> Printf.sprintf "%s:%s\n" k v) r.other_parameters)
+		]
 
 let write_db_conf connections =
   let dbconf = String.concat "\n" (List.map from_block connections) in
   Unixext.write_string_to_file Xapi_globs.db_conf_path dbconf
-
-let to_mode s =
-  match s with
-    "write_limit" -> Write_limit
-  | "no_limit" -> No_limit
-  | _ -> failwith (Printf.sprintf "unknown mode: %s" s)
 
 exception Cannot_parse_database_config_file
 exception Cannot_have_multiple_dbs_in_sr
@@ -130,11 +106,8 @@ let parse_db_conf s =
 	  end
 	else default in
       {path=path;
-       mode=maybe_put_in "mode" (* key name *) No_limit (* default if key not present *) to_mode (* fn to conv string->mode type *);
        compress = maybe_put_in "compress" false bool_of_string;
        is_on_remote_storage = maybe_put_in "is_on_remote_storage" false bool_of_string;
-       write_limit_period=maybe_put_in "write_limit_period" default_write_limit_period int_of_string;
-       write_limit_write_cycles=maybe_put_in "write_limit_write_cycles" default_write_cycles int_of_string;
        other_parameters = !key_values; (* the things remaining in key_values at this point are the ones we haven't parsed out explicitly above.. *)
 	   last_generation_count = Generation.null_generation;
       } in
