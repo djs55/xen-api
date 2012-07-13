@@ -28,7 +28,7 @@ let json_url = Printf.sprintf "file:%s.json" default_path |> Http.Url.of_string
 
 (* Use HTTP to frame RPC messages *)
 let http_rpc string_of_call response_of_string ~srcstr ~dststr url call =
-	E.debug "%s=>%s [label=\"%s\"];" srcstr dststr call.Rpc.name;
+	E.debug "%s=>%s [label=\"%s\"];" srcstr dststr (Jsonrpc.string_of_call call);
 	let req = string_of_call call in
 	let http_req =
 		Http.Request.make ~version:"1.1" ~frame:false ~keep_alive:false ?auth:(Http.Url.auth_of url) ~user_agent:"xenopsd" ~query:(Http.Url.get_query_params url) ~body:req Http.Post (Http.Url.get_uri url) in
@@ -47,7 +47,7 @@ let json_http_rpc = http_rpc Jsonrpc.string_of_call Jsonrpc.response_of_string
 
 (* Use a binary 16-byte length to frame RPC messages *)
 let binary_rpc string_of_call response_of_string ?(srcstr="unset") ?(dststr="unset") url (call: Rpc.call) : Rpc.response =
-	E.debug "%s=>%s [label=\"%s\"];" srcstr dststr call.Rpc.name;
+	E.debug "%s=>%s [label=\"%s\"];" srcstr dststr (Jsonrpc.string_of_call call);
 	let transport = transport_of_url url in
 	with_transport transport
 		(fun fd ->

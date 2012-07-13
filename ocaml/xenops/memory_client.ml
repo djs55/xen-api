@@ -25,7 +25,7 @@ let json_url = json_uri |> Http.Url.of_string
 
 (* Use a binary 16-byte length to frame RPC messages *)
 let binary_rpc string_of_call response_of_string ?(srcstr="unset") ?(dststr="unset") url (call: Rpc.call) : Rpc.response =
-	E.debug "%s=>%s [label=\"%s\"];" srcstr dststr call.Rpc.name;
+	E.debug "%s=>%s [label=\"%s\"];" srcstr dststr (Jsonrpc.string_of_call call);
 	let transport = transport_of_url url in
 	with_transport transport
 		(fun fd ->
