@@ -84,7 +84,7 @@ let pool_migrate ~__context ~vm ~host ~options =
 				Xapi_xenops.Xenopsd_metadata.delete ~__context vm';
 				(* Flush xenopsd events through: we don't want the pool database to
 				   be updated on this host ever again. *)
-				Xapi_xenops.Event.wait dbg ()
+				Xapi_xenops.Events_from_xenopsd.wait dbg ()
 			)
 		);
 	with e ->
@@ -415,7 +415,7 @@ let migrate_send'  ~__context ~vm ~dest ~live ~vdi_map ~vif_map ~options =
 					(fun () ->
 						XenopsAPI.VM.migrate dbg vm' xenops_vdi_map xenops_vif_map xenops |> wait_for_task dbg |> success_task dbg |> ignore;
 						Xapi_xenops.Xenopsd_metadata.delete ~__context vm';
-						Xapi_xenops.Event.wait dbg ())
+						Xapi_xenops.Events_from_xenopsd.wait dbg ())
 			with
 				| Xenops_interface.Does_not_exist ("VM",_) ->
 					()	
