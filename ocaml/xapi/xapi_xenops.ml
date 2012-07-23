@@ -1340,7 +1340,8 @@ let events_from_xapi () =
 												)
 										| _ -> ()
 									) from.events;
-								token := string_of_token from.token;
+								token := from.token;
+								Events_from_xapi.broadcast !token;
 							done
 						)
 				with 
