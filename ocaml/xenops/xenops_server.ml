@@ -1348,7 +1348,7 @@ and perform ?subtask (op: operation) (t: Xenops_task.t) : unit =
 				| Vm.Start    ->
 					let delay = if run_time < B.VM.minimum_reboot_delay then begin
 						debug "VM %s rebooted too quickly; inserting delay" id;
-						[ Atomic (VM_delay (id, 15.)) ]
+						[ Atomic (VM_delay (id, (* 15. *) 0.)) ]
 					end else [] in
 					delay @ [ VM_reboot (id, None) ]
 				| Vm.Pause    -> [ Atomic (VM_pause id) ]

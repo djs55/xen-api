@@ -74,11 +74,12 @@ type operation =
 with rpc
 
 let operations = [
+(*
 	VBD_plug
 	; VBD_unplug
 	; VIF_plug
 	; VIF_unplug
-	; Start
+	; *)Start
 	; Shutdown
 	; Reboot
 	; Suspend
