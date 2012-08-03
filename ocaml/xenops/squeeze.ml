@@ -339,17 +339,6 @@ module Squeezer = struct
 		let declared_inactive_domids = set_difference non_active_domids x.non_active_domids in
 		let declared_active_domids = set_difference x.non_active_domids non_active_domids in
 
-		if verbose then begin
-			List.iter
-				(fun d ->
-					debug "domid %d has been declared inactive" d
-				) declared_inactive_domids;
-			List.iter
-				(fun d ->
-					debug "domid %d has been declared active" d
-				) declared_active_domids;
-		end;
-
 		let x = { x with non_active_domids = non_active_domids } in
 
 		(* 2. Compute how we would adjust the domain memory targets *)

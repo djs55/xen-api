@@ -240,6 +240,7 @@ module Everything = struct
 	let to_file filename h =
 		let rpc = Mutex.execute Host.m (fun () -> rpc_of_t h) in
 		let s = Jsonrpc.to_string rpc in
+		debug "AAA Everything.to_file %s" s;
 		Unixext.write_string_to_file filename s
 	let of_file filename =
 		let s = Unixext.string_of_file filename in
@@ -338,21 +339,26 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 						Errors.add dp sr vdi (Printexc.to_string e);
 						raise e
 				in
-				
-				(* If there were no side effects, we still need to update the SR to represent this DP's view of the state *)
-				let vdi_t = Vdi.perform (Dp.make dp) this_op vdi_t in
-				Sr.replace vdi vdi_t sr_t;
-                (* If the new VDI state is "detached" then we remove it from the table
-				   altogether *)
-				debug "dbg:%s dp:%s sr:%s vdi:%s superstate:%s" dbg dp sr vdi (Vdi_automaton.string_of_state (Vdi.superstate vdi_t));
-				if Vdi.superstate vdi_t = Vdi_automaton.Detached
-				then Sr.remove vdi sr_t;
 
-				(* FH1: Perform the side-effect first: in the case of a failure half-way
-				   through we would rather perform the side-effect twice than never at
-				   all. *)
-				Everything.to_file !host_state_path (Everything.make ());
-				vdi_t
+				(* Even if there were no side effects on the underlying VDI, we still need
+				   to update the SR to update this DP's view of the state.
+				   However if nothing changed (e.g. because this was the detach of a DP
+				   which had not attached this VDI) then we won't need to update our on-disk state *)
+				let vdi_t' = Vdi.perform (Dp.make dp) this_op vdi_t in
+				if vdi_t <> vdi_t' then begin
+					Sr.replace vdi vdi_t' sr_t;
+					(* If the new VDI state is "detached" then we remove it from the table
+					   altogether *)
+					debug "dbg:%s dp:%s sr:%s vdi:%s superstate:%s" dbg dp sr vdi (Vdi_automaton.string_of_state (Vdi.superstate vdi_t'));
+					if Vdi.superstate vdi_t' = Vdi_automaton.Detached
+					then Sr.remove vdi sr_t;
+
+					(* FH1: Perform the side-effect first: in the case of a failure half-way
+					   through we would rather perform the side-effect twice than never at
+					   all. *)
+					Everything.to_file !host_state_path (Everything.make ());
+				end;
+				vdi_t'
 
 		(* Attempt to remove a possibly-active datapath associated with [vdi] *)
 		let destroy_datapath_nolock context ~dbg ~dp ~sr ~vdi ~allow_leak =
@@ -803,12 +809,13 @@ module Local_domain_socket = struct
 	let path = Filename.concat Fhs.vardir "storage"
 
 	let xmlrpc_handler process req bio _ =
+		debug "XXX Got connection";
 		let body = Http_svr.read_body req bio in
 		let s = Buf_io.fd_of bio in
 		let rpc = Xmlrpc.call_of_string body in
-		(* Printf.fprintf stderr "Request: %s %s\n%!" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params)); *)
+		debug "XXX Request: %s %s" rpc.Rpc.name (Rpc.to_string (List.hd rpc.Rpc.params));
 		let result = process (Some req.Http.Request.uri) rpc in
-		(* Printf.fprintf stderr "Response: %s\n%!" (Rpc.to_string result.Rpc.contents); *)
+		debug "XXX Response: %s" (Rpc.to_string result.Rpc.contents);
 		let str = Xmlrpc.string_of_response result in
 		Http_svr.response_str req s str
 

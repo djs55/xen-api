@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e
+
+NOTME=$(xe vm-list name-label=nfs params=dom-id --minimal)
+for i in $(list_domains | cut -f 1 -d '|'| grep -v id); do
+  if [ "$i" -ne 0 ]; then
+    if [ "$i" -ne "${NOTME}" ]; then
+    /opt/xensource/debug/xenops hard_shutdown_domain -domid $i -halt
+    echo $i OK
+    fi
+  fi
+done
