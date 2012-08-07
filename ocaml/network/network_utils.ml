@@ -55,10 +55,11 @@ let call_script ?(log_successful_output=false) script args =
 		raise (Script_error ["script", script; "args", String.concat " " args; "code",
 			string_of_int n; "stdout", stdout; "stderr", stderr])
 
-let with_xs f =
+let with_xs f = assert false
+(*
 	let xs = Xenstore.Xs.domain_open () in
 	finally (fun () -> f xs) (fun () -> Xenstore.Xs.close xs)
-
+*)
 module Sysfs = struct
 	let list () =
 		let all = Array.to_list (Sys.readdir "/sys/class/net") in

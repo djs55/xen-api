@@ -148,16 +148,8 @@ let maybe_forward remote_f local_f = function
 	| Some uuid ->
 		let ip =
 			try
-				with_xs (fun xs ->
-					let path = "/vm/" ^ uuid ^ "/domains" in
-					let domains = xs.Xenstore.Xs.directory path in
-					match domains with
-					| [] -> raise (Cannot_find_driver_domain uuid)
-					| domid :: _ ->
-						let domain_path = xs.Xenstore.Xs.read (path ^ "/" ^ domid) in
-						xs.Xenstore.Xs.read (domain_path ^ "/attr/xenapi/ip")
-				)
-			with _ ->
+		assert false		
+	with _ ->
 				raise (Cannot_find_driver_domain uuid)
 		in
 		debug "Forwarding call to driver domain (%s, %s)" uuid ip;
