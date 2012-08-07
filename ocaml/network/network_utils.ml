@@ -39,7 +39,7 @@ let call_script ?(log_successful_output=false) script args =
 	try
 		Unix.access script [ Unix.X_OK ];
 		(* Use the same $PATH as xapi *)
-		let env = [| "PATH=" ^ (Sys.getenv "PATH") |] in
+		let env = try [| "PATH=" ^ (Sys.getenv "PATH") |] with Not_found -> [| |] in
 		let output, _ = Forkhelpers.execute_command_get_output ~env script args in
 		if log_successful_output then
 			debug "Call '%s %s' succeeded [output = '%s']" script (String.concat " " args) output;
