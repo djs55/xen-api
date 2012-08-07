@@ -91,8 +91,8 @@ module Sysfs = struct
 
 	let is_vif_front name =
 		try
-			let link = Unix.readlink (getpath name "device") in
-			String.has_substr link "xen/vif"
+			let link = Unix.readlink (getpath name "device/driver") in
+			String.has_substr link "/xen/"
 		with _ -> false
 
 	let get_carrier name =
