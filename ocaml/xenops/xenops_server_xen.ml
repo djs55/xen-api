@@ -27,6 +27,9 @@ open Xenops_task
 module D = Debug.Debugger(struct let name = service_name end)
 open D
 
+let store_domid = 0
+let console_domid = 0
+
 let _qemu_dm = "/opt/xensource/libexec/qemu-dm-wrapper"
 let _tune2fs = "/sbin/tune2fs"
 let _mkfs = "/sbin/mkfs"
@@ -988,7 +991,7 @@ module VM = struct
 								} in
 								((make_build_info b.Bootloader.kernel_path builder_spec_info), "")
 							) in
-			let arch = Domain.build task ~xc ~xs build_info timeoffset domid in
+			let arch = Domain.build task ~xc ~xs ~store_domid ~console_domid build_info timeoffset domid in
 			Int64.(
 				let min = to_int (div vm.Vm.memory_dynamic_min 1024L)
 				and max = to_int (div vm.Vm.memory_dynamic_max 1024L) in
@@ -1046,7 +1049,7 @@ module VM = struct
 					if saved_state then failwith "Cannot resume with stubdom yet";
 					Opt.iter
 						(fun stubdom_domid ->
-							Stubdom.build task ~xc ~xs info di.domid stubdom_domid;
+							Stubdom.build task ~xc ~xs ~store_domid ~console_domid info di.domid stubdom_domid;
 							Device.Dm.start_vnconly task ~xs ~dmpath:_qemu_dm info stubdom_domid
 						) (get_stubdom ~xs di.domid);
 				| Vm.HVM { Vm.qemu_stubdom = false } ->
@@ -1236,8 +1239,6 @@ module VM = struct
 								Some x -> (match x with HVM hvm_info -> hvm_info.timeoffset | _ -> "")
 							| _ -> "" in
 						({ x with Domain.memory_target = initial_target }, timeoffset) in
-				let store_domid = 0 in
-				let console_domid = 0 in
 				let no_incr_generationid = false in
 				begin
 					try
