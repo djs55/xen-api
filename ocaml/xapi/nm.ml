@@ -355,7 +355,8 @@ let bring_pif_up ~__context ?(management_interface=false) (pif: API.ref_PIF) =
 			Opt.map (fun self -> Db.VM.get_uuid ~__context ~self)
 				(Network.get_driver_domain ~__context pif)
 		in
-
+		debug "XXX driver domain = %s" (Opt.default "None" driver_domain);
+		
 		(* Call networkd even if currently_attached is false, just to update its state *)
 		debug "Making sure that PIF %s is up" rc.API.pIF_uuid;
 

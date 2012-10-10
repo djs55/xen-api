@@ -155,7 +155,7 @@ let maybe_forward remote_f local_f = function
 					| [] -> raise (Cannot_find_driver_domain uuid)
 					| domid :: _ ->
 						let domain_path = xs.Xenstore.Xs.read (path ^ "/" ^ domid) in
-						xs.Xenstore.Xs.read (domain_path ^ "/attr/xenapi/ip")
+						xs.Xenstore.Xs.read (domain_path ^ "/attr/eth0/ip")
 				)
 			with _ ->
 				raise (Cannot_find_driver_domain uuid)
