@@ -938,7 +938,7 @@ let disable_binary_storage ~__context ~host =
 
 let get_uncooperative_resident_VMs ~__context ~self = assert false
 
-let get_uncooperative_domains ~__context ~self = Monitor.get_uncooperative_domains ()
+let get_uncooperative_domains ~__context ~self = []
 
 let certificate_install ~__context ~host ~name ~cert =
   Certificates.host_install true name cert
@@ -1358,7 +1358,6 @@ let enable_local_storage_caching ~__context ~host ~sr =
 		if old_sr <> Ref.null then Db.SR.set_local_cache_enabled ~__context ~self:old_sr ~value:false;
 		Db.Host.set_local_cache_sr ~__context ~self:host ~value:sr;
 		Db.SR.set_local_cache_enabled ~__context ~self:sr ~value:true;
-		Monitor.set_cache_sr (Db.SR.get_uuid ~__context ~self:sr);
 	end else begin
 		raise (Api_errors.Server_error (Api_errors.sr_operation_not_supported,[]))
 	end
@@ -1367,7 +1366,6 @@ let disable_local_storage_caching ~__context ~host =
 	assert_bacon_mode ~__context ~host;
 	let sr = Db.Host.get_local_cache_sr ~__context ~self:host in
 	Db.Host.set_local_cache_sr ~__context ~self:host ~value:Ref.null;
-	Monitor.unset_cache_sr ();
 	try Db.SR.set_local_cache_enabled ~__context ~self:sr ~value:false with _ -> ()
 
 (* Here's how we do VLAN resyncing:

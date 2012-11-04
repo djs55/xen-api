@@ -111,7 +111,6 @@ let remote_database_access_handler_v2 req bio c =
 (** Handler for the legacy remote stats URL *)
 let remote_stats_handler req bio _ =
   wait_until_database_is_ready_for_clients ();
-	let fd = Buf_io.fd_of bio in (* fd only used for writing *)
 
   (* CA-20487: need to authenticate this URL, but only when we're not in pool rolling-upgrade mode; this
      URL is depricated and should be removed ASAP.. *)
@@ -129,16 +128,8 @@ let remote_stats_handler req bio _ =
 	auth_failed()
     end;
 
-  let body = Http_svr.read_body ~limit:Xapi_globs.http_limit_max_rpc_size req bio in
-  let body_xml = Xml.parse_string body in  
-  Stats.time_this "remote_stats"
-    (fun () ->
-       let stats = Monitor_transfer.unmarshall body_xml in
-       Server_helpers.exec_with_new_task "performance monitor"
-	 (fun __context -> Monitor_master.update_all ~__context stats);
-       let response = Xml.to_string (Db_rpc_common_v1.marshall_unit ()) in
-       Http_svr.response_str req fd response
-    )
+  let _ = Http_svr.read_body ~limit:Xapi_globs.http_limit_max_rpc_size req bio in
+  ()
 
 let cleanup_handler i =
   debug "Executing cleanup handler";
@@ -266,7 +257,6 @@ let on_master_restart ~__context =
   debug "master might have just restarted: refreshing non-persistent data in the master's database";
   Xapi_host_helpers.consider_enabling_host_request ~__context;
   debug "triggering an immediate refresh of non-persistent fields (eg memory)";
-  Monitor.on_restart ();
   (* To make the slave appear live we need to set the live flag AND send a heartbeat otherwise the master
      will mark the slave offline again before the regular heartbeat turns up. *)
   debug "sending an immediate heartbeat";
@@ -512,10 +502,11 @@ let resynchronise_ha_state () =
 let calculate_boot_time_host_free_memory () =
 	let ( + ) = Nativeint.add in
 	let host_info = with_xc (fun xc -> Xenctrl.physinfo xc) in
-	let host_free_pages = host_info.Xenctrl.free_pages in
-	let host_scrub_pages = host_info.Xenctrl.scrub_pages in
+	let open Xenctrl.Phys_info in
+	let host_free_pages = host_info.free_pages in
+	let host_scrub_pages = host_info.scrub_pages in
 	let domain0_info = with_xc (fun xc -> Xenctrl.domain_getinfo xc 0) in
-	let domain0_total_pages = domain0_info.Xenctrl.total_memory_pages in
+	let domain0_total_pages = domain0_info.Xenctrl.Domain_info.total_memory_pages in
 	let boot_time_host_free_pages =
 		host_free_pages + host_scrub_pages + domain0_total_pages in
 	let boot_time_host_free_kib =
@@ -780,7 +771,6 @@ let server_init() =
     Startup.run ~__context [
     "Reading config file", [], (fun () -> Xapi_config.read_config !Xapi_globs.config_file);
     "Reading external global variables definition", [ Startup.NoExnRaising ], Xapi_globs.read_external_config;
-    "Initing stunnel path", [], Stunnel.init_stunnel_path;
     "XAPI SERVER STARTING", [], print_server_starting_message;
     "Parsing inventory file", [], Xapi_inventory.read_inventory;
     "Initialising local database", [], init_local_database;
@@ -886,8 +876,6 @@ let server_init() =
       "heartbeat thread", [ Startup.NoExnRaising; Startup.OnThread ], Db_gc.start_heartbeat_thread;
       "resynchronising HA state", [ Startup.NoExnRaising ], resynchronise_ha_state;
       "pool db backup", [ Startup.OnlyMaster; Startup.OnThread ], Pool_db_backup.pool_db_backup_thread;
-      "monitor", [ Startup.OnThread ], Monitor.loop;
-      "monitor_dbcalls", [Startup.OnThread], Monitor_dbcalls.monitor_dbcall_thread;
       "touching ready file", [], (fun () -> Helpers.touch_file !Xapi_globs.ready_file);
        (* -- CRITICAL: this check must be performed before touching shared storage *)
       "Performing no-other-masters check", [ Startup.OnlyMaster ], check_no_other_masters;

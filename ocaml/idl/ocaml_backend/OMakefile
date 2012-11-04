@@ -50,7 +50,7 @@ autogen_idl: $(AUTOGEN_DIR)/client.ml $(AUTOGEN_DIR)/aPI.ml $(AUTOGEN_DIR)/serve
 # programs that depend on autogen files
 # -----------------------------------------------------------------------
 
-COMMON_OBJS = ref \
+COMMON_OBJS = ref ../api_errors \
 	../datamodel_types event_types \
 	../api_errors ../api_messages ../../xapi/xapi_globs \
 	../constants
@@ -134,7 +134,7 @@ OCAMLPACKS =
 OCamlLibrary(common, $(COMMON_OBJS))
 OCamlLibrary(client, $(CLIENT_OBJS))
 OCamlLibrary(server, $(SERVER_OBJS))
-OCamlLibrary(xapi_client, $(XAPI_CLIENT_OBJS))
+OCamlLibrary(xapi_client, $(CLIENT_OBJS))
 
 OCamlLibrary(htmldoc, htmldoc)
 
