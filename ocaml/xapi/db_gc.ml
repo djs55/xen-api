@@ -461,28 +461,6 @@ let gc_messages ~__context =
 module StringSet = Set.Make(struct type t = string let compare = compare end)
 let current_uncooperative_domains = ref StringSet.empty
 
-let update_vm_cooperativeness ~__context = 
-  (* Fetch the set of slave domain uuids which are currently uncooperative *)
-  let domains = Mutex.execute host_table_m (fun () -> Hashtbl.fold (fun _ ds acc -> List.fold_left (fun acc x -> StringSet.add x acc) acc ds) host_uncooperative_domains_table StringSet.empty) in
-  let domains = List.fold_left (fun acc x -> StringSet.add x acc) domains (Monitor.get_uncooperative_domains ()) in
-
-  (* New uncooperative domains: *)
-  let uncooperative_domains = StringSet.diff domains !current_uncooperative_domains in
-  (* New cooperative domains: *)
-  let cooperative_domains = StringSet.diff !current_uncooperative_domains domains in
-  let set_uncooperative_flag value uuid = 
-    try
-      let vm = Db.VM.get_by_uuid ~__context ~uuid in
-      Helpers.set_vm_uncooperative ~__context ~self:vm ~value;
-(*
-      if value then ignore(Xapi_message.create ~__context ~name:Api_messages.vm_uncooperative ~priority:1L ~cls:`VM ~obj_uuid:uuid ~body:"")
-*)
-    with _ -> () in
-  StringSet.iter (set_uncooperative_flag true) uncooperative_domains;
-  StringSet.iter (set_uncooperative_flag false) cooperative_domains;
-
-  current_uncooperative_domains := domains
-
 let single_pass () = 
 	Server_helpers.exec_with_new_task "DB GC"
 		(fun __context ->
@@ -506,7 +484,6 @@ let single_pass () =
 					(* timeout_alerts ~__context; *)
 					(* CA-29253: wake up all blocked clients *)
 					Xapi_event.heartbeat ~__context;
-					update_vm_cooperativeness ~__context;
 					);
 	Mutex.execute use_host_heartbeat_for_liveness_m
 		(fun () -> 
@@ -533,11 +510,9 @@ let send_one_heartbeat ~__context ?(shutting_down=false) rpc session_id =
   let localhost = Helpers.get_localhost ~__context in
   let time = Unix.gettimeofday () +. (if Xapi_fist.insert_clock_skew () then Xapi_globs.max_clock_skew *. 2. else 0.) in
   (* Transmit the list of uncooperative domains to the master *)
-  let uncooperative_domains = Monitor.get_uncooperative_domains () in
 
   let stuff = 
-    [ _time, string_of_float time;
-      _uncooperative_domains, String.concat "," uncooperative_domains ]
+    [ _time, string_of_float time; ]
 	  @ (if shutting_down then [ _shutting_down, "true" ] else [])
   in
       
