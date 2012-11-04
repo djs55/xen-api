@@ -5,6 +5,7 @@ OCAMLPACKS    = xml-light2 stdext stunnel http-svr log rpc-light
 UseCamlp4(rpc-light.syntax, v6rpc v6errors)
 
 V6FILES = \
+	../xapi/features \
 	../fhs \
 	fakev6 \
 	v6rpc \
