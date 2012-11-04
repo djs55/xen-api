@@ -1589,7 +1589,7 @@ module VBD = struct
 				try
 					(* We always try to destroy the datapath even if the device has
 					   already been shutdown and deactivated (as in the suspend path) *)
-					let domid = Opt.map (fun di -> di.Xenctrl.domid) (di_of_uuid ~xc ~xs Oldest (Uuid.uuid_of_string vm)) in
+					let domid = Opt.map (fun di -> di.domid) (di_of_uuid ~xc ~xs Oldest (Uuid.uuid_of_string vm)) in
 					finally
 						(fun () ->
 							(* If the device is gone then this is ok *)
