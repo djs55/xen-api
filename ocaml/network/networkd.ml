@@ -71,14 +71,16 @@ let start () =
 				ignore (Dhclient.start name []);
 			try
 				let ip, _ = List.hd (Ip.get_ipv4 name) in
+				info "Binding to %s" (Unix.string_of_inet_addr ip);
 				let himn_sock = Http_svr.bind (Unix.ADDR_INET(ip, 4094)) "HIMN-RPC" in
+(*
 				with_xs (fun xs ->
 					let domid = xs.Xenstore.Xs.read "domid" in
 					let path = "/local/domain/" ^ domid ^ "/attr/xenapi/ip" in
 					let ip = Unix.string_of_inet_addr ip in
 					debug "writing IP %s to %s" ip path;
 					xs.Xenstore.Xs.write path ip
-				);
+				);*)
 				Http_svr.start server himn_sock
 			with _ -> ()
 		end

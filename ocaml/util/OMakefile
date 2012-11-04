@@ -3,7 +3,7 @@ OCAML_LIBS = ../fhs
 
 #OCamlLibrary(util_globs_inventory, util_globs_inventory)
 OCamlLibrary(util_inventory, util_globs_inventory util_inventory)
-OCamlLibrary(version,        util_globs_inventory util_inventory version)
+OCamlLibrary(version,        util_globs_inventory util_inventory version ../fhs)
 #OCamlDocLibrary(version, version_pre)
 
 OCamlLibrary(sanitycheck, sanitycheck)

@@ -39,7 +39,7 @@ let call_script ?(log_successful_output=false) script args =
 	try
 		Unix.access script [ Unix.X_OK ];
 		(* Use the same $PATH as xapi *)
-		let env = [| "PATH=" ^ (Sys.getenv "PATH") |] in
+		let env = try [| "PATH=" ^ (Sys.getenv "PATH") |] with Not_found -> [| |] in
 		let output, _ = Forkhelpers.execute_command_get_output ~env script args in
 		if log_successful_output then
 			debug "Call '%s %s' succeeded [output = '%s']" script (String.concat " " args) output;
@@ -55,10 +55,11 @@ let call_script ?(log_successful_output=false) script args =
 		raise (Script_error ["script", script; "args", String.concat " " args; "code",
 			string_of_int n; "stdout", stdout; "stderr", stderr])
 
-let with_xs f =
+let with_xs f = assert false
+(*
 	let xs = Xenstore.Xs.domain_open () in
 	finally (fun () -> f xs) (fun () -> Xenstore.Xs.close xs)
-
+*)
 module Sysfs = struct
 	let list () =
 		let all = Array.to_list (Sys.readdir "/sys/class/net") in
@@ -91,8 +92,8 @@ module Sysfs = struct
 
 	let is_vif_front name =
 		try
-			let link = Unix.readlink (getpath name "device") in
-			String.has_substr link "xen/vif"
+			let link = Unix.readlink (getpath name "device/driver") in
+			String.has_substr link "/xen/"
 		with _ -> false
 
 	let get_carrier name =
