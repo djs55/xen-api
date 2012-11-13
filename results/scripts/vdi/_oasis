@@ -1,0 +1,16 @@
+OASISFormat: 0.2
+Name:        starter
+Version:     1.0
+Synopsis:    Incremental VM starter
+Authors:     see CREDITS.md
+License:     LGPL-2.1 with OCaml linking exception
+Plugins:     META (0.2)
+BuildTools:  ocamlbuild
+
+Executable start
+  CompiledObject:     best
+  Path:               src
+  MainIs:             main.ml
+  Custom:             true
+  Install:            false
+  BuildDepends:       lwt, lwt.unix, cohttp, cohttp.lwt, xen-api-client.lwt, rpc, xenstore, xenstore.server
