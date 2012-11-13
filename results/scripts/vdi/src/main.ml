@@ -62,8 +62,11 @@ let xmlrpc rpc =
 			let name = match vm with
 				| None -> make_anonymous_name ()
 				| Some x -> x in
-			if Hashtbl.mem login_wakeup name
-			then Lwt.wakeup_later (Hashtbl.find login_wakeup name) ();
+			if Hashtbl.mem login_wakeup name then begin
+				let u = Hashtbl.find login_wakeup name in
+				Hashtbl.remove login_wakeup name;
+				Lwt.wakeup_later u ()
+			end;
 			Rpc.String name
 		| "report_error", [ Rpc.String vm; Rpc.String message ] ->
 			error "ERROR %s %s" vm message;
