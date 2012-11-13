@@ -110,10 +110,15 @@ let make_server () =
 			| `GET, _ ->
 				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:"hello" ()
 			| `POST, _ ->
-				(* debug "POST [%s]" body; *)
-				let request = Xmlrpc.call_of_string body in
-				let response = to_string (xmlrpc request) in
-				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:response ()
+				begin
+					try
+						let request = Xmlrpc.call_of_string body in
+						let response = to_string (xmlrpc request) in
+						Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:response ()
+					with e ->
+						error "POST [%s]: %s" body (Printexc.to_string e);
+						raise e
+				end
 			| _, _ ->
 				Cohttp_lwt_unix.Server.respond_not_found ~uri:(Request.uri req) ()
 	in
