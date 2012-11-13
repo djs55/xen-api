@@ -127,9 +127,18 @@ let start_vms () =
 							return ()
 						) vm_rec.API.vM_VIFs in
 					let now = Unix.gettimeofday () in
-					lwt () = VM.start rpc session_id vm false false in
-					debug "START %s %.0f %.0f" vm_rec.API.vM_name_label (now -. process_start) (Unix.gettimeofday () -. process_start);
-					lwt () = t in
+					lwt () =
+							try_lwt
+								lwt () = VM.start rpc session_id vm false false in
+								debug "START %s %.0f %.0f" vm_rec.API.vM_name_label (now -. process_start) (Unix.gettimeofday () -. process_start);
+								t
+							with
+								| Api_errors.Server_error(code, params) ->
+									error "ERROR %s %s %s" vm_rec.API.vM_name_label code (String.concat " " params);
+									return ()
+								| e ->
+									error "ERROR %s %s" vm_rec.API.vM_name_label (Printexc.to_string e);
+									return () in
 					return ()
 				end else return ()
             ) vms in
