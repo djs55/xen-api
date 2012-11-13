@@ -1,5 +1,6 @@
 open Lwt
 open Cohttp
+open Cohttp_lwt_unix
 open Xen_api
 open Xen_api_lwt_unix
 
@@ -8,6 +9,8 @@ let username = ref "root"
 let password = ref "password"
 
 let debug fmt = Logging.debug "starter" fmt
+let info  fmt = Logging.info  "starter" fmt
+
 let warn  fmt = Logging.warn  "starter" fmt
 let error fmt = Logging.error "starter" fmt
 
@@ -20,44 +23,15 @@ let rec logging_thread logger =
 			) lines in
 	logging_thread logger
 
-let startswith prefix x = String.length x >= (String.length prefix) && (String.sub x 0 (String.length prefix) = prefix)
-
 let port = ref 8080
 
-open Cohttp_lwt_unix
 
-(*
-<?xml version='1.0'?>
-<methodCall>
-<methodName>hello</methodName>
-<params>
-<param>
-<value><string>
-Physical Address    Transport Name                                            
-=================== ==========================================================
-72-D0-B7-94-68-C7   \Device\Tcpip_{59D14E22-9CA7-41C2-846C-AC942C229C24}      
-</string></value>
-</param>
-</params>
-</methodCall>
-
-<?xml version='1.0'?>
-<methodCall>
-<methodName>report_error</methodName>
-<params>
-<param>
-<value><string>OpaqueRef:cfa12479-2352-2c9b-ea37-b8109744acdd</string></value>
-</param>
-<param>
-<value><string>&lt;ProtocolError for 10.81.64.61:8080/RPC2: 404 Not Found&gt;</string></value>
-</param>
-</params>
-</methodCall>
-*)
 let mac_address_regex = Re.compile(Re_posix.re "[0-9A-F][0-9A-F]-[0-9A-F][0-9A-F]-[0-9A-F][0-9A-F]-[0-9A-F][0-9A-F]-[0-9A-F][0-9A-F]-[0-9A-F][0-9A-F]")
 
-(* table of MAC to VM reference *)
+(* table of MAC to VM name label *)
 let mac_to_vm = Hashtbl.create 128
+
+let login_wakeup = Hashtbl.create 128
 
 let make_anonymous_name =
 	let counter = ref 0 in
@@ -65,21 +39,46 @@ let make_anonymous_name =
 		incr counter;
 		Printf.sprintf "anonymous-%d" !counter
 
-let xmlrpc body =
-	let rpc = Xmlrpc.call_of_string body in
+let process_start = Unix.gettimeofday ()
+
+let xmlrpc rpc =
 	match rpc.Rpc.name, rpc.Rpc.params with
 		| "hello", [ Rpc.String payload ] ->
+			debug "hello %s" payload;
 			let macs = Re.get_all (Re.exec mac_address_regex payload) in
 			let vm = List.fold_left (fun acc mac -> match acc with
 				| Some x -> Some x
 				| None -> if Hashtbl.mem mac_to_vm mac then Some (Hashtbl.find mac_to_vm mac) else None
 			) None (Array.to_list macs) in
-			begin match vm with
+			let name = match vm with
 				| None -> make_anonymous_name ()
-				| Some x -> x
-			end
-		| _ ->
-			"Not found"
+				| Some x -> x in
+			if Hashtbl.mem login_wakeup name
+			then Lwt.wakeup_later (Hashtbl.find login_wakeup name) ();
+			Rpc.success (Rpc.String name)
+		| "report_error", [ Rpc.String vm; Rpc.String message ] ->
+			error "ERROR %s %s" vm message;
+			Rpc.success (Rpc.String "sorry to hear it")
+		| "login_vsi_results", [ Rpc.String vm; Rpc.Dict results ] ->
+			debug "login_vsi_results %s %s" vm (Jsonrpc.to_string (Rpc.Dict results));
+			List.iter
+				(function
+					| (_, Rpc.Enum ts) ->
+						List.iter
+							(function
+								| Rpc.String line ->
+									let bits = Array.of_list(Re_str.(split_delim (regexp "[,]") line)) in
+									(* Overwrite the hostname with the VM name label *)
+									bits.(3) <- vm;
+									let line = String.concat "," (Array.to_list bits) in
+									info "VSI %s" line
+								| _ -> debug "failed to parse loginvsi results"
+							) ts
+					| _ -> debug "failed to parse loginvsi results"
+				) results;
+			Rpc.success (Rpc.String "whatever")
+		| _, _ ->
+			Rpc.failure (Rpc.String "unknown method")
 
 let make_server () =
 	debug "Started server on port %d" !port;
@@ -96,7 +95,9 @@ let make_server () =
 				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:"hello" ()
 			| `POST, _ ->
 				debug "POST [%s]" body;
-				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:(xmlrpc body) ()
+				let request = Xmlrpc.call_of_string body in
+				let response = Xmlrpc.string_of_response (xmlrpc request) in
+				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:response ()
 			| _, _ ->
 				Cohttp_lwt_unix.Server.respond_not_found ~uri:(Request.uri req) ()
 	in
@@ -107,11 +108,6 @@ let make_server () =
 	let config = { Cohttp_lwt_unix.Server.callback; conn_closed } in
 	server ~address:"0.0.0.0" ~port:!port config
 
-let exn_to_string = function
-        | Api_errors.Server_error(code, params) ->
-                Printf.sprintf "%s %s" code (String.concat " " params)
-        | e -> Printexc.to_string e
-
 let start_vms () =
     let rpc = make !uri in
     lwt session_id = Session.login_with_password rpc !username !password "1.0" in
@@ -121,6 +117,8 @@ let start_vms () =
             (fun (vm, vm_rec) ->
 				if List.mem_assoc "test" vm_rec.API.vM_other_config then begin
 					debug "Processing VM %s\n" vm_rec.API.vM_name_label;
+					let t, u = Lwt.task () in
+					Hashtbl.replace login_wakeup vm_rec.API.vM_name_label u;
 					lwt () = Lwt_list.iter_s
 						(fun vif ->
 							lwt mac = VIF.get_MAC rpc session_id vif in
@@ -128,6 +126,10 @@ let start_vms () =
 							Hashtbl.replace mac_to_vm mac vm_rec.API.vM_name_label;
 							return ()
 						) vm_rec.API.vM_VIFs in
+					let now = Unix.gettimeofday () in
+					lwt () = VM.start rpc session_id vm false false in
+					debug "START %s %.0f %.0f" vm_rec.API.vM_name_label (now -. process_start) (Unix.gettimeofday () -. process_start);
+					lwt () = t in
 					return ()
 				end else return ()
             ) vms in
