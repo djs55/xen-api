@@ -46,6 +46,15 @@ let xmlrpc rpc =
 		| "hello", [ Rpc.String payload ] ->
 			debug "hello %s" payload;
 			let macs = Re.get_all (Re.exec mac_address_regex payload) in
+			(* Switch to lowercase with colons *)
+			let macs = Array.map
+				(fun x ->
+					let m = String.lowercase x in
+					for i = 0 to String.length m - 1 do
+						if m.[i] = '-' then m.[i] <- ':'
+					done;
+					m
+				) macs in
 			let vm = List.fold_left (fun acc mac -> match acc with
 				| Some x -> Some x
 				| None -> if Hashtbl.mem mac_to_vm mac then Some (Hashtbl.find mac_to_vm mac) else None
@@ -55,10 +64,10 @@ let xmlrpc rpc =
 				| Some x -> x in
 			if Hashtbl.mem login_wakeup name
 			then Lwt.wakeup_later (Hashtbl.find login_wakeup name) ();
-			Rpc.success (Rpc.String name)
+			Rpc.String name
 		| "report_error", [ Rpc.String vm; Rpc.String message ] ->
 			error "ERROR %s %s" vm message;
-			Rpc.success (Rpc.String "sorry to hear it")
+			Rpc.String "sorry to hear it"
 		| "login_vsi_results", [ Rpc.String vm; Rpc.Dict results ] ->
 			debug "login_vsi_results %s %s" vm (Jsonrpc.to_string (Rpc.Dict results));
 			List.iter
@@ -76,9 +85,16 @@ let xmlrpc rpc =
 							) ts
 					| _ -> debug "failed to parse loginvsi results"
 				) results;
-			Rpc.success (Rpc.String "whatever")
+			Rpc.String "whatever"
 		| _, _ ->
-			Rpc.failure (Rpc.String "unknown method")
+			Rpc.String "unknown method"
+
+let to_string v =
+	let b = Buffer.create 256 in
+	Buffer.add_string b "<?xml version=\"1.0\"?><methodResponse><params><param>";
+	Buffer.add_string b (Xmlrpc.to_string v);
+	Buffer.add_string b "</param></params></methodResponse>";
+	Buffer.contents b
 
 let make_server () =
 	debug "Started server on port %d" !port;
@@ -94,16 +110,14 @@ let make_server () =
 			| `GET, _ ->
 				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:"hello" ()
 			| `POST, _ ->
-				debug "POST [%s]" body;
+				(* debug "POST [%s]" body; *)
 				let request = Xmlrpc.call_of_string body in
-				let response = Xmlrpc.string_of_response (xmlrpc request) in
+				let response = to_string (xmlrpc request) in
 				Cohttp_lwt_unix.Server.respond_string ~status:`OK ~body:response ()
 			| _, _ ->
 				Cohttp_lwt_unix.Server.respond_not_found ~uri:(Request.uri req) ()
 	in
 	let conn_closed conn_id () = () in
-
-	let (_: 'a Lwt.t) = logging_thread Logging.logger in
 
 	let config = { Cohttp_lwt_unix.Server.callback; conn_closed } in
 	server ~address:"0.0.0.0" ~port:!port config
@@ -130,7 +144,7 @@ let start_vms () =
 					lwt () =
 							try_lwt
 								lwt () = VM.start rpc session_id vm false false in
-								debug "START %s %.0f %.0f" vm_rec.API.vM_name_label (now -. process_start) (Unix.gettimeofday () -. process_start);
+								info "START %s %.0f %.0f" vm_rec.API.vM_name_label (now -. process_start) (Unix.gettimeofday () -. process_start);
 								t
 							with
 								| Api_errors.Server_error(code, params) ->
