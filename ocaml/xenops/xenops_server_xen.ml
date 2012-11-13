@@ -1053,7 +1053,16 @@ module VM = struct
 			(function
 				| (_, (_, Device d)) ->
 					debug "Requesting early shutdown of dom0 frontend";
-					Device.Vbd.clean_shutdown_async ~xs d
+					Device.Vbd.clean_shutdown_async ~xs d;
+					(* XXX: this will be slow, but thorough. Do not use for boot storm tests. *)
+					let (_: Thread.t) = Thread.create
+						(fun () ->
+							with_xs
+								(fun xs ->
+									Device.Vbd.clean_shutdown_wait task ~xs ~ignore_transients:true d
+								)
+						) () in
+					()
 				| _ -> ()
 			) vmextra.VmExtra.non_persistent.VmExtra.qemu_vbds;
 		match vm.Vm.ty with
