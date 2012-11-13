@@ -17,7 +17,7 @@ module DU = Datamodel_utils
 module OU = Ocaml_utils
 open DT
 
-let module_name = "Client"
+let module_name = "ClientF"
 let async_module_name = "Async"
 let signature_name = "API"
 
@@ -154,10 +154,11 @@ let gen_module api : O.Module.t =
       ~ty:return_type
       ~body:(List.map to_xmlrpc args @ [
 	       if is_ctor then ctor_record else "";
-	       Printf.sprintf "%s(rpc_wrapper rpc \"%s\" [ %s ])"
-		 (from_xmlrpc x.msg_result)
+	       Printf.sprintf "rpc_wrapper rpc \"%s\" [ %s ] >>= fun x -> return (%s x)"
 		 wire_name
 		 (String.concat "; " rpc_args)
+		 (from_xmlrpc x.msg_result)
+
 	     ]) () in
 
   (* Convert an object into a Module *)
@@ -174,14 +175,17 @@ let gen_module api : O.Module.t =
       ~elements:fields ()
   in
   let preamble = [
+	"let (>>=) = X.bind";
+	"let return = X.return";
     "let rpc_wrapper rpc name args = ";
-    "  match From.methodResponse(rpc(To.methodCall name args)) with";
-    "  | Fault _ -> invalid_arg \"Client.rpc (Fault _)\"";
-    "  | Success [] -> XMLRPC.To.structure [] (* dummy value *)";
-    "  | Success [x] -> x";
-    "  | Success _ -> invalid_arg \"more than one result from an RPC\"";
-    "  | Failure(code, strings) -> server_failure code strings";
-	"  | _ -> invalid_arg \"unexpected result from an RPC\"";
+	"  rpc(To.methodCall name args) >>= fun x ->";
+    "  match From.methodResponse(x) with";
+    "  | Fault _ -> return (invalid_arg \"Client.rpc (Fault _)\")";
+    "  | Success [] -> return (XMLRPC.To.structure []) (* dummy value *)";
+    "  | Success [x] -> return x";
+    "  | Success _ -> return (invalid_arg \"more than one result from an RPC\")";
+    "  | Failure(code, strings) -> return (server_failure code strings)";
+	"  | _ -> return (invalid_arg \"unexpected result from an RPC\")";
   ]
   in
   let async =
@@ -199,7 +203,7 @@ let gen_module api : O.Module.t =
   O.Module.make
     ~name:module_name
     ~preamble:preamble
-    ~args:[]
+    ~args:["X : IO"]
     ~elements:(O.Module.Module async ::
 		 List.map (fun x -> O.Module.Module (obj ~sync:true x)) all_objs) ()
 

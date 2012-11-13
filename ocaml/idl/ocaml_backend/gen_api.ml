@@ -42,10 +42,13 @@ let gen_client highapi =
 	  "open XMLRPC";
 	  "open API";
 	  "module type RPC = sig val rpc: xml -> xml end";
-	  "";
+	  "module type IO = sig type 'a t val bind : 'a t -> ('a -> 'b t) -> 'b t val return : 'a -> 'a t end";
 	  "let server_failure code args = raise (Api_errors.Server_error (code, args))";
 	];
 	O.Module.strings_of (Gen_client.gen_module highapi);
+	[ "module Id = struct type 'a t = 'a let bind x f = f x let return x = x end";
+	  "module Client = ClientF(Id)"]
+	
        ])
 
 let gen_client_types highapi =
