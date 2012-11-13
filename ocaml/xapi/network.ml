@@ -92,8 +92,8 @@ let driver_domain_devs ~__context other_config =
 				let devs = List.filter_map (fun uuid ->
 					let pif = Db.PIF.get_by_uuid ~__context ~uuid in
 					if Db.PIF.get_physical ~__context ~self:pif then begin
-						let metrics = Db.PIF.get_metrics ~__context ~self:pif in
-						let path = Db.PIF_metrics.get_pci_bus_path ~__context ~self:metrics in
+						let path = "0000:02:00.0" in
+						warn "XXX hardcoded PCI %s" path;
 						let dev = Some ((string_of_int !index) ^ "/" ^ path) in
 						index := !index + 1;
 						dev
