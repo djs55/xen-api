@@ -598,6 +598,7 @@ let register_event_hook () =
 	repopulate_cache ();
 	Xapi_event.message_get_since_for_events := get_since_for_events
 
+(*
 (* Query params: cls=VM etc, obj_uuid=<..>, min_priority. Returns the last
    days worth of messages as an RSS feed. *)
 let rss_handler (req: Http.Request.t) (bio: Buf_io.t) _ =
@@ -649,6 +650,7 @@ let rss_handler (req: Http.Request.t) (bio: Buf_io.t) _ =
 				  (Int64.of_int (String.length body))
 				  ~version:"1.1" ~keep_alive:false ())@[Http.Hdr.content_type ^": application/rss+xml"]);
 	  ignore(Unix.write s body 0 (String.length body)))
+*)
 
 (** Handler for PUTing messages to a host.
 	Query params: { cls=<obj class>, uuid=<obj uuid> } *)
