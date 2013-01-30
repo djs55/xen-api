@@ -38,20 +38,6 @@ Group: System/Hypervisor
 %description tests
 This package contains a series of simple regression tests.
 
-%package squeezed
-Summary: The memory ballooning daemon
-Group: System/Hypervisor
-
-%description squeezed
-This package contains the Xen virtual firmware (hvmloader)
-
-%package xenopsd
-Summary: The xenops daemon
-Group: System/Hypervisor
-
-%description xenopsd
-This package contains the xenops daemon.
-
 %package v6d
 Summary: The editions and features daemon
 Group: System/Hypervisor
@@ -76,13 +62,6 @@ Group: System/Hypervisor
 This package contains a daemon that continually collects performance metrics
 from the host and its VMs, stores the data in host's memory, and occasionally
 synchronises the data to host's local storage.
-
-%package xenops
-Summary: Low-level debugging tools
-Group: System/Hypervisor
-
-%description xenops
-This package contains the xenops-based low-level debugging tools.
 
 %package client-devel
 Summary: xapi Development Headers and Libraries
@@ -149,12 +128,6 @@ rm -rf $RPM_BUILD_ROOT
 
 %post rrdd
 [ ! -x /sbin/chkconfig ] || chkconfig --add xcp-rrdd
-
-%post squeezed
-[ ! -x /sbin/chkconfig ] || chkconfig squeezed on
-
-%post xenopsd
-[ ! -x /sbin/chkconfig ] || chkconfig xenopsd on
 
 %post v6d
 [ ! -x /sbin/chkconfig ] || chkconfig --add v6d
@@ -294,24 +267,6 @@ rm -rf $RPM_BUILD_ROOT
 /usr/bin/xe
 /etc/bash_completion.d/xe
 
-%files squeezed
-%defattr(-,root,root,-)
-@OPTDIR@/libexec/squeezed
-/etc/rc.d/init.d/squeezed
-%config(noreplace) /etc/squeezed.conf
-
-%files xenopsd
-%defattr(-,root,root,-)
-@OPTDIR@/libexec/xenopsd
-/etc/rc.d/init.d/xenopsd
-%config(noreplace) /etc/xenopsd.conf
-@OPTDIR@/bin/xn
-/usr/bin/xn
-/etc/xensource/bugtool/xenopsd.xml
-/etc/xensource/bugtool/xenopsd/stuff.xml
-@OPTDIR@/libexec/xn_diagnostics
-@OPTDIR@/libexec/domain_sethandle
-
 %files v6d
 %defattr(-,root,root,-)
 @OPTDIR@/libexec/v6d
@@ -331,30 +286,6 @@ rm -rf $RPM_BUILD_ROOT
 @OPTDIR@/libexec/rrdd-example.py
 @OPTDIR@/libexec/rrdd-example.pyc
 @OPTDIR@/libexec/rrdd-example.pyo
-
-%files xenops
-%defattr(-,root,root,-)
-@OPTDIR@/debug/xenops
-@OPTDIR@/debug/add_vbd
-@OPTDIR@/debug/add_vif
-@OPTDIR@/debug/build_domain
-@OPTDIR@/debug/build_hvm
-@OPTDIR@/debug/create_domain
-@OPTDIR@/debug/debug_ha_query_liveset
-@OPTDIR@/debug/destroy_domain
-@OPTDIR@/debug/event_listen
-@OPTDIR@/debug/graph
-@OPTDIR@/debug/memory_breakdown
-@OPTDIR@/debug/memory_summary
-@OPTDIR@/debug/pause_domain
-@OPTDIR@/debug/restore_domain
-@OPTDIR@/debug/shutdown_domain
-@OPTDIR@/debug/sm_stress
-@OPTDIR@/debug/suspend_domain
-@OPTDIR@/debug/unpause_domain
-@OPTDIR@/debug/vncproxy
-@OPTDIR@/debug/with-vdi
-@OPTDIR@/debug/xs
 
 %files tests
 %defattr(-,root,root,-)
