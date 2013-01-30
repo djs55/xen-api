@@ -1,4 +1,5 @@
 OCAMLINCLUDES += ../xapi ..
+OCAMLPACKS += uuid forkexec
 
 .PHONY: clean
 clean:

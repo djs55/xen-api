@@ -1,5 +1,6 @@
 OTHER_CLIBS = -cclib -lpam
 OCAMLINCLUDES += ../autogen ../idl/ocaml_backend ../idl ../xapi ..
+OCAMLPACKS += forkexec
 
 StaticCLibrary(auth_stubs, xa_auth xa_auth_stubs)
 OCamlLibraryClib(pam, pam, auth_stubs)

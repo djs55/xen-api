@@ -9,7 +9,7 @@ AUTOGEN_HELPER_DIR = ../../database
 
 OCAMLINCLUDES += .. ../.. ../../database $(AUTOGEN_DIR) ../../xapi ../../client_records ../../util
 
-OCAMLPACKS += sexpr xml-light2 http-svr rpclib stunnel uuid
+OCAMLPACKS += sexpr xml-light2 http-svr rpclib stunnel uuid gzip
 
 CAMLP4_FILES = event_types
 
