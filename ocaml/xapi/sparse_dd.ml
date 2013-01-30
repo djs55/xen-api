@@ -255,7 +255,7 @@ module Nbd_writer = struct
 			(* Consume replies forever *)
 			debug "receiver thread started consuming replies";
 			while true do
-				match Nbd.write_wait fd with
+				match Nbd_unix.write_wait fd with
 					| offset, None ->
 						Mutex.execute m
 							(fun () ->
@@ -287,7 +287,7 @@ module Nbd_writer = struct
 							Condition.wait c m
 						done;
 						debug "DISCONNECT";
-						Nbd.disconnect_async fd (-1L);
+						Nbd_unix.disconnect_async fd (-1L);
 			)
 
 	let op fd' offset { buf = buf; offset = ofs; len = len } =
@@ -309,7 +309,7 @@ module Nbd_writer = struct
 				request_sent_times := Int64Map.add offset (Unix.gettimeofday ()) !request_sent_times;
 			);
 		(* debug "REQUEST offset=%Ld buf ofs=%d len=%d num_inflight_requests=%Ld [ %s ]" offset ofs len reqs (string_of_inflight_requests ()); *)
-		Nbd.write_async fd' offset buf ofs len offset
+		Nbd_unix.write_async fd' offset buf ofs len offset
 end
 
 module Null_writer = struct
@@ -399,7 +399,7 @@ let file_dd ?(progress_cb = (fun _ -> ())) ?size ?bat erase write_zeroes src dst
 				if is_nbd 
 				then begin
 					debug "Writing NBD encoding to fd: %d" (Unixext.int_of_file_descr ofd);
-					let (size,flags) = Nbd.negotiate ofd in
+					let (size,flags) = Nbd_unix.negotiate ofd in
 					ignore((size,flags));
 					let stats = Nbd_copy.copy progress_cb bat erase write_zeroes ifd ofd !blocksize size in
 					Nbd_writer.wait_for_last_reply ();
