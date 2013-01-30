@@ -12,6 +12,8 @@
  * GNU Lesser General Public License for more details.
  *)
 
+module Syslog = Syslog_transitional
+
 let name = "xcp-networkd"
 
 open Pervasiveext

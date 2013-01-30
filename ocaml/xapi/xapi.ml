@@ -14,6 +14,8 @@
 (**
  * @group Main Loop and Start-up
  *)
+
+module Syslog = Syslog_transitional
  
 open Printf
 open Stringext

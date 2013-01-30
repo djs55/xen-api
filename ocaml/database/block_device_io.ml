@@ -90,6 +90,8 @@
 
 open Pervasiveext
 
+module Syslog = Syslog_transitional
+
 module R = Debug.Debugger(struct let name = "block_device_io" end)
 
 let magic = "redo-log--------" (* 16 bytes *)

@@ -12,6 +12,8 @@
  * GNU Lesser General Public License for more details.
  *)
 
+module Syslog = Syslog_transitional
+
 module P = V6rpc.V6process(Fakev6)
 
 module D=Debug.Debugger(struct let name="v6daemon" end)

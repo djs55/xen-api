@@ -599,6 +599,8 @@ let read_config () =
 	with Config.Error ls ->
 		List.iter (fun (p, s) -> debug "Config file error: %s: %s\n" p s) ls
 
+module Syslog = Syslog_transitional
+
 (* Entry point. *)
 let _ =
 	(* Prevent shutdown due to sigpipe interrupt. This protects against

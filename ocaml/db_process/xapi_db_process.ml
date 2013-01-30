@@ -11,6 +11,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
+
+module Syslog = Syslog_transitional
+
 module D = Debug.Debugger(struct let name = "xapi-db-process" end)
 open D
 
