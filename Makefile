@@ -81,6 +81,9 @@ all: version ocaml/fhs.ml
 	omake -j 8 phase3
 	@make test
 
+.PHONY: config
+config: version ocaml/fhs.ml
+
 .PHONY: phase3
 phase3:
 	omake phase3
