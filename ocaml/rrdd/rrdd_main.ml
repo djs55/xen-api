@@ -541,7 +541,7 @@ let read_all_dom0_stats xc =
 			[]
 	in
 	let vcpus, uuid_domids, domids = update_vcpus xc domains in
-	Hashtbl.remove_other_keys memory_targets domids;
+	Hashtblext.remove_other_keys memory_targets domids;
 	let real_stats = List.concat [
 		handle_exn "ha_stats" (fun _ -> Rrdd_ha_stats.all ()) [];
 		handle_exn "read_mem_metrics" (fun _ -> read_mem_metrics xc) [];

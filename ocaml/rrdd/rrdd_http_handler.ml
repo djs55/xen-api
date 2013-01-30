@@ -52,7 +52,7 @@ let get_host_stats ?(json = false) ~(start : int64) ~(interval : int64)
 		~(cfopt : Rrd.cf_type option) ~(is_host : bool) ?(uuid : string option) () =
 	Mutex.execute mutex (fun () ->
 		let prefixandrrds =
-			let vmsandrrds = Hashtbl.to_list vm_rrds in
+			let vmsandrrds = Hashtbl.fold (fun k v acc -> (k, v) :: acc) vm_rrds [] in
 			let vmsandrrds =
 				match uuid with
 				| None -> vmsandrrds

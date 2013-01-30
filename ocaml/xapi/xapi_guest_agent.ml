@@ -282,5 +282,5 @@ let sync_cache valid_domids =
 		(fun _ ->
 			let stored_domids = Hashtbl.fold (fun k v acc -> k::acc) cache [] in
 			List.iter (fun domid -> if not (List.mem domid valid_domids) then dead_domains := IntSet.remove domid !dead_domains) stored_domids;
-			Hashtbl.remove_other_keys cache valid_domids;
+			Hashtblext.remove_other_keys cache valid_domids;
 		)

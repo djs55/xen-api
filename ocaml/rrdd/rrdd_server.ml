@@ -507,7 +507,7 @@ module Plugin = struct
 	(* Read, parse, and combine metrics from all registered plugins. *)
 	let read_stats () : (Rrd.ds_owner * Ds.ds) list =
 		let uids =
-			Mutex.execute registered_m (fun _ -> Hashtbl.fold_keys registered) in
+			Mutex.execute registered_m (fun _ -> Hashtbl.fold (fun k _ acc -> k :: acc) registered []) in
 		let process_plugin acc uid =
 			try
 				let payload = read_file uid in
