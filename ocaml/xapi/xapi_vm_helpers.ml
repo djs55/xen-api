@@ -19,7 +19,6 @@ open Stringext
 open Printf
 open Xapi_vm_memory_constraints
 open Listext
-open Xenstore
 
 module D=Debug.Debugger(struct let name="xapi" end)
 open D

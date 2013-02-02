@@ -19,7 +19,6 @@
 
 open Fun
 open Http
-open Xenops_helpers
 
 module D = Debug.Debugger(struct let name="console" end)
 open D
