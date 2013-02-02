@@ -22,7 +22,6 @@ open Printf
 open Create_misc
 open Client
 open Pervasiveext
-open Xenstore
 
 module D=Debug.Debugger(struct let name="dbsync" end)
 open D
@@ -124,41 +123,33 @@ let record_host_memory_properties ~__context =
 		Int64.mul 1024L (Int64.mul 1024L mib) in
 	let metrics = Db.Host.get_metrics ~__context ~self in
 	Db.Host_metrics.set_memory_total ~__context ~self:metrics ~value:total_memory_bytes;
-	let boot_memory_file = Xapi_globs.initial_host_free_memory_file in
-	let boot_memory_string =
+	let boot_memory_bytes =
 		try
-			Some (Unixext.string_of_file boot_memory_file)
+			Memory_client.Client.get_host_initial_free_memory "dbsync"
 		with e ->
-			warn "Could not read host free memory file. This may prevent \
-			VMs from being started on this host. (%s)" (Printexc.to_string e);
-			None in
-	maybe
-		(fun boot_memory_string ->
-			let boot_memory_bytes = Int64.of_string boot_memory_string in
-			(* Host memory overhead comes from multiple sources:         *)
-			(* 1. obvious overhead: (e.g. Xen, crash kernel).            *)
-			(*    appears as used memory.                                *)
-			(* 2. non-obvious overhead: (e.g. low memory emergency pool) *)
-			(*    appears as free memory but can't be used in practice.  *)
-			let obvious_overhead_memory_bytes =
-				total_memory_bytes -- boot_memory_bytes in
-			let nonobvious_overhead_memory_kib = 
-				try
-					Memory_client.Client.get_host_reserved_memory "dbsync"
-				with e ->
-					error "Failed to contact ballooning service: \
-						host memory overhead may be too small (%s)"
-						(Printexc.to_string e);
-					0L
-			in
-			let nonobvious_overhead_memory_bytes =
-				Int64.mul 1024L nonobvious_overhead_memory_kib in
-			Db.Host.set_boot_free_mem ~__context ~self
-				~value:boot_memory_bytes;
-			Db.Host.set_memory_overhead ~__context ~self ~value:
-				(obvious_overhead_memory_bytes ++ nonobvious_overhead_memory_bytes);
-		)
-		boot_memory_string
+			error "Failed to contact ballooning service: assuming no overhead for dom0, crash kernel etc: %s" (Printexc.to_string e);
+			total_memory_bytes in
+
+	(* Host memory overhead comes from multiple sources:         *)
+	(* 1. obvious overhead: (e.g. Xen, crash kernel).            *)
+	(*    appears as used memory.                                *)
+	(* 2. non-obvious overhead: (e.g. low memory emergency pool) *)
+	(*    appears as free memory but can't be used in practice.  *)
+	let obvious_overhead_memory_bytes = total_memory_bytes -- boot_memory_bytes in
+	let nonobvious_overhead_memory_kib = 
+		try
+			Memory_client.Client.get_host_reserved_memory "dbsync"
+		with e ->
+			error "Failed to contact ballooning service: host memory overhead may be too small (%s)"
+				(Printexc.to_string e);
+			0L
+	in
+	let nonobvious_overhead_memory_bytes =
+		Int64.mul 1024L nonobvious_overhead_memory_kib in
+	Db.Host.set_boot_free_mem ~__context ~self
+		~value:boot_memory_bytes;
+	Db.Host.set_memory_overhead ~__context ~self ~value:
+		(obvious_overhead_memory_bytes ++ nonobvious_overhead_memory_bytes)
 
 (* -- used this for testing uniqueness constraints executed on slave do not kill connection.
    Committing commented out vsn of this because it might be useful again..
