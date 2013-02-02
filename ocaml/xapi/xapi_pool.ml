@@ -266,7 +266,7 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 		let mask =
 			try
 				let features = List.assoc Xapi_globs.cpuid_feature_mask_key pool_other_config in
-				Some (Cpuid.string_to_features features)
+				Some features
 			with _ -> None
 		in
 		let get_comparable_fields cpu_info =
@@ -275,10 +275,8 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 			match mask with
 			| None -> features
 			| Some mask ->
-				let features = Cpuid.string_to_features features in
-				let relevant_features = Cpuid.mask_features features mask in
-				Cpuid.features_to_string relevant_features
-		in
+				let dbg = Context.string_of_task __context in
+				Xenops_client.Client.HOST.mask_features dbg features mask in
 		let my_cpus_compare = get_comparable_fields my_cpu_info in
 		let master_cpus_compare = get_comparable_fields master_cpu_info in
 
@@ -291,7 +289,7 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 		print_cpu master_cpu_info;
 		begin match mask with
 		| Some mask ->
-			debug "User-defined feature mask on pool: %s" (Cpuid.features_to_string mask)
+			debug "User-defined feature mask on pool: %s" mask
 		| None -> ()
 		end;
 

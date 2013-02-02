@@ -34,13 +34,14 @@ let get_pool_feature_mask ~__context ~remote =
 		in
 		let mask_string = List.assoc Xapi_globs.cpuid_feature_mask_key other_config in
 		debug "Found pool feature mask: %s" mask_string;
-		Some (Cpuid.string_to_features mask_string)
+		Some mask_string
 	with _ ->
 		None
 
 let maybe_apply_mask mask features =
 	match mask with
-	| Some mask' -> Cpuid.mask_features features mask'
+	| Some mask' ->
+		Xenops_client.Client.HOST.mask_features "maybe_apply_mask" features mask'
 	| None -> features
 
 let get_host_compatibility_info ~__context ~host ~remote =
@@ -83,9 +84,9 @@ let assert_vm_is_compatible ~__context ~vm ~host ?remote () =
 			let vm_cpu_features = List.assoc features_key vm_cpu_info in
 			debug "VM last booted on CPU with features %s; host CPUs have features %s" vm_cpu_features host_cpu_features;
 			let pool_mask = get_pool_feature_mask ~__context ~remote in
-			let vm_cpu_features' = vm_cpu_features |> Cpuid.string_to_features |> maybe_apply_mask pool_mask in
-			let host_cpu_features' = host_cpu_features |> Cpuid.string_to_features |> maybe_apply_mask pool_mask in
-			if not((Cpuid.mask_features vm_cpu_features' host_cpu_features') = vm_cpu_features') then
+			let vm_cpu_features' = vm_cpu_features |> maybe_apply_mask pool_mask in
+			let host_cpu_features' = host_cpu_features |> maybe_apply_mask pool_mask in
+			if not((Xenops_client.Client.HOST.mask_features "assert_vm_is_compabible" vm_cpu_features' host_cpu_features') = vm_cpu_features') then
 				fail "VM last booted on a CPU with features this host's CPU does not have."
 		end
 	end
