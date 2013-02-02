@@ -44,12 +44,12 @@ type host_info = {
 
 let read_localhost_info () =
 	let xen_verstring =
-		let xc = Xenctrl.interface_open () in
-		let v = Xenctrl.version xc in
-		Xenctrl.interface_close xc;
-		let open Xenctrl in
-		Printf.sprintf "%d.%d%s" v.major v.minor v.extra
-	and linux_verstring =
+		let open Xenops_client in
+		try
+			let h = Client.HOST.stat "create_misc" in
+			Xenops_interface.Host.(h.hypervisor.version)
+		with _ -> "unknown" in
+	let linux_verstring =
 		let verstring = ref "" in
 		let f line =
 			try verstring := List.nth (String.split ' ' line) 2
@@ -400,103 +400,40 @@ let make_software_version () =
 	make_packs_info ()
 
 let create_host_cpu ~__context =
-	let get_nb_cpus () =
-		let xc = Xenctrl.interface_open () in
-		let p = Xenctrl.physinfo xc in
-		Xenctrl.interface_close xc;
-		p.Xenctrl.nr_cpus
-		in
-	let trim_end s =
-        	let i = ref (String.length s - 1) in
-		while !i > 0 && (List.mem s.[!i] [ ' '; '\t'; '\n'; '\r' ])
-		do
-			decr i
-		done;
-		if !i >= 0 then String.sub s 0 (!i + 1) else "" in
+	let open Xenops_client in
+	let h = Client.HOST.stat "create_misc" in
 
-
-	(* The boot-time CPU info is copied into a file in @ETCDIR@/ in the xenservices init script;
-	   we use that to generate CPU records from. This ensures that if xapi is started after someone has
-	   modified dom0's VCPUs we don't change out host config... [Important to get this right, otherwise
-	   pool homogeneity checks fail] *)
-	let get_cpuinfo () =
-	        let cpu_info_file =
-		  try Unix.access Xapi_globs.cpu_info_file [ Unix.F_OK ]; Xapi_globs.cpu_info_file
-		  with _ -> "/proc/cpuinfo" in
-		let in_chan = open_in cpu_info_file in
-		let tbl = Hashtbl.create 32 in
-		let rec get_lines () =
-			let s = input_line in_chan in
-			if s = "" then
-				()
-			else (
-				let i = String.index s ':' in
-				let k = trim_end (String.sub s 0 i) in
-				let v = if String.length s < i + 2 then
-					""
-				else
-					String.sub s (i + 2) (String.length s - i - 2) in
-				Hashtbl.add tbl k v;
-				get_lines ()
-			)
-			in
-		get_lines ();
-		close_in in_chan;
-		Hashtbl.find tbl "vendor_id",
-		Hashtbl.find tbl "model name",
-		Hashtbl.find tbl "cpu MHz",
-		Hashtbl.find tbl "flags",
-	        Hashtbl.find tbl "stepping",
-	        Hashtbl.find tbl "model",
-	        Hashtbl.find tbl "cpu family"
-		in
-	let vendor, modelname, cpu_mhz, flags, stepping, model, family = get_cpuinfo () in
-	let number = get_nb_cpus () in
 	let host = Helpers.get_localhost ~__context in
-	
-	(* Fill in Host.cpu_info *)
-	
-	let cpuid = Cpuid.read_cpu_info () in
-	let features = Cpuid.features_to_string cpuid.Cpuid.features in
-	let physical_features = Cpuid.features_to_string cpuid.Cpuid.physical_features in
-	let maskable = match cpuid.Cpuid.maskable with
-		| Cpuid.No -> "no"
-		| Cpuid.Base -> "base"
-		| Cpuid.Full -> "full"
-	in
+
+	let open Xenops_interface.Host in
 	let cpu = [
-		"cpu_count", string_of_int number;
-		"vendor", vendor;
-		"speed", cpu_mhz;
-		"modelname", modelname;
-		"family", family;
-		"model", model;
-		"stepping", stepping;
-		"flags", flags;
-		"features", features;
-		"features_after_reboot", features;
-		"physical_features", physical_features;
-		"maskable", maskable;
+		"cpu_count", string_of_int h.nr_cpus;
+		"vendor", h.cpu_info.vendor;
+		"speed", h.cpu_info.speed;
+		"modelname", h.cpu_info.modelname;
+		"family", h.cpu_info.family;
+		"model", h.cpu_info.model;
+		"stepping", h.cpu_info.stepping;
+		"flags", h.cpu_info.flags;
+		"features", h.cpu_info.features;
+		"features_after_reboot", h.cpu_info.features;
+		"physical_features", h.cpu_info.physical_features;
+		"maskable", h.cpu_info.maskable;
 	] in
+
 	Db.Host.set_cpu_info ~__context ~self:host ~value:cpu;
  
- 	(* Recreate all Host_cpu objects *)
-	
-	let speed = Int64.of_float (float_of_string cpu_mhz) in
-	let model = Int64.of_string model in
-	let family = Int64.of_string family in
-
 	(* Recreate all Host_cpu objects *)
 	let host_cpus = List.filter (fun (_, s) -> s.API.host_cpu_host = host) (Db.Host_cpu.get_all_records ~__context) in
 	List.iter (fun (r, _) -> Db.Host_cpu.destroy ~__context ~self:r) host_cpus;
-	for i = 0 to number - 1
+	for i = 0 to h.nr_cpus - 1
 	do
 		let uuid = Uuid.to_string (Uuid.make_uuid ())
 	    and ref = Ref.make () in
 		debug "Creating CPU %d: %s" i uuid;
 		ignore (Db.Host_cpu.create ~__context ~ref ~uuid ~host ~number:(Int64.of_int i)
-			~vendor ~speed ~modelname
-			~utilisation:0. ~flags ~stepping ~model ~family
+			~vendor:h.cpu_info.vendor ~speed:(Int64.of_string h.cpu_info.speed) ~modelname:h.cpu_info.modelname
+			~utilisation:0. ~flags:h.cpu_info.flags ~stepping:h.cpu_info.stepping ~model:(Int64.of_string h.cpu_info.model) ~family:(Int64.of_string h.cpu_info.family)
 			~features:"" ~other_config:[])
 	done
 
