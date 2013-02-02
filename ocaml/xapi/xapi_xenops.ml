@@ -1297,46 +1297,8 @@ let rec events_watch ~__context from =
 		) events;
 	events_watch ~__context (Some next)
 
-let manage_dom0 dbg =
-	(* Tell xenopsd to manage domain 0 *)
-	let open Xenctrl in
-	let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
-	let di = Vmopshelpers.with_xc (fun xc -> Xenctrl.domain_getinfo xc 0) in
-	let memory_actual_bytes = Xenctrl.pages_to_kib Int64.(mul (of_nativeint di.total_memory_pages) 1024L) in
-	let open Vm in
-	if not(vm_exists_in_xenopsd dbg uuid)
-	then begin
-		info "Client.VM.add %s" uuid;
-		Client.VM.add dbg {
-			id = uuid;
-			name = "Domain-0";
-			ssidref = 0l;
-			xsdata = [];
-			platformdata = [];
-			bios_strings = [];
-			ty = PV {
-				boot = Direct { kernel = ""; cmdline = ""; ramdisk = None };
-				framebuffer = false; framebuffer_ip = None; vncterm = false; vncterm_ip = None 
-			};
-			suppress_spurious_page_faults = false;
-			machine_address_size = None;
-			memory_static_max = memory_actual_bytes;
-			memory_dynamic_max = memory_actual_bytes;
-			memory_dynamic_min = memory_actual_bytes;
-			vcpu_max = 0;
-			vcpus = 0;
-			scheduler_params = { priority = None; affinity = [] };
-			on_crash = [];
-			on_shutdown = [];
-			on_reboot = [];
-			pci_msitranslate = true;
-			pci_power_mgmt = false;
-		} |> ignore;
-	end
-
 let on_xapi_restart ~__context =
 	let dbg = Context.string_of_task __context in
-	manage_dom0 dbg;
 	(* Destroy each active task in xenopsd, since the previous xapi
 	   is not able to do it. *)
 	let tasks = Client.TASK.list dbg in
