@@ -67,43 +67,9 @@ let clear_cache () =
 		host_memory_total_cached := Int64.zero;
 	)
 
-let get_host_memory_changes xc =
-	let physinfo = Xenctrl.physinfo xc in
-	let bytes_of_pages pages =
-		let kib = Xenctrl.pages_to_kib (Int64.of_nativeint pages) in
-		Int64.shift_left kib 10
-	in
-	let free_bytes = bytes_of_pages physinfo.Xenctrl.free_pages in
-	let total_bytes = bytes_of_pages physinfo.Xenctrl.total_pages in
-	Mutex.execute host_memory_m (fun _ ->
-		let host_memory_changed =
-			!host_memory_free_cached <> free_bytes ||
-			!host_memory_total_cached <> total_bytes
-		in
-		host_memory_free_cached := free_bytes;
-		host_memory_total_cached := total_bytes;
-		if host_memory_changed then Some (free_bytes, total_bytes) else None
-	)
+let get_host_memory_changes _ = None
 
-let get_vm_memory_changes xc =
-	let domains = Xenctrl.domain_getinfolist xc 0 in
-	let process_vm dom =
-		let open Xenctrl in
-		if not dom.dying then
-			begin
-				let uuid = Uuid.string_of_uuid (Uuid.uuid_of_int_array dom.handle) in
-				let kib = Xenctrl.pages_to_kib (Int64.of_nativeint dom.total_memory_pages) in
-				let memory = Int64.mul kib 1024L in
-				Hashtbl.add vm_memory_tmp uuid memory
-			end
-	in
-	List.iter process_vm domains;
-	Mutex.execute vm_memory_cached_m (fun _ ->
-		let changed_vm_memory =
-			get_updates_map ~before:vm_memory_cached ~after:vm_memory_tmp in
-		transfer_map ~source:vm_memory_tmp ~target:vm_memory_cached;
-		changed_vm_memory
-	)
+let get_vm_memory_changes _ = []
 
 let get_pif_and_bond_changes () =
 	(* Read fresh PIF information from networkd. *)
@@ -181,14 +147,12 @@ let pifs_and_memory_update_fn xc =
 	)
 
 let monitor_dbcall_thread () =
-	Xenctrl.with_intf (fun xc ->
 		while true do
 			try
-				pifs_and_memory_update_fn xc;
+				pifs_and_memory_update_fn ();
 				Thread.delay 5.
 			with e ->
 				debug "monitor_dbcall_thread would have died from: %s; restarting in 30s."
 					(ExnHelper.string_of_exn e);
 				Thread.delay 30.
 		done
-	)
