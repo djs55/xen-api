@@ -1,4 +1,4 @@
-OCAMLPACKS    = oclock xml-light2 cdrom pciutil sexpr log stunnel http-svr xen-utils netdev tapctl libvhd rpclib nbd nbd.unix xenstore xenctrl uuid gzip sha1
+OCAMLPACKS    = oclock xml-light2 cdrom pciutil sexpr log stunnel http-svr xen-utils netdev tapctl libvhd rpclib nbd nbd.unix uuid gzip sha1
 OCAML_LIBS    = ../fhs ../util/version ../util/vm_memory_constraints ../util/sanitycheck ../util/stats \
 	../idl/ocaml_backend/common ../idl/ocaml_backend/client ../idl/ocaml_backend/server ../util/ocamltest
 OCAMLINCLUDES = ../idl ../idl/ocaml_backend \
@@ -19,7 +19,7 @@ XENLIGHT_LINK_FLAGS=-cclib -luuid
 # (the same holds for OCaml packages)
 XEN_OCAML_LIBS = ../xenops/xenops_client ../auth/pam
 XEN_OCAMLINCLUDES =
-XEN_OCAMLPACKS = xenctrl xenctrlext xenstore xenstoreext cpuid # xenlight
+XEN_OCAMLPACKS = #cpuid # xenlight
 OCAML_CLIBS = $(XEN_OCAML_CLIBS) $(OCAML_CLIBS)
 OCAML_LINK_FLAGS = $(XEN_OCAML_LINK_FLAGS) $(OCAML_LINK_FLAGS) # $(XENLIGHT_LINK_FLAGS)
 CFLAGS = $(XEN_CFLAGS) $(CFLAGS)
@@ -45,8 +45,6 @@ storage_interface.mli: storage_interface.ml vdi_automaton.cmi
 	ocamlfind ocamlc -package rpclib.idl -syntax camlp4o -i $< > $@
 
 OCamlProgram(storage_impl_test, sparse_encoding sparse_dd_wrapper ../xenops/updates storage_migrate storage_interface vdi_automaton storage_impl ../xenops/task_server storage_task storage_locks storage_impl_test)
-
-OCamlProgram(cancel_tests, cancel_tests ../xenops/xenops_helpers)
 
 COMMON = \
 	xapi_templates \
@@ -161,7 +159,6 @@ XAPI_MODULES = $(COMMON) \
 	slave_backup \
 	sm_fs_ops \
 	sparse_dd_wrapper \
-	vmopshelpers \
 	pciops \
 	vgpuops \
 	vbdops \
