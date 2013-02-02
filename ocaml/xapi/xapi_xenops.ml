@@ -558,6 +558,14 @@ module Xenops_cache = struct
 				else None
 			)
 
+    let find_by_domid domid : Vm.id option =
+		Mutex.execute metadata_m
+			(fun () ->
+				Hashtbl.fold (fun vm s acc -> match vm, s, acc with
+				| vm, { vm = Some { Vm.domids = [ d ] }}, _ when d = domid -> Some vm
+				| _, _, acc -> acc) cache None
+			)
+
 	let find_vm id : Vm.state option =
 		match find id with
 			| Some { vm = Some vm } -> Some vm

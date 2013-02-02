@@ -191,6 +191,22 @@ let set_pif_metrics ~__context ~self ~vendor ~device ~carrier ~speed ~duplex
 	Db.PIF_metrics.set_last_updated ~__context ~self
 		~value:(Date.of_float (Unix.gettimeofday ()))
 
+let vif_device_of_string x =
+	let open Vif_device in
+	try
+		let ty = String.sub x 0 3 and params = Stringext.String.sub_to_end x 3 in
+		let domid, devid = Scanf.sscanf params "%d.%d" (fun x y -> x,y) in
+		let uuid = match Xapi_xenops.Xenops_cache.find_by_domid domid with
+			| Some uuid -> uuid
+			| None -> failwith "bad device" in
+		let vif = (uuid, string_of_int devid) in
+		match ty with
+		| "vif" -> Some { pv = true; vif = vif; domid = domid; devid = devid }
+		| "tap" -> Some { pv = false; vif = vif; domid = domid; devid = devid }
+		| _ -> failwith "bad device"
+	with _ -> None
+
+
 (* Note that the following function is actually called on the slave most of the
  * time now but only when the PIF information changes. *)
 let update_pifs ~__context host pifs =
