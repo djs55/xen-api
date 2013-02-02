@@ -132,27 +132,6 @@ let get_peer_vm_or_self ~__context ~self =
     else self;
   with _ -> self
 
-(*
- * This routine is used to determine if the specified VM is a protected
- * VM and its domain has already been previously instantiated.  If both
- * cases are true, then it returns its domain ID.  Otherwise, it returns
- * -1 to signal the caller that it should create its own domain.
- *)
-let use_protected_vm ~__context ~self =
-  if (is_this_vm_protected ~__context ~self) then 
-    begin 
-      let domid = Helpers.domid_of_vm ~__context ~self in
-      debug "This VM (%s) is protected and its currently running in domID = %d"
-         (Db.VM.get_uuid ~__context ~self) domid;
-      domid;
-    end
-  else
-    begin
-      debug "This VM (%s) is NOT protected" (Db.VM.get_uuid ~__context ~self);
-      -1
-    end
-
-
 (* 
  * -----------------------------------------------------------------------------
  *  External Event Related Functions
