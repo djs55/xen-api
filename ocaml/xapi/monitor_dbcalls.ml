@@ -141,9 +141,11 @@ let pifs_and_memory_update_fn xc =
 					~value:(Int64.of_int links_up)
 		) bond_changes;
 		match host_memory_changes with None -> () | Some (free, total) ->
+(*
 		let metrics = Db.Host.get_metrics ~__context ~self:localhost in
 		Db.Host_metrics.set_memory_total ~__context ~self:metrics ~value:total;
 		Db.Host_metrics.set_memory_free ~__context ~self:metrics ~value:free
+*) ()
 	)
 
 let monitor_dbcall_thread () =
