@@ -201,7 +201,6 @@ let register_callback_fns() =
     TaskHelper.init ()
 
 let nowatchdog = ref false
-let noevents = ref false
 let debug_dummy_data = ref false
 
 (** Start the XML-RPC server. *)
@@ -232,7 +231,6 @@ let init_args() =
 	       "-dom0memgradient", Arg.Unit (fun () -> ()), "(ignored)";
 	       "-dom0memintercept", Arg.Unit (fun () -> ()), "(ignored)";
 	       "-onsystemboot", Arg.Set Xapi_globs.on_system_boot, "indicates that this server start is the first since the host rebooted";
-	       "-noevents", Arg.Set noevents, "turn event thread off for debugging -leaves crashed guests undestroyed";
 	       "-dummydata", Arg.Set debug_dummy_data, "populate with dummy data for demo/debugging purposes";
 	       "-version", Arg.Unit show_version, "show version of the binary"
 	     ] (fun x -> printf "Warning, ignoring unknown argument: %s" x)
@@ -876,8 +874,8 @@ let server_init() =
                 (fun () -> Helpers.call_api_functions ~__context Create_storage.create_storage_localhost);
       (* CA-13878: make sure PBD plugging has happened before attempting to reboot any VMs *)
 	  "resynchronising VM state", [], (fun () -> Xapi_xenops.on_xapi_restart ~__context);
-      "listening to events from xenopsd", [], (fun () -> if not (!noevents) && (!Xapi_globs.use_xenopsd) then ignore (Thread.create Xapi_xenops.events_from_xenopsd ()));
-      "listening to events from xapi", [], (fun () -> if not (!noevents) && (!Xapi_globs.use_xenopsd) then ignore (Thread.create Xapi_xenops.events_from_xapi ()));
+      "listening to events from xenopsd", [], (fun () -> ignore (Thread.create Xapi_xenops.events_from_xenopsd ()));
+      "listening to events from xapi", [], (fun () -> ignore (Thread.create Xapi_xenops.events_from_xapi ()));
 
       "SR scanning", [ Startup.OnlyMaster; Startup.OnThread ], Xapi_sr.scanning_thread;
       "writing init complete", [], (fun () -> Helpers.touch_file !Xapi_globs.init_complete);

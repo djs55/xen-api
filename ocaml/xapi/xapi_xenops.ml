@@ -1298,6 +1298,7 @@ let rec events_watch ~__context from =
 	events_watch ~__context (Some next)
 
 let on_xapi_restart ~__context =
+	info "Resynchronising state with xenopsd";
 	let dbg = Context.string_of_task __context in
 	(* Destroy each active task in xenopsd, since the previous xapi
 	   is not able to do it. *)

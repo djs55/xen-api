@@ -23,7 +23,6 @@ open D
 
 let read_config filename =
 	let configargs = [
-		"use-xenopsd", Config.Set_bool Xapi_globs.use_xenopsd;
 		Config_shared.disable_logging_for;
 	] in
 	try
@@ -45,5 +44,4 @@ let dump_config () =
 	debug "build_number: %s" Version.build_number;
 	debug "git changeset: %s" Version.git_id;
 	debug "version: %d.%d" version_major version_minor;
-	debug "use-xenopsd: %b" !Xapi_globs.use_xenopsd
 	(* debug "License filename: %s" !License_file.filename *)
