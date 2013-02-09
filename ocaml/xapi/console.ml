@@ -25,11 +25,11 @@ open D
 
 exception Failure
 
-(** [port_of_proxy __context console] returns [Some port] or [None], if a suitable
+(** [sockaddr_of_proxy __context console] returns [Some sockaddr] or [None], if a suitable
     proxy could not be found. *)
-let port_of_proxy __context console =
+let sockaddr_of_proxy __context console =
 	let vm = Db.Console.get_VM __context console in
-	let vnc_port_option =
+	let vnc_sockaddr_option =
 		try
 			let open Xenops_interface in
 			let open Xenops_client in
@@ -41,17 +41,23 @@ let port_of_proxy __context console =
 				| `vt100 -> Vm.Vt100
 				| `rdp -> failwith "No support for tunnelling RDP" in
 			let console = List.find (fun x -> x.Vm.protocol = proto) s.Vm.consoles in
-			Some console.Vm.port
+			if console.Vm.path <> ""
+			then Some (Unix.ADDR_UNIX console.Vm.path)
+			else Some (Unix.ADDR_INET(Unix.inet_addr_of_string "127.0.0.1", console.Vm.port))
 		with e ->
 			debug "%s" (Printexc.to_string e);
 			None in
-	debug "VM %s console port: %s" (Ref.string_of vm) (Opt.default "None" (Opt.map (fun x -> "Some " ^ (string_of_int x)) vnc_port_option));
-	vnc_port_option
+	debug "VM %s console on: %s" (Ref.string_of vm) (Opt.default "None" (Opt.map (function
+	| Unix.ADDR_UNIX path -> Printf.sprintf "unix:%s" path
+	| Unix.ADDR_INET(_, port) -> Printf.sprintf "localhost:%d" port)
+	vnc_sockaddr_option));
+	vnc_sockaddr_option
 
-let real_proxy __context _ _ vnc_port s = 
-	try
-	  Http_svr.headers s (Http.http_200_ok ());
-    let vnc_sock = Unixext.open_connection_fd "127.0.0.1" vnc_port in
+let real_proxy __context _ _ vnc_sockaddr s = 
+  try
+    Http_svr.headers s (Http.http_200_ok ());
+    let vnc_sock = Unix.socket (Unix.domain_of_sockaddr vnc_sockaddr) Unix.SOCK_STREAM 0 in
+    Unix.connect vnc_sock vnc_sockaddr;
     (* Unixext.proxy closes fds itself so we must dup here *)
     let s' = Unix.dup s in
     debug "Connected; running proxy (between fds: %d and %d)" 
@@ -77,7 +83,12 @@ let ensure_proxy_running () =
 		Thread.delay 1.0;
 	end
 
-let ws_proxy __context req protocol port s =
+let ws_proxy __context req protocol vnc_sockaddr s =
+  let port = match vnc_sockaddr with
+  | Unix.ADDR_INET(_, port) -> port
+  | _ ->
+    error "ws_proxy cannot use a unix domain socket";
+    failwith "ws_proxy cannot use a unix domain socket" in
   ensure_proxy_running ();
   let protocol = match protocol with 
     | `rfb -> "rfb"
@@ -201,9 +212,9 @@ let handler proxy_fn (req: Request.t) s _ =
 	  (* Check VM is actually running locally *)
 	  check_vm_is_running_here __context console;
 
-	  match port_of_proxy __context console with
-		  | Some vnc_port ->
-			  proxy_fn __context req protocol vnc_port s
+	  match sockaddr_of_proxy __context console with
+		  | Some vnc_sockaddr ->
+			  proxy_fn __context req protocol vnc_sockaddr s
 		  | None ->
 			  Http_svr.headers s (Http.http_404_missing ())
 	)

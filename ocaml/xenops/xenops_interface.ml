@@ -17,7 +17,7 @@
 
 let service_name = "xenops"
 
-let default_sockets_dir = "/var/xapi"
+let default_sockets_dir = "/var/lib/xcp"
 let default_path = ref (Filename.concat default_sockets_dir "xenopsd")
 let forwarded_path = ref (Filename.concat default_sockets_dir "xenopsd" ^ ".forwarded")
 
@@ -183,6 +183,7 @@ module Vm = struct
 	type console = {
 		protocol: console_protocol;
 		port: int;
+		path: string;
 	}
 
 	type state = {

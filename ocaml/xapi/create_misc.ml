@@ -210,6 +210,7 @@ and create_domain_zero_console_record_with_protocol ~__context ~domain_zero_ref 
 		~vM: domain_zero_ref
 		~other_config:[]
 		~port: (Int64.of_int Xapi_globs.host_console_vncport)
+		~path:""
 
 and create_domain_zero_console_record ~__context ~domain_zero_ref ~console_records_rfb ~console_records_vt100 =
 	if List.length console_records_rfb = 0 then create_domain_zero_console_record_with_protocol ~__context ~domain_zero_ref ~dom0_console_protocol: `rfb ;

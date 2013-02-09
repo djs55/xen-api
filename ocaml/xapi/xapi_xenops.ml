@@ -912,13 +912,15 @@ let update_vm ~__context id =
 											let ref = Ref.make () in
 											let uuid = Uuid.to_string (Uuid.make_uuid ()) in
 											let location = Printf.sprintf "%s?uuid=%s" uri uuid in
-											let port =
-												try Int64.of_int ((List.find (fun c -> c.protocol = protocol) state.consoles).port)
-												with Not_found -> -1L
+											let port, path =
+												try
+													let c = List.find (fun c -> c.protocol = protocol) state.consoles in
+													Int64.of_int c.port, c.path
+												with Not_found -> -1L, ""
 											in
 											Db.Console.create ~__context ~ref ~uuid
 												~protocol:(to_xenapi_console_protocol protocol) ~location ~vM:self
-												~other_config:[] ~port
+												~other_config:[] ~port ~path
 										) (List.set_difference (List.map fst new_protocols) (List.map fst current_protocols));
 								) info;
 						with e ->
