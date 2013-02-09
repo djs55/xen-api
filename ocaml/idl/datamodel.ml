@@ -6468,7 +6468,7 @@ let console =
 	field ~qualifier:DynamicRO ~ty:(Ref _vm) "VM" "VM to which this console is attached";
 	field  ~ty:(Map(String, String)) "other_config" "additional configuration";
 	field ~in_oss_since:None ~internal_only:true ~ty:Int "port" "port in dom0 on which the console server is listening";
-	field ~internal_only:true ~ty:String "path" "path in dom0 on which the console server is listening";
+	field ~internal_only:true ~ty:String ~default_value:(Some(VString "")) "path" "path in dom0 on which the console server is listening";
       ]
 	()
 
