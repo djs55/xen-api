@@ -32,8 +32,11 @@ let management_m = Mutex.create ()
 let update_mh_info_script = Filename.concat Fhs.libexecdir "update-mh-info"
 
 let update_mh_info interface =
-	let (_: string*string) = Forkhelpers.execute_command_get_output update_mh_info_script [ interface ] in
-	()
+	try
+		let (_: string*string) = Forkhelpers.execute_command_get_output update_mh_info_script [ interface ] in
+		()
+	with e ->
+		error "update-mh-info failed: %s" (Printexc.to_string e)
 
 let restart_stunnel () =
 	let (_ : Thread.t) = Thread.create (fun () ->
