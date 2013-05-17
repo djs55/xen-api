@@ -1,14 +1,14 @@
 OCAML_LIBS    = ../fhs ../util/version ../idl/ocaml_backend/common ../idl/ocaml_backend/client 
 OCAMLINCLUDES = .. ../xapi ../idl/ocaml_backend/ ../idl ../autogen 
-OCAMLPACKS    = xml-light2 stdext stunnel log http-svr oUnit rpclib.syntax uuid nbd nbd.unix 
+OCAMLPACKS    = xml-light2 stdext stunnel log http-svr oUnit rpclib.syntax uuid nbd nbd.unix xcp xcp.storage
 OCAMLFLAGS = -dtypes -thread -warn-error F -syntax camlp4o
 UseCamlp4(rpclib.syntax, test)
 
 section
 	OCAMLINCLUDES += . 
 	OCAMLFLAGS = -dtypes -thread -warn-error F
-	CLI_FILES = main ../xapi/storage_interface ../xapi/vdi_automaton ../fhs
-	TEST_FILES = test ../xapi/storage_interface ../xapi/vdi_automaton ../fhs
+	CLI_FILES = main ../fhs
+	TEST_FILES = test ../fhs
 	OCamlProgram(sm, $(CLI_FILES))
 	OCamlDocProgram(sm, $(CLI_FILES))
 	OCamlProgram(smtest, $(TEST_FILES))

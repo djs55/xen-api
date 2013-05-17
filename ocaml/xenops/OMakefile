@@ -12,16 +12,12 @@ OCAMLPACKS     = oclock xml-light2 sexpr stunnel http-svr netdev rpclib threads 
 OCAMLFLAGS    += -thread
 
 UseCamlp4(rpclib.syntax, device_number xenops_utils xenops_server xenops_server_simulator xenops_migrate xenops_server_xen updates xenops_server_plugin domain device device_common xenops_hooks task_server)
-UseCamlp4(rpclib.idl, xenops_interface memory_interface)
 
-LIBFILES = ../util/table xenops_helpers cancel_utils xenbus_utils xenguestHelper domain hotplug device io statdev netman memory device_common squeeze squeeze_xen squeezed_state device_number stubdom bootloader xenops_interface memory_interface memory_client updates xenops_utils xenops_client xenops_server_plugin ../xapi/storage_interface ../xapi/vdi_automaton xenops_server xenops_migrate task_server xenops_task xenops_hooks ionice xenops_server_xen xenops_server_simulator
+LIBFILES = ../util/table xenops_helpers cancel_utils xenbus_utils xenguestHelper domain hotplug device io statdev netman memory device_common squeeze squeeze_xen squeezed_state device_number stubdom bootloader updates xenops_utils xenops_client xenops_server_plugin xenops_server xenops_migrate task_server xenops_task xenops_hooks ionice xenops_server_xen xenops_server_simulator
 
 StaticCLibrary(statdev_stubs, statdev_stubs)
 OCamlLibraryClib(xenops, $(LIBFILES), statdev_stubs)
 OCamlDocLibrary(xenops, $(LIBFILES))
-
-OCamlLibrary(xenops_client, xenops_interface device_number memory xenops_client ionice)
-OCamlLibrary(memory_client, memory_interface memory_client)
 
 OCAML_LIBS += ../util/version ../idl/ocaml_backend/common xenops
 
@@ -33,12 +29,6 @@ OCamlDocProgram(list_domains, list_domains)
 OCamlProgram(memory_breakdown, memory_breakdown)
 OCamlProgram(memory_summary, memory_summary)
 OCamlProgram(freemem, freemem)
-OCamlProgram(squeezed, squeezed memory_server)
-OCamlDocProgram(squeezed, squeezed)
-OCamlProgram(xenopsd, xenopsd)
-OCamlDocProgram(xenopsd, xenopsd)
-
-OCamlProgram(device_number_test, device_number_test device_number)
 
 # legacy
 OCamlProgram(create_domain, xenops)

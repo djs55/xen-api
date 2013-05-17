@@ -11,14 +11,12 @@ OCAMLINCLUDES = \
 # ocaml/xapi only needed for xapi_fist : should move xapi_first to libs
 OCAMLPACKS = oclock xml-light2 stunnel http-svr gzip uuid bigarray
 OCAML_LIBS = $(ROOT)/ocaml/fhs ../idl/ocaml_backend/xapi_client
-# ../xenops/xenops_client
 
 UseCamlp4(rpclib.syntax, rrdd_server)
 
 RRDD = xcp-rrdd
 RRDD_FILES = \
 	../pool_role_shared \
-	../network/network_interface \
 	../network/network_monitor \
 	../util/config_shared \
 	../util/stats \

@@ -38,7 +38,6 @@ OCamlLibrary(fhs, fhs)
 	multipathrt \
 	doc \
 	network \
-	xenops-cli \
 	network \
 	rrdd \
 	test
