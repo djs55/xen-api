@@ -268,7 +268,7 @@ and create_domain_zero_default_memory_constraints host_info : Vm_memory_constrai
 		let target = if target > static_max then static_max else target in
 		{
 			static_min  = static_min;
-			dynamic_min = target;
+			dynamic_min = static_min; (* We will allow dom0 ballooning down to here *)
 			target      = target;
 			dynamic_max = target;
 			static_max  = static_max;
@@ -316,8 +316,9 @@ and calculate_domain_zero_memory_static_range (host_info: host_info) : int64 * i
 	let static_max = host_info.dom0_static_max in
 	let static_min = minimum static_min static_max in
 	static_min, static_max*)
-  let fourgigs = Int64.mul 4L (Int64.mul 1024L (Int64.mul 1024L 1024L)) in
-  (fourgigs, fourgigs)
+  let onegig = Int64.(mul 1024L (mul 1024L 1024L)) in
+  let fourgigs = Int64.mul 4L onegig in
+  (onegig, fourgigs)
 
 and calculate_domain_zero_vcpu_count ~__context : int =
 	List.length (Db.Host.get_host_CPUs ~__context ~self:(Helpers.get_localhost ~__context))
