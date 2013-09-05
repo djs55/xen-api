@@ -6,7 +6,6 @@ open Stringext
 open Threadext
 open Fun
 open Listext
-open Zerocheck
 open Xenstore
 open Xmlrpc_client
 
@@ -15,6 +14,15 @@ let ( -* ) = Int64.sub
 let ( ** ) = Int64.mul
 let kib = 1024L
 let mib = kib ** kib
+
+open Direct_io
+
+type substring = {
+  buf: Memory.t;
+  offset: int;
+  len: int
+}
+
 
 type logging_mode =
 	| Buffer (* before we know which output format we should use *)
@@ -110,6 +118,7 @@ let roundup x =
 let rounddown x =
 	(x / !quantum) * !quantum
 
+
 (** The copying routine has inputs and outputs which both look like a 
     Unix file-descriptor *)
 module type IO = sig
@@ -140,12 +149,12 @@ type stats = {
 (** Perform the data duplication ("DD") *)
 module DD(Input : IO)(Output : IO) = struct
 	let fold bat sparse input_op blocksize size f initial = 
-		let buf = String.create (Int64.to_int blocksize) in
+		let buf = Memory.alloc (Int64.to_int blocksize) in
 		let do_block acc (offset, this_chunk) =
 			input_op offset { buf = buf; offset = 0; len = Int64.to_int this_chunk };
-			begin match sparse with
+			begin (*match sparse with
 			| Some zero -> fold_over_nonzeros buf (Int64.to_int this_chunk) rounddown roundup (f offset) acc
-			| None -> f offset acc { buf = buf; offset = 0; len = Int64.to_int this_chunk }
+			| None ->*) f offset acc { buf = buf; offset = 0; len = Int64.to_int this_chunk }
 			end in
 		(* For each entry from the BAT, copy it as a sequence of sub-blocks *)
 		Bat.fold_left (fun acc b -> partition_into_blocks b blocksize do_block acc) initial bat
@@ -178,7 +187,7 @@ module DD(Input : IO)(Output : IO) = struct
 			Output.op dst (offset +* (Int64.of_int substr.offset)) substr in
 		let input_zero offset { buf = buf; offset = offset; len = len } =
 			for i = 0 to len - 1 do
-				buf.[offset + i] <- '\000'
+				Memory.set_byte buf (offset + i) '\000'
 			done in
 		(* Do any necessary pre-zeroing then do the real work *)
 		let sparse = if write_zeroes then None else Some '\000' in
@@ -189,7 +198,7 @@ end
 let blit src srcoff dst dstoff len = 
 	(* Printf.printf "[%s](%d) -> [%s](%d) %d\n" "?" srcoff "?" dstoff len; *)
 	String.blit src srcoff dst dstoff len
-
+(*
 module String_reader = struct
 	type t = string
 	let op str stream_offset { buf = buf; offset = offset; len = len } = 
@@ -200,24 +209,21 @@ module String_writer = struct
 	let op str stream_offset { buf = buf; offset = offset; len = len } = 
 		blit buf offset str (Int64.to_int stream_offset) len
 end
-
+*)
 (** A File interface implemented over open Unix files *)
 module File_reader = struct
-	type t = Unix.file_descr
+	type t = File.t
 	let op stream stream_offset { buf = buf; offset = offset; len = len } = 
-		let (_: int64) = Unix.LargeFile.lseek stream stream_offset Unix.SEEK_SET in
-		Unixext.really_read stream buf offset len 
+		File.seek stream stream_offset;
+		File.really_read stream buf offset len 
 end
 module File_writer = struct
-	type t = Unix.file_descr
+	type t = File.t
 	let op stream stream_offset { buf = buf; offset = offset; len = len } = 
-		let (_: int64) = Unix.LargeFile.lseek stream stream_offset Unix.SEEK_SET in
-		(* Printf.printf "Unix.write buf len %d; offset %d; len %d\n" (String.length buf) offset len; *)
-		let n = Unix.write stream buf offset len in
-		if n < len
-		then raise (ShortWrite(offset, len, n))
+		File.seek stream stream_offset;
+		File.really_write stream buf offset len
 end
-
+(*
 module Nbd_writer = struct
 	type t = Unix.file_descr
 
@@ -362,18 +368,20 @@ module Network_writer = struct
 
 	let close stream = Chunk.marshal stream { Chunk.start = 0L; data = "" }
 end
-
+*)
+(*
 (** An implementation of the DD algorithm over strings *)
 module String_copy = DD(String_reader)(String_writer)
+*)
 
 (** An implementation of the DD algorithm over Unix files *)
 module File_copy = DD(File_reader)(File_writer)
-
+(*
 (** An implementatino of the DD algorithm from Unix files to a Network socket *)
 module Network_copy = DD(File_reader)(Network_writer)
 
 module Nbd_copy = DD(File_reader)(Nbd_writer)
-
+*)
 (** [file_dd ?progress_cb ?size ?bat prezeroed src dst]
     If [size] is not given, will assume a plain file and will use st_size from Unix.stat
 	If [erase]: will erase other parts of the disk
@@ -387,8 +395,10 @@ let file_dd ?(progress_cb = (fun _ -> ())) ?size ?bat erase write_zeroes src dst
 	let size = match size with
 	| None -> (Unix.LargeFile.stat src).Unix.LargeFile.st_size 
 	| Some x -> x in
-	let ifd = Unix.openfile src [ Unix.O_RDONLY ] 0o600 in
+	let ifd = File.openfile src 0o600 in
 	if String.startswith "http:" dst || String.startswith "https:" dst then begin
+		failwith "networking disabled"
+(*
 		(* Network copy *)
 		Network_writer.do_http_put
 		(fun response ofd ->
@@ -420,12 +430,15 @@ let file_dd ?(progress_cb = (fun _ -> ())) ?size ?bat erase write_zeroes src dst
 	end else if dst = "null:" then begin
 		let module Null_copy = DD(File_reader)(Null_writer) in
 		Null_copy.copy progress_cb bat erase write_zeroes ifd "" !blocksize size
+*)
 	end else begin
 		let ofd = Unix.openfile dst [ Unix.O_WRONLY; Unix.O_CREAT ] 0o600 in
 	 	(* Make sure the output file has the right size *)
 		let (_: int64) = Unix.LargeFile.lseek ofd (size -* 1L) Unix.SEEK_SET in
 		let (_: int) = Unix.write ofd "\000" 0 1 in
 		let (_: int64) = Unix.LargeFile.lseek ofd 0L Unix.SEEK_SET in
+		Unix.close ofd;
+		let ofd = File.openfile dst 0o600 in
 		debug "Copying";
 		File_copy.copy progress_cb bat erase write_zeroes ifd ofd !blocksize size
 	end 
@@ -450,7 +463,7 @@ let make_random size zero nonzero =
 		offset', if bit then (offset, offset' - offset) :: acc else acc) (0, []) bits) in
 	let bat = Bat.of_list (List.map (fun (x, y) -> Int64.of_int x, Int64.of_int y) bat) in
 	result, Some bat
-
+(*
 (** [test_dd (input, bat) ignore_bat prezeroed zero nonzero] uses the DD algorithm to make a copy of
     the string [input]. 
     If [ignore_bat] is true then the [bat] is ignored (as if none were available).
@@ -497,6 +510,7 @@ let test_lots_of_strings () =
 	debug "Tested %d random strings of length %d using all 4 combinations of ignore_bat, prezeroed" n m;
 	debug "Total writes: %d" !writes;
 	debug "Total bytes: %Ld" !bytes
+*)
 
 (** [vhd_of_device path] returns (Some vhd) where 'vhd' is the vhd leaf backing a particular device [path] or None.
     [path] may either be a blktap2 device *or* a blkfront device backed by a blktap2 device. If the latter then
@@ -643,8 +657,11 @@ let _ =
 	dump_config ();
 
  	if !test then begin
+		failwith "testing disabled";
+(*
 		test_lots_of_strings ();
 		exit 0
+*)
 	end;
 	if !src = None || !dest = None || !size = (-1L) then begin
 		debug "Must have -src -dest and -size arguments\n";

@@ -33,8 +33,13 @@ OCAMLPACKS = $(OCAMLPACKS) $(XEN_OCAMLPACKS)
 
 #OCAML_CLIBS += stubs
 
+StaticCLibrary(directio_stubs, directio_stubs)
+
 OCamlProgram(http_test, http_test)
-OCamlProgram(sparse_dd, sparse_dd sparse_encoding ../util/stats)
+section
+	OCAML_CLIBS += directio_stubs
+	OCamlProgram(sparse_dd, sparse_dd sparse_encoding ../util/stats direct_io)
+
 OCamlProgram(show_bat, show_bat)
 #OCamlProgram(monitor_fake_plugin, monitor_fake_plugin rrdd_fake_common rrd)
 
