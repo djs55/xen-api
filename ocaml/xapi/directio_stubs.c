@@ -68,7 +68,9 @@ static void really_write(int fd, void *aligned_buffer, int len){
   int n;
 
   while (len > 0) {
+    enter_blocking_section();
     n = write(fd, aligned_buffer, len);
+    leave_blocking_section();
     if (n == 0) caml_failwith("short write");
     len -= n;
     aligned_buffer += n;
