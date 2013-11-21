@@ -7,7 +7,7 @@ OCAMLINCLUDES = ../idl ../idl/ocaml_backend \
 	../xenops ../xva ../util \
 	../auth ../license ../client_records ../rfb ../gpg ../rrdd/interface ..
 
-UseCamlp4(rpclib.syntax, features storage_impl xapi_udhcpd storage_migrate xapi_services system_domains cancel_tests)
+UseCamlp4(rpclib.syntax, features storage_impl xapi_udhcpd vhd_tool_wrapper storage_migrate xapi_services system_domains cancel_tests)
 
 CFLAGS += -std=gnu99 -Wall -Werror -I$(shell ocamlc -where)
 
@@ -79,6 +79,7 @@ XAPI_MODULES = $(COMMON) \
 	../xenops/memory \
 	storage_task \
 	storage_access \
+	vhd_tool_wrapper \
 	storage_mux \
 	storage_migrate \
 	storage_proxy \
