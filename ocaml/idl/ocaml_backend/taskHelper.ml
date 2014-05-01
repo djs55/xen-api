@@ -48,7 +48,8 @@ let make ~__context ~http_other_config ?(description="") ?session_id ?subtask_of
     ~stunnelpid:(-1L) ~forwarded:false ~forwarded_to:Ref.null
     ~uuid:uuid_str ~externalpid:(-1L)
     ~subtask_of:subtaskid_of
-    ~other_config:(List.map (fun (k, v) -> "http:" ^ k, v) http_other_config)  in
+    ~other_config:(List.map (fun (k, v) -> "http:" ^ k, v) http_other_config)
+    ~destroy_on_complete:false in
   ref, uuid
 
 let rbac_assert_permission_fn = ref None (* required to break dep-cycle with rbac.ml *)
