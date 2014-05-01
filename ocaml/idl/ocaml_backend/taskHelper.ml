@@ -88,7 +88,13 @@ let destroy ~__context task_id =
   if not (Ref.is_dummy task_id)  
   then (
     assert_can_destroy ~ok_if_no_session_in_context:true ~__context task_id;
-    Db_actions.DB_Action.Task.destroy ~__context ~self:task_id
+    let status = Db_actions.DB_Action.Task.get_status ~__context ~self:task_id in
+    if status <> `pending && status <> `cancelling
+    then Db_actions.DB_Action.Task.destroy ~__context ~self:task_id
+    else begin
+      Db_actions.DB_Action.Task.set_destroy_on_complete ~__context ~self:task_id ~value:true;
+      info "%s.destroy_on_complete <- true" (Ref.string_of task_id)
+    end
   )
 (*
   if Context.get_task_id __context = task_id
@@ -153,7 +159,11 @@ let complete ~__context result =
 			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
 			Db_actions.DB_Action.Task.set_progress ~__context ~self ~value:1.;
 			set_result_on_task ~__context self result;
-			Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`success
+			Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`success;
+			if Db_actions.DB_Action.Task.get_destroy_on_complete ~__context ~self then begin
+				info "Task %s has destroy_in_complete set" (Ref.string_of self);
+				Db_actions.DB_Action.Task.destroy ~__context ~self
+			end
 		end else
 			debug "the status of %s is: %s; cannot set it to `success"
 				(Ref.really_pretty_and_small self)
@@ -184,7 +194,11 @@ let cancel ~__context =
 			Db_actions.DB_Action.Task.set_progress ~__context ~self ~value:1.;
 			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
 			Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`cancelled;
-			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[]
+			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[];
+			if Db_actions.DB_Action.Task.get_destroy_on_complete ~__context ~self then begin
+				info "Task %s has destroy_in_complete set" (Ref.string_of self);
+				Db_actions.DB_Action.Task.destroy ~__context ~self
+			end
 		end else
 			debug "the status of %s is %s; cannot set it to `cancelled"
 				(Ref.really_pretty_and_small self)
@@ -199,9 +213,13 @@ let failed ~__context (code, params) =
 			Db_actions.DB_Action.Task.set_error_info ~__context ~self ~value:(code::params);
 			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
 			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[];
-			if code=Api_errors.task_cancelled 
-			then Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`cancelled
-			else Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`failure
+			( if code=Api_errors.task_cancelled 
+			  then Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`cancelled
+			  else Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`failure );
+			if Db_actions.DB_Action.Task.get_destroy_on_complete ~__context ~self then begin
+				info "Task %s has destroy_in_complete set" (Ref.string_of self);
+				Db_actions.DB_Action.Task.destroy ~__context ~self
+			end
 		end else
 			debug "the status of %s is %s; cannot set it to %s" 
 				(Ref.really_pretty_and_small self)
