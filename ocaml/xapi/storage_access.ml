@@ -356,6 +356,7 @@ module SMAPIv1 = struct
 						) in
 				let attach_info =
 					{ params = attach_info_v1.Smint.params;
+					  backend = None;
 					  xenstore_data = attach_info_v1.Smint.xenstore_data; }
 				in
 				Mutex.execute vdi_read_write_m
