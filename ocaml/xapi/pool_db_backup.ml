@@ -250,8 +250,7 @@ let fetch_database_backup ~master_address ~pool_secret ~force =
     debug "Not requesting backup from master, no candidate db connections to backup to"
 
 (* Master sync thread *)
-let pool_db_backup_thread () =
-  Debug.name_thread "pool_db_sync";
+let pool_db_backup_thread () = Debug.with_thread_named "pool_db_backup_thread" (fun () ->
   Server_helpers.exec_with_new_task "Pool DB sync" (fun __context ->
   while (true) do
     try
@@ -277,3 +276,4 @@ let pool_db_backup_thread () =
       end
     with e -> debug "Exception in DB synchronise thread: %s" (ExnHelper.string_of_exn e)
   done)
+  ) ()

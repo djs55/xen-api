@@ -194,7 +194,6 @@ let register_callback_fns() =
 		Locking_helpers.Thread_state.released (Locking_helpers.Process("stunnel", pid)) in
 	Xmlrpc_client.Internal.set_stunnelpid_callback := Some set_stunnelpid;
 	Xmlrpc_client.Internal.unset_stunnelpid_callback := Some unset_stunnelpid;
-    Pervasiveext.exnhook := Some (fun _ -> log_backtrace ());
     TaskHelper.init ()
 
 
@@ -212,7 +211,6 @@ let show_version () =
   exit 0
 
 let init_args() =
-  Debug.name_thread "thread_zero";
   (* Immediately register callback functions *)
   register_callback_fns();
   Xcp_service.configure ~options:Xapi_globs.all_options ~resources:Xapi_globs.Resources.xcp_resources ();
