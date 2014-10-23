@@ -960,8 +960,11 @@ let server_init() =
   with
   | Sys.Break -> cleanup_handler 0
   | (Unix.Unix_error (e,s1,s2)) as exn ->
+      Debug.backtrace_is_important exn;
       (debug "xapi top-level caught Unix_error: %s, %s, %s" (Unix.error_message e) s1 s2; raise exn)
-  | exn       -> debug "xapi top-level caught exception: %s" (ExnHelper.string_of_exn exn); raise exn
+  | exn ->
+      Debug.backtrace_is_important exn;
+      debug "xapi top-level caught exception: %s" (ExnHelper.string_of_exn exn); raise exn
 
 (* Most likely cause of eintr in normal operation is a sigterm/sigint. In this case our handler
    will tell the db thread to exit after next flush (where flushes are schduled every 2s). Delay
@@ -976,7 +979,9 @@ let delay_on_eintr f =
       debug "received EINTR. waiting to enable db thread to flush";
       Thread.delay 60.;
       exit(0)
-  | e -> raise e
+  | e ->
+    Debug.backtrace_is_important e;
+    raise e
 
 let watchdog f =
 	if !Xapi_globs.nowatchdog then begin
