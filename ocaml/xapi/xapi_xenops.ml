@@ -2008,13 +2008,15 @@ let start ~__context ~self paused =
 		(fun () ->
 			try
 				start ~__context ~self paused
-			with Bad_power_state(a, b) ->
+			with Bad_power_state(a, b) as e ->
+				Backtrace.is_important e;
 				let power_state = function
 					| Running -> "Running"
 					| Halted -> "Halted"
 					| Suspended -> "Suspended"
 					| Paused -> "Paused" in
-				raise (Api_errors.Server_error(Api_errors.vm_bad_power_state, [ Ref.string_of self; power_state a; power_state b ]))
+				let exn = Api_errors.Server_error(Api_errors.vm_bad_power_state, [ Ref.string_of self; power_state a; power_state b ]) in
+				Backtrace.reraise e exn
 		)
 
 let reboot ~__context ~self timeout =
