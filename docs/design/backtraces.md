@@ -74,6 +74,8 @@ and handling code. In particular:
   INTERNAL_ERROR) then you must
   - Log the current backtrace now with ```Debug.log_backtrace e```
   - Log the rethrow with a line like ```Rethrowing %s as %s```
+- All exceptions should be printable -- if the generic printer doesn't do a good
+  enough job then register a custom printer.
 
 The CLI
 -------
@@ -113,4 +115,12 @@ the database Task record. Developers and test suites would like to also
 have programmatic access to the backtrace, to avoid having to hunt around
 in the logfiles.
 
+Since we already have functions to capture exceptions at the top level and
+transform them into XenAPI exceptions stored in the Task object, we can
+add an additional field ("trace") and store the backtrace in there too.
+Interested clients -- such as the CLI -- can extract the trace from failed
+tasks.
+
+The Xenopsd API
+---------------
 
