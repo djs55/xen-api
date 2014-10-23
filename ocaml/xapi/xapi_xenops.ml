@@ -50,7 +50,11 @@ let assume_task_succeeded queue_name dbg id =
         Client.TASK.destroy dbg id;
         match t.Task.state with
         | Task.Completed _ -> t
-        | Task.Failed x -> raise (exn_of_exnty (Exception.exnty_of_rpc x))
+        | Task.Failed x ->
+		let exn = exn_of_exnty (Exception.exnty_of_rpc x) in
+		Backtrace.add exn [ Printf.sprintf "Raised Xenops exception %s" (Printexc.to_string exn) ];
+		if t.Task.trace <> [] then Backtrace.add exn t.Task.trace;
+		raise exn
         | Task.Pending _ -> failwith "task pending"
 
 let wait_for_task queue_name dbg id =
@@ -1704,13 +1708,9 @@ let success_task queue_name f dbg id =
 				| Task.Completed _ -> f t
 				| Task.Failed x -> 
 					let exn = exn_of_exnty (Exception.exnty_of_rpc x) in
-					begin match exn with 
-						| Failed_to_contact_remote_service x ->
-							failwith (Printf.sprintf "Failed to contact remote service on: %s\n" x)
-						| e -> 
-							debug "%s: caught xenops exception: %s" dbg (Jsonrpc.to_string x);
-							raise e
-					end
+					Backtrace.add exn [ Printf.sprintf "Raised Xenops exception %s" (Printexc.to_string exn) ];
+					if t.Task.trace <> [] then Backtrace.add exn t.Task.trace;
+					raise exn
 				| Task.Pending _ -> failwith "task pending"
 		) (fun () -> Client.TASK.destroy dbg id)
 
