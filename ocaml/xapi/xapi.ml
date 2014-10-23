@@ -960,10 +960,10 @@ let server_init() =
   with
   | Sys.Break -> cleanup_handler 0
   | (Unix.Unix_error (e,s1,s2)) as exn ->
-      Debug.backtrace_is_important exn;
+      Backtrace.is_important exn;
       (debug "xapi top-level caught Unix_error: %s, %s, %s" (Unix.error_message e) s1 s2; raise exn)
   | exn ->
-      Debug.backtrace_is_important exn;
+      Backtrace.is_important exn;
       debug "xapi top-level caught exception: %s" (ExnHelper.string_of_exn exn); raise exn
 
 (* Most likely cause of eintr in normal operation is a sigterm/sigint. In this case our handler
@@ -980,7 +980,7 @@ let delay_on_eintr f =
       Thread.delay 60.;
       exit(0)
   | e ->
-    Debug.backtrace_is_important e;
+    Backtrace.is_important e;
     raise e
 
 let watchdog f =
