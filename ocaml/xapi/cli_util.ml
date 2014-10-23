@@ -69,12 +69,18 @@ let result_from_task rpc session_id remote_task =
 			()
 		| `failure ->
 			let error_info = Client.Task.get_error_info rpc session_id remote_task in
-			begin match error_info with
+			let trace = Client.Task.get_trace rpc session_id remote_task in
+			let exn = match error_info with
+				| code :: params -> Api_errors.Server_error(code, params)
+				| [] -> Failure (Printf.sprintf "Task failed but no error recorded: %s" (Ref.string_of remote_task)) in
+			Backtrace.add exn trace;
+			(* Mark the point where the XenAPI exception was thrown and caught *)
+			let _ = match error_info with
 				| code :: params ->
-					raise (Api_errors.Server_error(code, params))
+					Backtrace.add exn [ Printf.sprintf "Raised XenAPI exception %s [ %s ]" code (String.concat "; " params) ]
 				| [] ->
-					failwith (Printf.sprintf "Task failed but no error recorded: %s" (Ref.string_of remote_task))
-			end
+					Backtrace.add exn [ "Unknown exception (Task.error_info is [])" ] in
+			raise exn
 
 (** Use the event system to wait for a specific task to complete (succeed, failed or be cancelled) *)
 let wait_for_task_completion = track (fun _ -> ())

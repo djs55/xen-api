@@ -86,7 +86,7 @@ let exec ?marshaller ?f_forward ~__context f =
         raise e
     | e -> 
         Backtrace.is_important e;
-        TaskHelper.failed ~__context (ExnHelper.error_of_exn e);
+        TaskHelper.failed ~__context e;
         raise e
 
 (** WARNING: the context is destroyed when execution is finished if the task is not forwarded, in database and not called asynchronous. *)

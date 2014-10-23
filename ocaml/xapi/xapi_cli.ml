@@ -284,6 +284,7 @@ let handler (req:Http.Request.t) (bio: Buf_io.t) _ =
           | x :: xs ->
             marshal s (Command (PrintStderr (Printf.sprintf "%d/%d: %s\n" i all' x)));
             loop (i + 1) xs in
+          marshal s (Command (PrintStderr (Printf.sprintf "0/%d: Raised %s\n" all' (Printexc.to_string e))));
           loop 1 all
         end;
         Debug.log_backtrace e;
