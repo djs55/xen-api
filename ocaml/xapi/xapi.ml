@@ -990,9 +990,8 @@ let watchdog f =
 			delay_on_eintr f;
 			exit 127
 		with e ->
-			Debug.backtrace_is_important e;
 			Debug.log_backtrace e;
-		    raise e (* will exit the process with rc=2 *)
+			exit 2
 	end else begin
 		(* parent process blocks sigint and forward sigterm to child. *)
 		ignore(Unix.sigprocmask Unix.SIG_BLOCK [Sys.sigint]);
