@@ -985,8 +985,8 @@ let watchdog f =
 			delay_on_eintr f;
 			exit 127
 		with e ->
-		    error "Caught exception at toplevel: '%s'" (Printexc.to_string e);
-		    log_backtrace ();
+			Debug.backtrace_is_important e;
+			Debug.log_backtrace e;
 		    raise e (* will exit the process with rc=2 *)
 	end else begin
 		(* parent process blocks sigint and forward sigterm to child. *)

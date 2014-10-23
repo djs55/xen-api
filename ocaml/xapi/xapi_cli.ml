@@ -87,8 +87,10 @@ let do_rpcs req s username password minimal cmd session args =
   let cspec =
     try
       Hashtbl.find cmdtable cmdname
-    with
-	Not_found -> raise (Unknown_command cmdname) in
+    with Not_found as e ->
+      Debug.log_backtrace e;
+      error "Rethowing Not_found as Unknown_command %s" cmdname;
+      raise (Unknown_command cmdname) in
   (* Forward if we're not the master, and if the cspec doesn't contain the key 'neverforward' *)
   let do_forward =  
     (not (Pool_role.is_master ())) && (not (List.mem Neverforward cspec.flags))
@@ -221,8 +223,7 @@ let do_handle (req:Http.Request.t) str (s:Unix.file_descr) =
 	ignore(exec_command req cmd s session args)
 
 let exception_handler s e =
-  debug "Xapi_cli.exception_handler: Got exception %s" (ExnHelper.string_of_exn e);
-  log_backtrace ();
+  error "Converting exception %s into a CLI response" (ExnHelper.string_of_exn e);
   match e with
     | Cli_operations.ExitWithError n ->
 	marshal s (Command (Exit n))
@@ -271,4 +272,6 @@ let handler (req:Http.Request.t) (bio: Buf_io.t) _ =
   end;
   try
     do_handle req str s
-  with e -> exception_handler s e    
+  with e ->
+    Debug.log_backtrace e;
+    exception_handler s e
