@@ -207,8 +207,7 @@ let server_error (code: string) (params: string list) sock =
   | Some (e, l) ->
     marshal sock (Command (PrintStderr (e ^ "\n")));
     List.iter (fun pv -> marshal sock (Command (PrintStderr (pv ^ "\n")))) l;
-  end;
-  marshal sock (Command (Exit 1))
+  end
 
 let user_says_yes fd = 
   marshal fd (Command (Print "Type 'yes' to continue"));
