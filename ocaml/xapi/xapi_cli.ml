@@ -276,16 +276,9 @@ let handler (req:Http.Request.t) (bio: Buf_io.t) _ =
         exception_handler s e;
         (* Command execution errors can use --trace *)
         if Cli_operations.get_bool_param cmd.params "trace" then begin
+          marshal s (Command (PrintStderr (Printf.sprintf "Raised %s" (Printexc.to_string e))));
           marshal s (Command (PrintStderr "Backtrace:\n"));
-          let all = Backtrace.get e in
-          let all' = List.length all in
-          let rec loop i = function
-          | [] -> ()
-          | x :: xs ->
-            marshal s (Command (PrintStderr (Printf.sprintf "%d/%d: %s\n" i all' x)));
-            loop (i + 1) xs in
-          marshal s (Command (PrintStderr (Printf.sprintf "0/%d: Raised %s\n" all' (Printexc.to_string e))));
-          loop 1 all
+          marshal s (Command (PrintStderr (Backtrace.(to_string_hum (get e)))));
         end;
         Debug.log_backtrace e;
         marshal s (Command (Exit 1));

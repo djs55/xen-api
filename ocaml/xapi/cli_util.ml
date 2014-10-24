@@ -14,6 +14,7 @@
 (** 
  * @group Command-Line Interface (CLI)
  *)
+open Sexplib.Std
  
 module D = Debug.Make(struct let name = "cli" end)
 open D
@@ -69,17 +70,11 @@ let result_from_task rpc session_id remote_task =
 			()
 		| `failure ->
 			let error_info = Client.Task.get_error_info rpc session_id remote_task in
-			let trace = Client.Task.get_trace rpc session_id remote_task in
+			let trace = Client.Task.get_backtrace rpc session_id remote_task in
 			let exn = match error_info with
 				| code :: params -> Api_errors.Server_error(code, params)
 				| [] -> Failure (Printf.sprintf "Task failed but no error recorded: %s" (Ref.string_of remote_task)) in
-			Backtrace.add exn trace;
-			(* Mark the point where the XenAPI exception was thrown and caught *)
-			let _ = match error_info with
-				| code :: params ->
-					Backtrace.add exn [ Printf.sprintf "Raised XenAPI exception %s [ %s ]" code (String.concat "; " params) ]
-				| [] ->
-					Backtrace.add exn [ "Unknown exception (Task.error_info is [])" ] in
+			Backtrace.(add exn (t_of_sexp (Sexplib.Sexp.of_string trace)));
 			raise exn
 
 (** Use the event system to wait for a specific task to complete (succeed, failed or be cancelled) *)

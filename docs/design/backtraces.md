@@ -125,7 +125,7 @@ in the logfiles.
 
 Since we already have functions to capture exceptions at the top level and
 transform them into XenAPI exceptions stored in the Task object, we can
-add an additional field ("trace") and store the backtrace in there too.
+add an additional field ("backtrace") and store the backtrace in there too.
 Interested clients -- such as the CLI -- can extract the trace from failed
 tasks.
 
@@ -137,7 +137,7 @@ Task record. Developers and test suites would like to also have programmatic
 access to the backtrace, to avoid having to hunt around in the logfiles.
 
 Since we already have functions to capture exceptions while running Tasks,
-we can extend these to store the backtrace in an additional field ("trace").
+we can extend these to store the backtrace in an additional field ("backtrace").
 Callers, such as xapi, can extract the trace from failed Tasks and add it
 to their own context via ```Backtrace.add```
 
