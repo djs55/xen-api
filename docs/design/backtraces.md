@@ -71,11 +71,19 @@ and handling code. In particular:
 - If a function handles an exception and re-raise it, you must call
   ```Backtrace.is_important e``` with the exception to capture the backtrace first.
 - If a function raises a different exception (e.g. Not_found becoming a XenAPI
-  INTERNAL_ERROR) then you must
-  - Log the current backtrace now with ```Debug.log_backtrace e```
-  - Log the rethrow with a line like ```Rethrowing %s as %s```
+  INTERNAL_ERROR) then you must use ```Backtrace.reraise <old> <new>``` to
+  ensure the backtrace is preserved.
 - All exceptions should be printable -- if the generic printer doesn't do a good
   enough job then register a custom printer.
+- If you are the last person who will see an exception (because you aren't going
+  to rethow it) then you *may* log the backtrace via ```Debug.log_backtrace e```
+  *if and only if* you reasonably expect the resulting backtrace to be helpful
+  and not spammy.
+- If you aren't the last person who will see an exception (because you are going
+  to rethrow it or another exception), then *do not* log the backtrace; the
+  next handler will do that.
+- All threads should have a final exception handler at the outermost level
+  for example ```Debug.with_thread_named``` will do this for you.
 
 The CLI
 -------
@@ -123,4 +131,14 @@ tasks.
 
 The Xenopsd API
 ---------------
+
+Normally errors are converted into marshalled exceptions and stored in the
+Task record. Developers and test suites would like to also have programmatic
+access to the backtrace, to avoid having to hunt around in the logfiles.
+
+Since we already have functions to capture exceptions while running Tasks,
+we can extend these to store the backtrace in an additional field ("trace").
+Callers, such as xapi, can extract the trace from failed Tasks and add it
+to their own context via ```Backtrace.add```
+
 
