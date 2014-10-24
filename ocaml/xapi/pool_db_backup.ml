@@ -267,8 +267,7 @@ let pool_db_backup_thread () = Debug.with_thread_named "pool_db_backup_thread" (
 	    debug "Finished DB synchronise";
 	  with
 	    e -> 
-	      debug "Exception %s caught" (ExnHelper.string_of_exn e);
-	      log_backtrace () in
+	      Debug.log_backtrace e in
 
 	(* since thread.delay is inside dohost fn make sure we don't spin if hosts=[]: *)
 	if hosts=[] then Thread.delay !Xapi_globs.pool_db_sync_interval

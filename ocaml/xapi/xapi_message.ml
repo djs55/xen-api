@@ -134,7 +134,9 @@ let of_xml input =
   try
     f ();
     (!gen,Ref.of_string !_ref,!message)
-  with e -> log_backtrace (); debug "Caught exception: %s" (Printexc.to_string e); raise e
+  with e ->
+    Backtrace.is_important e;
+    raise e
 
 let export_xml messages =
 	let size = 500 * (List.length messages) in
@@ -246,7 +248,7 @@ let handle_message ~__context message =
 	end
   with e ->
 	error "Unexpected exception in message hook. Exception='%s'" (ExnHelper.string_of_exn e);
-	log_backtrace ()
+	Debug.log_backtrace e
 
 let start_message_hook_thread ~__context () =
   queue_push := (Thread_queue.make ~name:"email message queue" ~max_q_length:100 (handle_message ~__context)).Thread_queue.push_fn

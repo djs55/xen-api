@@ -877,7 +877,7 @@ let other_options = [
         ) modules
       with e ->
         D.error "Processing disabled-logging-for = %s" x;
-        D.log_backtrace ()
+        Debug.log_backtrace e
     ), (fun () -> "<default>"), (* no API to query the current list *)
     "comma-separated list of modules to suppress logging from";
 

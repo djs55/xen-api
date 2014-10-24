@@ -605,10 +605,8 @@ let change_password  ~__context ~old_pwd ~new_pwd = wipe_params_after_fn [old_pw
 		      try
 			Client.Host.request_config_file_sync rpc session_id host hash
 		      with e ->
-			begin
-			  info "Failed to sync password to host %s: %s" (Db.Host.get_name_label ~__context ~self:host) (Printexc.to_string e);
-			  log_backtrace()
-			end
+			info "Failed to sync password to host %s: %s" (Db.Host.get_name_label ~__context ~self:host) (Printexc.to_string e);
+			Debug.log_backtrace e
 		   ) hosts);
 	    info "Finished syncing password across pool";
 	  with (Failure msg) ->

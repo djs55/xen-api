@@ -60,7 +60,7 @@ let localhost_handler rpc session_id vdi (req: Http.Request.t) (s: Unix.file_des
 							| None -> copy None path
 						)
 				with e ->
-					log_backtrace ();
+					Backtrace.is_important e;
 					TaskHelper.failed ~__context e;
 					raise e
 				end

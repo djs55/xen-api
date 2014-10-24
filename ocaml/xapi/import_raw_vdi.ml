@@ -64,8 +64,8 @@ let localhost_handler rpc session_id vdi (req: Request.t) (s: Unix.file_descr) =
 								);
 						TaskHelper.complete ~__context None;
 				with e ->
+					Backtrace.is_important e;
 					error "Caught exception: %s" (ExnHelper.string_of_exn e);
-					log_backtrace ();
 					TaskHelper.failed ~__context e;
 					raise e)
 
