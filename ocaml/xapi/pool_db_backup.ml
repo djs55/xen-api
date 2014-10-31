@@ -266,8 +266,8 @@ let pool_db_backup_thread () = Debug.with_thread_named "pool_db_backup_thread" (
 	      (fun rpc session_id -> Client.Host.request_backup rpc session_id host generation false);
 	    debug "Finished DB synchronise";
 	  with
-	    e -> 
-	      Debug.log_backtrace e in
+	    e ->
+              error "Failed to synchronise DB with host %s: %s" (Ref.string_of host) (Printexc.to_string e) in
 
 	(* since thread.delay is inside dohost fn make sure we don't spin if hosts=[]: *)
 	if hosts=[] then Thread.delay !Xapi_globs.pool_db_sync_interval

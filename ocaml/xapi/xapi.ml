@@ -990,7 +990,7 @@ let watchdog f =
 			delay_on_eintr f;
 			exit 127
 		with e ->
-			Debug.log_backtrace e;
+			Debug.log_backtrace e (Backtrace.get e);
 			exit 2
 	end else begin
 		(* parent process blocks sigint and forward sigterm to child. *)

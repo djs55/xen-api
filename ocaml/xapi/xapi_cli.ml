@@ -88,9 +88,8 @@ let do_rpcs req s username password minimal cmd session args =
     try
       Hashtbl.find cmdtable cmdname
     with Not_found as e ->
-      Debug.log_backtrace e;
       error "Rethowing Not_found as Unknown_command %s" cmdname;
-      raise (Unknown_command cmdname) in
+      Backtrace.reraise e (Unknown_command cmdname) in
   (* Forward if we're not the master, and if the cspec doesn't contain the key 'neverforward' *)
   let do_forward =  
     (not (Pool_role.is_master ())) && (not (List.mem Neverforward cspec.flags))
@@ -268,22 +267,18 @@ let handler (req:Http.Request.t) (bio: Buf_io.t) _ =
   try
     (* Unfortunately parse errors can happen preventing the '--trace' option from working *)
     let cmd = parse_commandline ("xe"::args) in
-    begin
-      try
-        ignore(exec_command req cmd s session args)
-      with e ->
-        Backtrace.is_important e;
+    match Backtrace.with_backtraces (fun () -> exec_command req cmd s session args) with
+    | `Ok _ -> ()
+    | `Error (e, bt) ->
         exception_handler s e;
         (* Command execution errors can use --trace *)
         if Cli_operations.get_bool_param cmd.params "trace" then begin
-          marshal s (Command (PrintStderr (Printf.sprintf "Raised %s" (Printexc.to_string e))));
+          marshal s (Command (PrintStderr (Printf.sprintf "Raised %s\n" (Printexc.to_string e))));
           marshal s (Command (PrintStderr "Backtrace:\n"));
-          marshal s (Command (PrintStderr (Backtrace.(to_string_hum (get e)))));
+          marshal s (Command (PrintStderr (Backtrace.(to_string_hum bt))));
         end;
-        Debug.log_backtrace e;
+        Debug.log_backtrace e bt;
         marshal s (Command (Exit 1));
-    end
   with e ->
-    Debug.log_backtrace e;
     exception_handler s e;
     marshal s (Command (Exit 1));

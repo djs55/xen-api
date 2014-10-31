@@ -247,8 +247,7 @@ let handle_message ~__context message =
 	  end else info "%s not found, skipping" !Xapi_globs.xapi_message_script
 	end
   with e ->
-	error "Unexpected exception in message hook. Exception='%s'" (ExnHelper.string_of_exn e);
-	Debug.log_backtrace e
+	error "Unexpected exception in message hook %s: %s" !Xapi_globs.xapi_message_script (ExnHelper.string_of_exn e)
 
 let start_message_hook_thread ~__context () =
   queue_push := (Thread_queue.make ~name:"email message queue" ~max_q_length:100 (handle_message ~__context)).Thread_queue.push_fn

@@ -124,7 +124,7 @@ let update_vm_stats ~__context uuid cpus vbds vifs memory =
 		) vm_vbds
 	with e ->
 		error "Caught exception updating stats for vm (uuid: %s) -- %s" uuid (Printexc.to_string e);
-		Debug.log_backtrace e
+		Debug.log_backtrace e (Backtrace.get e)
 
 let update_host_cpu ~__context host cpus' =
 	let cpus = cpus'.pcpus_usage in

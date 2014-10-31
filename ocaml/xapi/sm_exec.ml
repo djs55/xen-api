@@ -331,7 +331,6 @@ let get_supported add_fn =
           add_fn driver i;
         with e ->
           error "Rejecting SM plugin: %s because of exception: %s (executable)" driver (Printexc.to_string e);
-          Debug.log_backtrace e;
       ) in
 
   List.iter 
@@ -341,7 +340,6 @@ let get_supported add_fn =
 		   try Array.iter f (Sys.readdir dir)
 		   with e ->
 			   error "Error checking directory %s for SM backends: %s" dir (ExnHelper.string_of_exn e);
-			   Debug.log_backtrace e
 		 end else error "Not scanning %s for SM backends: directory does not exist" dir
     ) 
     [ check_driver, !Xapi_globs.sm_dir ]

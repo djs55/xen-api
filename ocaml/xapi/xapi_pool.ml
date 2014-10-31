@@ -633,7 +633,7 @@ let protect_exn f x =
 	try Some (f x)
 	with e ->
 		debug "Ignoring exception: %s" (Printexc.to_string e);
-		Debug.log_backtrace e;
+		Debug.log_backtrace e (Backtrace.get e);
 		None
 
 (* Remark: the order in which we create the object in the distant database is not very important, as we have *)
