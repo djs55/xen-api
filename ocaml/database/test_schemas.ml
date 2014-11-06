@@ -76,7 +76,7 @@ let schema =
 	let database = { 
 		Schema.Database.tables = [ vm_table; vbd_table ];
 	} in
-	let one_to_many = Schema.StringMap.add "VBD" [ "VM", "VM", "VBDs" ] (Schema.StringMap.empty) in
+	let one_to_many = Schema.ForeignMap.add "VBD" [ "VM", "VM", "VBDs" ] (Schema.ForeignMap.empty) in
 	{
 		
 		Schema.major_vsn = 1;
@@ -84,7 +84,7 @@ let schema =
 		database = database;
 		(** indexed by table name, a list of (this field, foreign table, foreign field) *)
 		one_to_many = one_to_many;
-		many_to_many = Schema.StringMap.empty;
+		many_to_many = Schema.ForeignMap.empty;
 	}
 
 
@@ -101,9 +101,9 @@ let many_to_many =
 	
 	let database = { Schema.Database.tables = [ foo_table; bar_table ] } in
 	let many_to_many = 
-		Schema.StringMap.add "foo" [ "bars", "bar", "foos" ]
-			(Schema.StringMap.add "bar" [ "foos", "foo", "bars" ]
-				 Schema.StringMap.empty) in
+		Schema.ForeignMap.add "foo" [ "bars", "bar", "foos" ]
+			(Schema.ForeignMap.add "bar" [ "foos", "foo", "bars" ]
+				 Schema.ForeignMap.empty) in
 	let schema = { Schema.empty with
 					   Schema.database = database;
 					   many_to_many = many_to_many 

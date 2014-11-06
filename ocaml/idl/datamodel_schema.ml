@@ -66,9 +66,9 @@ let of_datamodel () =
 			| `Many, `Many -> true
 			| _ -> false in
 	let add_relation p t (((one_tbl, one_fld), (many_tbl, many_fld)) as r) =
-		let l = if StringMap.mem one_tbl t then StringMap.find one_tbl t else [] in
+		let l = if ForeignMap.mem one_tbl t then ForeignMap.find one_tbl t else [] in
 		if p r 
-		then StringMap.add one_tbl ((one_fld, many_tbl, many_fld) :: l) t
+		then ForeignMap.add one_tbl ((one_fld, many_tbl, many_fld) :: l) t
 		else t in
 
 	let database api = {
@@ -78,6 +78,15 @@ let of_datamodel () =
 		major_vsn = Datamodel.schema_major_vsn;
 		minor_vsn = Datamodel.schema_minor_vsn;
 		database = database Datamodel.all_api;
-		one_to_many = List.fold_left (add_relation is_one_to_many) StringMap.empty (Dm_api.relations_of_api Datamodel.all_api);
-		many_to_many = List.fold_left (add_relation is_many_to_many) StringMap.empty (Dm_api.relations_of_api Datamodel.all_api);
+		one_to_many = List.fold_left (add_relation is_one_to_many) ForeignMap.empty (Dm_api.relations_of_api Datamodel.all_api);
+		many_to_many = List.fold_left (add_relation is_many_to_many) ForeignMap.empty (Dm_api.relations_of_api Datamodel.all_api);
 	}
+
+let of_datamodel () =
+	let t = of_datamodel () in
+	let sexp = Schema.sexp_of_t t in
+	let oc = open_out "/tmp/db.schema" in
+	let txt = Sexplib.Sexp.to_string_hum sexp in
+	output_string oc txt;
+	close_out oc;
+	t
