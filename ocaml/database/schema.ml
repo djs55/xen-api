@@ -13,13 +13,21 @@
  *)
 open Sexplib.Std
 
+module Type = struct
+	type t =
+	| String
+	| Set (* of strings *)
+	| Pairs (* of string * string *)
+	with sexp
+end
+
 module Column = struct
 	type t = {
 		name: string;
 		persistent: bool;         (** see is_field_persistent *)
 		empty: string;            (** fresh value used when loading non-persistent fields *)
 		default: string option;   (** if column is missing, this is default value is used *)
-
+		ty: Type.t;               (** the type of the value in the column *)
 		issetref: bool;           (** only so we can special case set refs in the interface *)
 	} with sexp
 end

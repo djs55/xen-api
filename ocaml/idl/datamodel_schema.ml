@@ -30,6 +30,10 @@ let of_datamodel () =
 			let this = obj.Datamodel_types.name, f.Datamodel_types.field_name in
 			Datamodel_utils.Relations.is_in_relation api this && 
 				(Datamodel_utils.Relations.classify api (this,(Datamodel_utils.Relations.other_end_of api this)) = (`Many, `Many)) in
+		let ty = match f.Datamodel_types.ty with
+			| Datamodel_types.Set _ -> Type.Set
+			| Datamodel_types.Map(_,_) -> Type.Pairs
+			| _ -> Type.String in
 		{
 			Column.name = Escaping.escape_id f.Datamodel_types.full_name;
 			(* NB we always regenerate one-to-many Set(Ref _) fields *)
@@ -40,6 +44,7 @@ let of_datamodel () =
 				if issetref 
 				then Some (SExpr.string_of (SExpr.Node []))
 				else Opt.map Datamodel_values.to_db_string f.Datamodel_types.default_value ;
+			ty = ty;
 			issetref = issetref;
 		} in
 
@@ -49,6 +54,7 @@ let of_datamodel () =
 		persistent = true;
 		empty = "";
 		default = None;
+		ty = Type.String;
 		issetref = false;
 	} in
 

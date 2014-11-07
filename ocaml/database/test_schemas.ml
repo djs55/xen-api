@@ -4,6 +4,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = None;
+		ty = Schema.Type.String;
 		issetref = false;
 	} in
 	let uuid = {
@@ -11,6 +12,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = None;
+		ty = Schema.Type.String;
 		issetref = false;
 	} in
 	let name_label = {
@@ -18,6 +20,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = None;
+		ty = Schema.Type.String;
 		issetref = false;
 	} in
 	let name_description = {
@@ -25,6 +28,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = None;
+		ty = Schema.Type.String;
 		issetref = false;
 	} in
 	let vbds = {
@@ -32,6 +36,7 @@ let schema =
 		persistent = false;
 		empty = "()";
 		default = Some("()");
+		ty = Schema.Type.Set;
 		issetref = true;
 	} in
 	let other_config = {
@@ -39,6 +44,7 @@ let schema =
 		persistent = false;
 		empty = "()";
 		default = Some("()");
+		ty = Schema.Type.Pairs;
 		issetref = false;
 	} in
 	let pp = {
@@ -46,6 +52,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = Some("OpaqueRef:NULL");
+		ty = Schema.Type.String;
 		issetref = false;
 	} in
 	let tags = {
@@ -53,6 +60,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = Some("()");
+		ty = Schema.Type.Set;
 		issetref = false;
 	} in
 	let vm = {
@@ -60,6 +68,7 @@ let schema =
 		persistent = true;
 		empty = "";
 		default = None;
+		ty = Schema.Type.String;
 		issetref = false;
 	} in
 
@@ -93,6 +102,7 @@ let many_to_many =
 					   persistent = false;
 					   empty = "()";
 					   default = None;
+					   ty = Schema.Type.Pairs;
 					   issetref = false;
 					 } in
 	let foo_column = { bar_column with Schema.Column.name = "foos" } in
