@@ -18,6 +18,7 @@ module Request = struct
 	
 	(** All possible request messages *)
 	type t = 
+                | Merge of string * string
 		| Get_table_from_ref of string
 		| Is_valid_ref of string
 		| Read_refs of string
@@ -40,6 +41,7 @@ module Response = struct
 
 	(** All possible response messages *)
 	type t = 
+                | Merge of unit
 		| Get_table_from_ref of string option
 		| Is_valid_ref of bool
 		| Read_refs of string list

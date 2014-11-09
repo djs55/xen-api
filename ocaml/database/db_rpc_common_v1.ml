@@ -107,7 +107,13 @@ let unmarshall_unit xml =
 	match XMLRPC.From.string xml with
 			"" -> ()
 		| _ -> raise DB_remote_marshall_error
-			
+
+(* merge *)
+let marshall_merge_args s = marshall_2strings s
+let unmarshall_merge_args xml = unmarshall_2strings xml
+let marshall_merge_response () = marshall_stringopt None
+let unmarshall_merge_response so = ignore(unmarshall_stringopt so)
+
 (* get_table_from_ref *)
 let marshall_get_table_from_ref_args s = XMLRPC.To.string s
 let unmarshall_get_table_from_ref_args xml = XMLRPC.From.string xml

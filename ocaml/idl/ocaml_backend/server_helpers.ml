@@ -92,7 +92,9 @@ let exec ?marshaller ?f_forward ~__context f =
 (** WARNING: the context is destroyed when execution is finished if the task is not forwarded, in database and not called asynchronous. *)
 (*  FIXME: This function should not be used for external call : we should add a proper .mli file to hide it. *) 
 let exec_with_context ~__context ?marshaller ?f_forward ?(called_async=false) f =
-	Locking_helpers.Thread_state.with_named_thread (Context.get_task_name __context) (Context.get_task_id __context)
+        let task_id = Context.get_task_id __context in
+        let name = Context.get_task_name __context in
+	Locking_helpers.Thread_state.with_named_thread name task_id
 		(fun () ->
 			Debug.with_thread_associated (Context.string_of_task __context)
 				(fun () -> 
@@ -101,7 +103,8 @@ let exec_with_context ~__context ?marshaller ?f_forward ?(called_async=false) f 
 							(* CP-982: promote tracking debug line to info status *)
 							if called_async then info "spawning a new thread to handle the current task%s" (Context.trackid ~with_brackets:true ~prefix:" " __context);
 							exec ?marshaller ?f_forward ~__context f)
-						(fun () -> 
+						(fun () ->
+                                                        Db.merge __context name (Printf.sprintf "Task %s completed" (Ref.string_of task_id));
 							if not called_async 
 							then Context.destroy __context
 								(* else debug "nothing more to process for this thread" *)

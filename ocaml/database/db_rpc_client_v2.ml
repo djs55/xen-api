@@ -39,6 +39,11 @@ module Make = functor(RPC: Db_interface.RPC) -> struct
 				raise (Too_many_values (x,y,z))			
 			| y -> y
 
+	let merge _ title descr =
+		match process (Request.Merge(title, descr)) with
+			| Response.Merge () -> ()
+			| _ -> raise Remote_db_server_returned_bad_message
+
 	let get_table_from_ref _ x =
 		match process (Request.Get_table_from_ref x) with
 			| Response.Get_table_from_ref y -> y

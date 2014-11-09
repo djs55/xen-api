@@ -37,6 +37,7 @@ let rpc url content_type request_txt =
         let request = Http.Request.make ~version
                 ~user_agent:"database_test"
                 ~body:request_txt
+                ?subtask_of:(Debug.get_current_task ())
                 ~length:(Int64.of_int content_length) Http.Post url in
         let open Xmlrpc_client in
         let fd = get_connection () in

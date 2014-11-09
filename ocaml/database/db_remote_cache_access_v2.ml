@@ -24,6 +24,8 @@ let process_rpc (req: Rpc.t) =
 	Response.rpc_of_t
 		(try
 			match Request.t_of_rpc req with
+                                | Request.Merge (title, descr) ->
+                                        Response.Merge (DB.merge t title descr)
 				| Request.Get_table_from_ref x -> 
 					Response.Get_table_from_ref (DB.get_table_from_ref t x)
 				| Request.Is_valid_ref x ->

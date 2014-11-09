@@ -20,3 +20,8 @@ let is_valid_ref __context r =
 	let t = Context.database_of __context in
 	let module DB = (val (Db_cache.get t) : Db_interface.DB_ACCESS) in
 	DB.is_valid_ref t (Ref.string_of r)
+
+let merge __context title descr =
+	let t = Context.database_of __context in
+	let module DB = (val (Db_cache.get t) : Db_interface.DB_ACCESS) in
+	DB.merge t title descr

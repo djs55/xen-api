@@ -59,7 +59,14 @@ module Make = functor(RPC: Db_interface.RPC) -> struct
 					if status="success" then unmarshall_resp resp_xml
 					else process_exception_xml resp_xml
 			| _ -> raise Remote_db_server_returned_bad_message
-				
+
+        let merge _ title descr =
+                do_remote_call
+                        marshall_merge_args
+                        unmarshall_merge_response
+                        "merge"
+                        (title, descr)
+
 	let get_table_from_ref _ x =
 		do_remote_call
 			marshall_get_table_from_ref_args

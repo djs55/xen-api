@@ -62,9 +62,12 @@ module DBCacheRemoteListener = struct
 		let t = Db_backend.make () in
 		try
 			match fn_name with
-					"get_table_from_ref" ->
-						let s = unmarshall_get_table_from_ref_args args in
-						success (marshall_get_table_from_ref_response (DBCache.get_table_from_ref t s))
+                                | "merge" ->
+                                        let (title,descr) = unmarshall_merge_args args in
+                                        success (marshall_merge_response (DBCache.merge t title descr))
+				| "get_table_from_ref" ->
+					let s = unmarshall_get_table_from_ref_args args in
+					success (marshall_get_table_from_ref_response (DBCache.get_table_from_ref t s))
 				| "is_valid_ref" ->
 					let s = unmarshall_is_valid_ref_args args in
 					success (marshall_is_valid_ref_response (DBCache.is_valid_ref t s))

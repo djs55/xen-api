@@ -152,11 +152,14 @@ let complete ~__context result =
     (fun self ->
 		let status = Db_actions.DB_Action.Task.get_status ~__context ~self in
 		if status = `pending then begin
+                        let name_label = Db_actions.DB_Action.Task.get_name_label ~__context ~self in
+                        let name_description = Db_actions.DB_Action.Task.get_name_description ~__context ~self in
+                        Db.merge __context name_label name_description;
 			Db_actions.DB_Action.Task.set_allowed_operations ~__context ~self ~value:[];
 			Db_actions.DB_Action.Task.set_finished ~__context ~self ~value:(Date.of_float (Unix.time()));
 			Db_actions.DB_Action.Task.set_progress ~__context ~self ~value:1.;
 			set_result_on_task ~__context self result;
-			Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`success
+                        Db_actions.DB_Action.Task.set_status ~__context ~self ~value:`success;
 		end else
 			debug "the status of %s is: %s; cannot set it to `success"
 				(Ref.really_pretty_and_small self)

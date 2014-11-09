@@ -37,6 +37,8 @@ let fist_delay_read_records_where = ref false
 (* Only needed by the DB_ACCESS signature *)
 let initialise () = ()
 
+let merge _ _ _ = ()
+
 (* This fn is part of external interface, so need to take lock *)
 let get_table_from_ref t objref =
 	try
