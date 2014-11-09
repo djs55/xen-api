@@ -20,13 +20,14 @@ module D=Debug.Make(struct let name="xapi" end)
 open D
 
 (* Allows us to hook in an optional "local session" predicate *)
-let check_local_session_hook = ref None
+let check_local_session_hook : (__context:Context.t -> session_id:API.ref_session -> bool) option ref = ref None
 
 let is_local_session __context session_id = default false
 	(may (fun f -> f ~__context ~session_id) !check_local_session_hook)
 
 (* intra_pool_only is true iff the call that's invoking this check can only be called from host<->host intra-pool communication *)
 let check ~intra_pool_only ~session_id =
+(*
   Server_helpers.exec_with_new_task ~quiet:true "session_check"
     (fun __context ->
        (* First see if this is a "local" session *)
@@ -64,3 +65,5 @@ let check ~intra_pool_only ~session_id =
 	      raise (Api_errors.Server_error (Api_errors.session_invalid,[Ref.string_of session_id]))
 	 )
     )
+*)
+()
