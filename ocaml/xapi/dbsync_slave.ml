@@ -305,12 +305,12 @@ let update_env __context sync_keys =
   debug "resynchronising db with host physical interfaces";
   update_physical_networks ~__context;
 *)
-
+(*
   switched_sync Xapi_globs.sync_pif_params (fun () ->
     debug "resynchronising PIF params";
     resynchronise_pif_params ~__context;
   );
-
+*)
   switched_sync Xapi_globs.sync_patch_update_db (fun () ->
     debug "checking patch status";
     Xapi_pool_patch.update_db ~__context
@@ -348,8 +348,8 @@ let update_env __context sync_keys =
   switched_sync Xapi_globs.sync_pci_devices (fun () ->
     Xapi_pci.update_pcis ~__context ~host:localhost;
   );
-
+(*
   switched_sync Xapi_globs.sync_gpus (fun () ->
     Xapi_pgpu.update_gpus ~__context ~host:localhost;
   );
-
+*)

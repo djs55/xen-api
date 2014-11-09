@@ -891,7 +891,9 @@ let server_init() =
       "Synchronising VLANs on slave with master", [Startup.OnlySlave; Startup.NoExnRaising], Sync_networking.copy_vlans_from_master ~__context;
       "Synchronising tunnels on slave with master", [Startup.OnlySlave; Startup.NoExnRaising], Sync_networking.copy_tunnels_from_master ~__context;
       "Initialise monitor configuration", [], Monitor_master.update_configuration_from_master;
+(*
       "Initialising licensing", [], handle_licensing;
+*)
       "message_hook_thread", [ Startup.NoExnRaising ], (Xapi_message.start_message_hook_thread ~__context);
       "heartbeat thread", [ Startup.NoExnRaising; Startup.OnThread ], Db_gc.start_heartbeat_thread;
       "resynchronising HA state", [ Startup.NoExnRaising ], resynchronise_ha_state;
@@ -935,8 +937,10 @@ let server_init() =
 	debug "Waiting forever for the management interface to gain an IP address";
 	let ip = wait_for_management_ip_address ~__context in
 	debug "Management interface got IP address: %s; attempting to re-plug any unplugged PBDs" ip;
+(*
 	Helpers.call_api_functions ~__context (fun rpc session_id ->
 		Create_storage.plug_unplugged_pbds __context)
+*)
       )
       in
 
@@ -950,10 +954,12 @@ let server_init() =
           Xapi_pool_transition.consider_sending_alert __context;
 
       (* Start the external authentification plugin *)
+(*
       "Calling extauth_hook_script_before_xapi_initialize", [ Startup.NoExnRaising ],
           (fun () -> call_extauth_hook_script_before_xapi_initialize ~__context);
       "Calling on_xapi_initialize event hook in the external authentication plugin", [ Startup.NoExnRaising; Startup.OnThread ],
           (fun () -> event_hook_auth_on_xapi_initialize_async ~__context);
+*)
     ];
 
     debug "startup: startup sequence finished");
