@@ -13,7 +13,7 @@
  *)
 
 module Time : sig
-        type t = Generation.t
+        type t = Generation.t with sexp
         (** A monotonically increasing counter associated with this database *)
 end
 
@@ -22,15 +22,15 @@ module Stat : sig
                 created: Time.t;  (** Time this value was created *)
                 modified: Time.t; (** Time this value was last modified *)
                 deleted: Time.t;  (** Time this value was deleted (or 0L meaning it is still alive) *)
-        }
+        } with sexp
         (** Metadata associated with a database value *)
 end
 
 module type MAP = sig
-        type t
+        type t with sexp
         (** A map from string to some value *)
 
-        type value
+        type value with sexp
         (** The type of the values in the map *)
 
         val empty : t
@@ -103,7 +103,7 @@ module TableSet : MAP with type value = Table.t
 
 module Manifest :
   sig
-    type t
+    type t with sexp
     val empty : t
     val make : int -> int -> Generation.t -> t
     val generation : t -> Generation.t
@@ -120,10 +120,11 @@ type update =
 	| PreDelete of string (* tblname *) * string (* objref *)
 	| Delete of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
 	| Create of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
+with sexp
 
 module Database :
   sig
-    type t
+    type t with sexp
     val update_manifest : (Manifest.t -> Manifest.t) -> t -> t
     val update_tableset : (TableSet.t -> TableSet.t) -> t -> t
     val manifest : t -> Manifest.t

@@ -11,12 +11,13 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
+open Sexplib.Std
 
 (* Simple generation count implementation *)
 module D = Debug.Make(struct let name = "sql" end)
 open D
 
-type t = int64
+type t = int64 with sexp
 
 let of_string str : t = Int64.of_string str
 let to_string g = Int64.to_string g

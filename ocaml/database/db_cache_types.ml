@@ -27,11 +27,29 @@ module Stat = struct
         let make x = { created = x; modified = x; deleted = 0L }
 end
 
+module type OrderedType = sig
+        type t with sexp
+        val compare: t -> t -> int
+end
+
+module Map(Ord: OrderedType) = struct
+        include Map.Make(Ord)
+
+        (* Serialise the map via a list of pairs *)
+        type 'a _t = (Ord.t * 'a) list with sexp
+        let sexp_of_t a t =
+                let _t = fold (fun k v acc -> (k, v) :: acc) t [] in
+                sexp_of__t a _t
+        let t_of_sexp a sexp =
+                let _t = _t_of_sexp a sexp in
+                List.fold_left (fun acc (k, v) -> add k v acc) empty _t
+end
+
 (** Database tables, columns and rows are all indexed by string, each
 	using a specialised StringMap *)
 module StringMap = struct
-	include Map.Make(struct
-		type t = string
+	include Map(struct
+		type t = string with sexp
 		let compare = Pervasives.compare
 	end)
 	let update key default f t =
@@ -40,12 +58,12 @@ module StringMap = struct
 end
 
 module type VAL = sig
-	type t
+	type t with sexp
 end
 
 module type MAP = sig
-	type t
-        type value
+	type t with sexp
+        type value with sexp
 	val empty : t
 	val add: Time.t -> string -> value -> t -> t
 	val remove : Time.t -> string -> t -> t
@@ -63,8 +81,8 @@ module Make = functor(V: VAL) -> struct
 	type x = {
                 stat: Stat.t;
 		v : V.t
-        }
-	type map_t = x StringMap.t
+        } with sexp
+	type map_t = x StringMap.t with sexp
 	let empty = StringMap.empty
 	let fold f = StringMap.fold (fun key x -> f key x.stat x.v)
 	let add generation key v =
@@ -97,8 +115,8 @@ end
 module Row = struct
         include Make(Schema.Value)
 
-	type t=map_t
-        type value = Schema.Value.t
+	type t=map_t with sexp
+        type value = Schema.Value.t with sexp
 	let find key t =
 		try find key t
 		with Not_found -> raise (DBCache_NotFound ("missing field", key, ""))
@@ -116,8 +134,8 @@ module Table = struct
 
 	type t = { rows : StringRowMap.map_t;
 			   deleted_len : int;
-			   deleted : (Time.t * Time.t * string) list }
-        type value = Row.t
+			   deleted : (Time.t * Time.t * string) list } with sexp
+        type value = Row.t with sexp
 	let add g key value t = {t with rows=StringRowMap.add g key value t.rows}
 	let empty = {rows=StringRowMap.empty; deleted_len = 1; deleted=[(0L,0L,"")] }
 	let fold f t acc = StringRowMap.fold f t.rows acc
@@ -160,8 +178,8 @@ end
 module TableSet = struct
 	include Make(Table)
 
-	type t=map_t
-        type value = Table.t
+	type t=map_t with sexp
+        type value = Table.t with sexp
 	let find key t =
 		try find key t
 		with Not_found -> raise (DBCache_NotFound ("missing table", key, ""))
@@ -170,13 +188,15 @@ end
 type common_key =
 	| Ref of string
 	| Uuid of string
+with sexp
+
 let string_of_common_key = function
 	| Ref x -> x
 	| Uuid x -> x
 
 module KeyMap = struct
-	include Map.Make(struct
-		type t = common_key
+	include Map(struct
+		type t = common_key with sexp
 		let compare = Pervasives.compare
 	end)
 	let add_unique tblname fldname k v t =
@@ -190,7 +210,7 @@ module Manifest = struct
 	type t = {
 		schema : (int * int) option;
 		generation_count : Generation.t
-	}
+	} with sexp
 
 	let empty = {
 		schema = None; generation_count = Generation.null_generation
@@ -225,6 +245,7 @@ type update =
 	| PreDelete of string (* tblname *) * string (* objref *)
 	| Delete of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
 	| Create of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
+with sexp
 
 module Database = struct
 	type t = {
@@ -232,8 +253,8 @@ module Database = struct
 		manifest : Manifest.t;
 		schema:    Schema.t;
 		keymap:    (string * string) KeyMap.t;
-		callbacks: (string * (update -> t -> unit)) list
-	}
+                callbacks: (string * (update -> t -> unit)) list with sexp_drop_if(fun _ -> true);
+	} with sexp
 	let update_manifest f x =
 		{ x with manifest = f x.manifest }
 
