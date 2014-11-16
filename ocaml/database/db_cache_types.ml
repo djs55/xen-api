@@ -11,11 +11,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
-
+open Sexplib.Std
 open Db_exn
 
 module Time = struct
-        type t = Generation.t
+        type t = Generation.t with sexp
 end
 
 module Stat = struct
@@ -23,7 +23,7 @@ module Stat = struct
                 created: Time.t;
                 modified: Time.t;
                 deleted: Time.t;
-        }
+        } with sexp
         let make x = { created = x; modified = x; deleted = 0L }
 end
 
