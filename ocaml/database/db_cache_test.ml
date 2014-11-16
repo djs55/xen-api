@@ -44,7 +44,19 @@ let test_field_generation_count () =
   let stats', vbd_1' = find "VBD" "VBD:1" db' in
   assert_equal ~printer:Int64.to_string stats.Stat.created stats'.Stat.created;
   assert_equal ~printer:Int64.to_string stats.Stat.deleted stats'.Stat.deleted;
-  assert_equal ~printer:Int64.to_string (Int64.add stats.Stat.modified 1L) stats'.Stat.modified
+  assert_equal ~printer:Int64.to_string (Int64.add stats.Stat.modified 1L) stats'.Stat.modified;
+  (* check the generation count on the table has been bumped *)
+  let stats, _ = TableSet.find "VBD" (Database.tableset db) in
+  let stats', _ = TableSet.find "VBD" (Database.tableset db') in
+  assert_equal ~printer:Int64.to_string stats.Stat.created stats'.Stat.created;
+  assert_equal ~printer:Int64.to_string stats.Stat.deleted stats'.Stat.deleted;
+  assert_equal ~printer:Int64.to_string (Int64.add stats.Stat.modified 1L) stats'.Stat.modified;
+  (* check the generation count on the table is bumped again *)
+  let db'' = add_row "VBD" "VBD:2" (make_row 0L [ Db_names.ref, Schema.Value.String "VBD:2"; Db_names.uuid, Schema.Value.String "uuid2"; "VM", Schema.Value.String "theVM2" ]) db' in
+  let stats'', _ = TableSet.find "VBD" (Database.tableset db'') in
+  assert_equal ~printer:Int64.to_string stats'.Stat.created stats''.Stat.created;
+  assert_equal ~printer:Int64.to_string stats'.Stat.deleted stats''.Stat.deleted;
+  assert_equal ~printer:Int64.to_string (Int64.add stats'.Stat.modified 1L) stats''.Stat.modified
 
 let check_many_to_many () = 
   let db = create_test_db () in
