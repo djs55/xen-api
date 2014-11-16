@@ -34,7 +34,7 @@ let generic_database_upgrade db =
   (* for each table, go through and fill in missing default values *)
   List.fold_left
       (fun db tblname ->
-		  let tbl = TableSet.find tblname (Database.tableset db) in
+		  let tbl = snd (TableSet.find tblname (Database.tableset db)) in
 		  let schema = Schema.table tblname (Database.schema db) in
 		  let add_fields_to_row objref _ r tbl : Table.t =
 			  let row = Row.add_defaults g schema r in

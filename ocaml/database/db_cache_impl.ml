@@ -51,7 +51,7 @@ let is_valid_ref t objref =
 			
 let read_field_internal t tblname fldname objref db = 
         try
-	        Row.find fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))
+	        snd (Row.find fldname (snd (Table.find objref (snd (TableSet.find tblname (Database.tableset db))))))
         with Not_found ->
                 raise (DBCache_NotFound ("missing row", tblname, objref))
 
@@ -112,10 +112,10 @@ let read_set_ref t rcd =
 	end else begin
 		error "Illegal read_set_ref query { table = %s; where_field = %s; where_value = %s; return = %s }; falling back to linear scan" rcd.table rcd.where_field rcd.where_value rcd.return;
 		Printf.printf "Illegal read_set_ref query { table = %s; where_field = %s; where_value = %s; return = %s }; falling back to linear scan\n%!" rcd.table rcd.where_field rcd.where_value rcd.return;
-		let tbl = TableSet.find rcd.table (Database.tableset db) in
+		let _, tbl = TableSet.find rcd.table (Database.tableset db) in
 		Table.fold
 			(fun rf _ row acc ->
-                                let v = Schema.Value.Unsafe_cast.string (Row.find rcd.where_field row) in
+                                let v = Schema.Value.Unsafe_cast.string (snd (Row.find rcd.where_field row)) in
 				if v = rcd.where_value 
 				then v :: acc else acc)
 			tbl []
@@ -130,8 +130,8 @@ let read_set_ref t rcd =
    table with remote-fieldname=objref] *)
 let read_record_internal db tblname objref =
         try
-	        let tbl = TableSet.find tblname (Database.tableset db) in
-	        let row = Table.find objref tbl in
+	        let _, tbl = TableSet.find tblname (Database.tableset db) in
+	        let _, row = Table.find objref tbl in
 	        let fvlist = Row.fold (fun k _ d env -> (k,d)::env) row [] in
 	        (* Unfortunately the interface distinguishes between Set(Ref _) types and 
 	           ordinary fields *)
@@ -157,8 +157,8 @@ let delete_row_locked t tblname objref =
         try
                 W.debug "delete_row %s (%s)" tblname objref;
 	
-	        let tbl = TableSet.find tblname (Database.tableset (get_database t)) in
-	        let row = Table.find objref tbl in
+	        let _, tbl = TableSet.find tblname (Database.tableset (get_database t)) in
+	        let _, row = Table.find objref tbl in
 	
 	        let db = get_database t in
 	        Database.notify (PreDelete(tblname, objref)) db;
@@ -199,11 +199,11 @@ let create_row t tblname kvs' new_objref =
 (* Do linear scan to find field values which match where clause *)
 let read_field_where t rcd =
 	let db = get_database t in
-	let tbl = TableSet.find rcd.table (Database.tableset db) in
+	let _, tbl = TableSet.find rcd.table (Database.tableset db) in
 	Table.fold
 		(fun r _ row acc ->
-			let field = Schema.Value.marshal (Row.find rcd.where_field row) in
-			if field = rcd.where_value then Schema.Value.marshal (Row.find rcd.return row) :: acc else acc
+			let field = Schema.Value.marshal (snd (Row.find rcd.where_field row)) in
+			if field = rcd.where_value then Schema.Value.marshal (snd (Row.find rcd.return row)) :: acc else acc
 		) tbl []
 		
 let db_get_by_uuid t tbl uuid_val =
@@ -223,19 +223,19 @@ let db_get_by_name_label t tbl label =
 		
 (* Read references from tbl *)
 let read_refs t tblname =
-	let tbl = TableSet.find tblname (Database.tableset (get_database t)) in
+	let _, tbl = TableSet.find tblname (Database.tableset (get_database t)) in
 	Table.fold (fun r _ _ acc -> r :: acc) tbl []
 		
 (* Return a list of all the refs for which the expression returns true. *)
 let find_refs_with_filter_internal db (tblname: string) (expr: Db_filter_types.expr) =
-	let tbl = TableSet.find tblname (Database.tableset db) in
+	let _, tbl = TableSet.find tblname (Database.tableset db) in
 	let eval_val row = function
 		| Db_filter_types.Literal x -> x
-		| Db_filter_types.Field x -> Schema.Value.marshal (Row.find x row) in
+		| Db_filter_types.Field x -> Schema.Value.marshal (snd (Row.find x row)) in
 	Table.fold
 		(fun r _ row acc ->
 			if Db_filter.eval_expr (eval_val row) expr
-			then Schema.Value.Unsafe_cast.string (Row.find Db_names.ref row) :: acc else acc
+			then Schema.Value.Unsafe_cast.string (snd (Row.find Db_names.ref row)) :: acc else acc
 		) tbl []
 let find_refs_with_filter t = find_refs_with_filter_internal (get_database t)
 		
@@ -250,9 +250,9 @@ let process_structured_field_locked t (key,value) tblname fld objref proc_fn_sel
         let key = ensure_utf8_xml key in
         let value = ensure_utf8_xml value in
 	try
-	        let tbl = TableSet.find tblname (Database.tableset (get_database t)) in
-	        let row = Table.find objref tbl in
-	        let existing_str = Row.find fld row in
+	        let _, tbl = TableSet.find tblname (Database.tableset (get_database t)) in
+	        let _, row = Table.find objref tbl in
+	        let _, existing_str = Row.find fld row in
 	        let newval = match proc_fn_selector with
 		| AddSet -> add_to_set key existing_str
 		| RemoveSet -> remove_from_set key existing_str

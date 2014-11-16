@@ -51,7 +51,7 @@ module type MAP = sig
 	val remove : Time.t -> string -> t -> t
 	val fold : (string -> Stat.t -> value -> 'b -> 'b) -> t -> 'b -> 'b
 	val fold_over_recent : Time.t -> (string -> Stat.t -> value -> 'b -> 'b) -> t -> 'b -> 'b
-	val find : string -> t -> value
+	val find : string -> t -> (Stat.t * value)
 	val mem : string -> t -> bool
 	val iter : (string -> value -> unit) -> t -> unit
 	val update : int64 -> string -> value -> (value -> value) -> t -> t
@@ -70,7 +70,9 @@ module Make = functor(V: VAL) -> struct
 	let add generation key v =
                 let stat = Stat.make generation in
                 StringMap.add key { stat; v }
-	let find key map = (StringMap.find key map).v 
+	let find key map =
+                let x = StringMap.find key map in
+                x.stat, x.v 
 	let mem = StringMap.mem
 	let iter f = StringMap.iter (fun key x -> f key x.v)
 	let remove _ = StringMap.remove
@@ -82,7 +84,7 @@ module Make = functor(V: VAL) -> struct
                 let updatefn () = StringMap.update key default (fun x -> { stat = { x.stat with Stat.modified=generation }; v=f x.v}) row in
 		if mem key row 
 		then
-			let old = find key row in
+			let _, old = find key row in
 			let newv = f old in
 			if newv == old 
 			then row 
@@ -125,7 +127,9 @@ module Table = struct
 	let remove g key t =
 		let upper_length_deleted_queue = 512 in
 		let lower_length_deleted_queue = 256 in
-		let created = (StringMap.find key t.rows).StringRowMap.stat.Stat.created in
+		let created =
+                        let stat, row = StringRowMap.find key t.rows in
+                        stat.Stat.created in
 		let new_element = (created,g,key) in
 		let new_len,new_deleted =
 			if t.deleted_len + 1 < upper_length_deleted_queue
@@ -277,9 +281,10 @@ module Database = struct
 					Table.fold
 						(fun rf _ row acc ->
 							let acc = KeyMap.add_unique tblname Db_names.ref (Ref rf) (tblname, rf) acc in
-							if Row.mem Db_names.uuid row
-                                                        then KeyMap.add_unique tblname Db_names.uuid (Uuid (Schema.Value.Unsafe_cast.string (Row.find Db_names.uuid row))) (tblname, rf) acc
-                                                        else acc
+							if Row.mem Db_names.uuid row then begin
+                                                                let _, uuid = Row.find Db_names.uuid row in
+                                                                KeyMap.add_unique tblname Db_names.uuid (Uuid (Schema.Value.Unsafe_cast.string uuid)) (tblname, rf) acc
+                                                        end else acc
 						)
 						tbl acc)
 				x.tables KeyMap.empty in
@@ -289,8 +294,8 @@ module Database = struct
 				(fun one_tblname rels tables ->
 					List.fold_left (fun tables (one_fldname, many_tblname, many_fldname) ->
 						(* VBD.VM : Ref(VM) -> VM.VBDs : Set(Ref(VBD)) *)
-						let one_tbl = TableSet.find one_tblname tables in
-						let many_tbl = TableSet.find many_tblname tables in
+						let _, one_tbl = TableSet.find one_tblname tables in
+						let _, many_tbl = TableSet.find many_tblname tables in
 						(* Initialise all VM.VBDs = [] (otherwise VMs with no
 						   VBDs may be missing a VBDs field altogether on
 						   upgrade) *)
@@ -304,7 +309,7 @@ module Database = struct
 
 						let vm_to_vbds = Table.fold
 							(fun vbd _ row acc ->
-								let vm = Schema.Value.Unsafe_cast.string (Row.find one_fldname row) in
+								let vm = Schema.Value.Unsafe_cast.string (snd (Row.find one_fldname row)) in
 								let existing = if Schema.ForeignMap.mem vm acc then Schema.ForeignMap.find vm acc else [] in
 								Schema.ForeignMap.add vm (vbd :: existing) acc)
 							one_tbl Schema.ForeignMap.empty in
@@ -313,7 +318,7 @@ module Database = struct
 								if not(Table.mem vm acc)
 								then acc
 								else
-									let row = Table.find vm acc in
+									let _, row = Table.find vm acc in
 									let row' = Row.add g many_fldname (Schema.Value.Set vbds) row in
 									Table.add g vm row' acc)
 							vm_to_vbds many_tbl' in
@@ -364,13 +369,13 @@ let (++) f g x = f (g x)
 let id x = x
 
 let is_valid tblname objref db =
-	Table.mem objref (TableSet.find tblname (Database.tableset db))
+	Table.mem objref (snd (TableSet.find tblname (Database.tableset db)))
 
 
 
 let get_field tblname objref fldname db =
         try
-	  Row.find fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))
+	  snd (Row.find fldname (snd (Table.find objref (snd (TableSet.find tblname (Database.tableset db))))))
         with Not_found ->
           raise (DBCache_NotFound ("missing row", tblname, objref))
 
@@ -464,14 +469,15 @@ let add_row tblname objref newval db =
 			 (fun _ -> newval))
 	 ++ (Database.update_keymap (KeyMap.add_unique tblname Db_names.ref (Ref objref) (tblname, objref)))
 	 ++ (Database.update_keymap (fun m ->
-									 if Row.mem Db_names.uuid newval
-									 then KeyMap.add_unique tblname Db_names.uuid (Uuid (Schema.Value.Unsafe_cast.string (Row.find Db_names.uuid newval))) (tblname, objref) m
-									 else m))) db
+                if Row.mem Db_names.uuid newval then begin
+                        let _, uuid = Row.find Db_names.uuid newval in
+                        KeyMap.add_unique tblname Db_names.uuid (Uuid (Schema.Value.Unsafe_cast.string uuid)) (tblname, objref) m
+                end else m))) db
 
 let remove_row tblname objref db =
 	let uuid =
 		try
-			Some (Schema.Value.Unsafe_cast.string (Row.find Db_names.uuid (Table.find objref (TableSet.find tblname (Database.tableset db)))))
+			Some (Schema.Value.Unsafe_cast.string (snd (Row.find Db_names.uuid (snd (Table.find objref (snd (TableSet.find tblname (Database.tableset db))))))))
 		with _ -> None in
 	let g = db.Database.manifest.Manifest.generation_count in
 	(Database.increment

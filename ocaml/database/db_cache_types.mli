@@ -50,7 +50,7 @@ module type MAP = sig
         (** [fold_over_recent since f t initial] folds [f key stats value acc] over all the
             items with a modified time larger than [since] *)
 
-        val find : string -> t -> value
+        val find : string -> t -> Stat.t * value
         (** [find key t] returns the value associated with [key] in [t] or raises
             [DBCache_NotFound] *)
 
