@@ -113,18 +113,34 @@ module Manifest :
 	val update_schema : ((int * int) option -> (int * int) option) -> t -> t
   end
 
-(** The core database updates (RefreshRow and PreDelete is more of an 'event') *)
-type update = 
+module StringMap: Map.S with type key = string
+
+module Update : sig
+        (** The core database updates (RefreshRow and PreDelete is more of an 'event') *)
+        type t = 
 	| RefreshRow of string (* tblname *) * string (* objref *)
 	| WriteField of string (* tblname *) * string (* objref *) * string (* fldname *) * Schema.Value.t (* oldval *) * Schema.Value.t (* newval *)
 	| PreDelete of string (* tblname *) * string (* objref *)
-	| Delete of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
-	| Create of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
-with sexp
+	| Delete of string (* tblname *) * string (* objref *) * Schema.Value.t StringMap.t(* values *)
+	| Create of string (* tblname *) * string (* objref *) * Schema.Value.t StringMap.t (* values *)
+        with sexp
 
-module Database :
-  sig
+        val equal: t -> t -> bool
+end
+
+module Database: sig
     type t with sexp
+
+    type branchpoint = t with sexp
+    (* The point when a branch is taken *)
+
+    val branch: t -> branchpoint
+    (** [branch t] creates a branch from [t] which can be [diff]ed *)
+
+    val diff: branchpoint -> t -> Update.t list
+    (** [diff branchpoint topic] computes the differences between the
+        [topic] branch and the original [branchpoint] *)
+
     val update_manifest : (Manifest.t -> Manifest.t) -> t -> t
     val update_tableset : (TableSet.t -> TableSet.t) -> t -> t
     val manifest : t -> Manifest.t
@@ -139,9 +155,9 @@ module Database :
 	val lookup_key : string -> t -> (string * string) option
 	val reindex : t -> t
 
-	val register_callback : string -> (update -> t -> unit) -> t -> t
+	val register_callback : string -> (Update.t -> t -> unit) -> t -> t
 	val unregister_callback : string -> t -> t
-	val notify : update -> t -> unit
+	val notify : Update.t -> t -> unit
   end
 
 exception Duplicate

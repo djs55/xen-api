@@ -163,7 +163,7 @@ let delete_row_locked t tblname objref =
 	        let db = get_database t in
 	        Database.notify (PreDelete(tblname, objref)) db;
 	        update_database t (remove_row tblname objref);
-	        Database.notify (Delete(tblname, objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
+	        Database.notify (Delete(tblname, objref, Row.fold (fun k _ v acc -> StringMap.add k v acc) row StringMap.empty)) (get_database t)
         with Not_found ->
                 raise (DBCache_NotFound ("missing row", tblname, objref))
 
@@ -191,7 +191,7 @@ let create_row_locked t tblname kvs' new_objref =
 	let row = Row.add_defaults g schema row in
 	W.debug "create_row %s (%s) [%s]" tblname new_objref (String.concat "," (List.map (fun (k,v)->"("^k^","^"v"^")") kvs'));
 	update_database t (add_row tblname new_objref row);
-	Database.notify (Create(tblname, new_objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
+	Database.notify (Create(tblname, new_objref, Row.fold (fun k _ v acc -> StringMap.add k v acc) row StringMap.empty)) (get_database t)
 		
 let create_row t tblname kvs' new_objref =
 	with_lock (fun () -> create_row_locked t tblname kvs' new_objref)

@@ -213,7 +213,7 @@ module Manifest = struct
 	} with sexp
 
 	let empty = {
-		schema = None; generation_count = Generation.null_generation
+		schema = None; generation_count = Generation.initial
 	}
 
 	let make schema_major_vsn schema_minor_vsn gen_count = {
@@ -238,14 +238,29 @@ module Manifest = struct
 	}
 end
 
-(** The core database updates (RefreshRow and PreDelete is more of an 'event') *)
-type update =
-	| RefreshRow of string (* tblname *) * string (* objref *)
-	| WriteField of string (* tblname *) * string (* objref *) * string (* fldname *) * Schema.Value.t (* oldval *) * Schema.Value.t (* newval *)
-	| PreDelete of string (* tblname *) * string (* objref *)
-	| Delete of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
-	| Create of string (* tblname *) * string (* objref *) * (string * Schema.Value.t) list (* values *)
-with sexp
+module Update = struct
+        (** The core database updates (RefreshRow and PreDelete is more of an 'event') *)
+        type t =
+                | RefreshRow of string (* tblname *) * string (* objref *)
+                | WriteField of string (* tblname *) * string (* objref *) * string (* fldname *) * Schema.Value.t (* oldval *) * Schema.Value.t (* newval *)
+                | PreDelete of string (* tblname *) * string (* objref *)
+                | Delete of string (* tblname *) * string (* objref *) * Schema.Value.t StringMap.t (* values *)
+                | Create of string (* tblname *) * string (* objref *) * Schema.Value.t StringMap.t (* values *)
+        with sexp
+
+        let equal a b = match a, b with
+        | RefreshRow(a_name, a_ref), RefreshRow(b_name, b_ref) ->
+                a_name = b_name && (a_ref = b_ref)
+        | WriteField(a_name, a_ref, a_fldname, a_old, a_new), WriteField(b_name, b_ref, b_fldname, b_old, b_new) ->
+                a_name = b_name && (a_ref = b_ref) && (a_fldname = b_fldname) && (a_old = b_old) && (a_new = b_new)
+        | PreDelete(a_name, a_ref), PreDelete(b_name, b_ref) ->
+                a_name = b_name && (a_ref = b_ref)
+        | Create(a_name, a_ref, a_map), Create(b_name, b_ref, b_map)
+        | Delete(a_name, a_ref, a_map), Delete(b_name, b_ref, b_map) ->
+                a_name = b_name && (a_ref = b_ref) && (StringMap.equal (fun a_v b_v -> a_v = b_v) a_map b_map)
+        | _, _ -> false
+
+end
 
 module Database = struct
 	type t = {
@@ -253,8 +268,54 @@ module Database = struct
 		manifest : Manifest.t;
 		schema:    Schema.t;
 		keymap:    (string * string) KeyMap.t;
-                callbacks: (string * (update -> t -> unit)) list with sexp_drop_if(fun _ -> true);
+                callbacks: (string * (Update.t -> t -> unit)) list with sexp_drop_if(fun _ -> true);
 	} with sexp
+
+        (* When we 'branch' we clear our memory of deleted rows to
+         * make the 'diff' calculation simpler. *)
+        type branchpoint = t with sexp
+
+        let branch t =
+                let tables = TableSet.fold
+                        (fun tblname stats tbl acc ->
+                                let tbl' = { tbl with Table.deleted = []; deleted_len = 0 } in
+                                TableSet.add stats.Stat.modified tblname tbl' acc
+                        ) t.tables TableSet.empty in
+                { t with tables }
+
+        let diff branchpoint topic =
+                let open Update in
+                TableSet.fold
+                        (fun tblname _ tbl acc ->
+                                let oldstats, oldtbl = TableSet.find tblname branchpoint.tables in
+                                (* Assume that the act of branching cleared the deleted row list *)
+                                if oldtbl.Table.deleted_len <> 0
+                                then invalid_arg "branchpoint has a non-empty deleted row list";
+                                (* Rows that have been deleted in topic but not in branchpoint *)
+                                let deleted = List.fold_left (fun acc (_, _, objref) ->
+                                        Delete (tblname, objref, StringMap.empty) :: acc
+                                ) acc tbl.Table.deleted in
+                                Table.fold_over_recent oldstats.Stat.modified
+                                        (fun rf _ row acc ->
+                                                match (try Some (Table.find rf oldtbl) with Not_found -> None) with
+                                                | None ->
+                                                        (* If the row with [rf] doesn't exist in branchpoint then CreateRow *)
+                                                        let row = Row.fold (fun k _ v acc -> StringMap.add k v acc) row StringMap.empty in
+                                                        Create(tblname, rf, row) :: acc
+                                                | Some (oldstats, oldrow) ->
+                                                        let oldstats, oldrow = Table.find rf oldtbl in
+                                                        (* else find the row in branchpoint for comparson *)
+                                                        Row.fold_over_recent oldstats.Stat.modified
+                                                                (fun k stats v acc ->
+                                                                        (* Find the key in the other branch and compare stats *)
+                                                                        let oldstats, oldv = Row.find k oldrow in
+                                                                        if oldstats.Stat.modified < stats.Stat.modified
+                                                                        then WriteField(tblname, rf, k, oldv, v) :: acc
+                                                                        else acc
+                                                                ) row acc
+					) tbl deleted
+                        ) topic.tables []
+
 	let update_manifest f x =
 		{ x with manifest = f x.manifest }
 

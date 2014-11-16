@@ -38,7 +38,9 @@ let test_field_generation_count () =
       Database.make Test_schemas.schema
    |> Db_upgrade.generic_database_upgrade
    |> Db_backend.blow_away_non_persistent_fields Test_schemas.schema
-   |> add_row "VBD" "VBD:1" (make_row 0L [ Db_names.ref, Schema.Value.String "VBD:1"; Db_names.uuid, Schema.Value.String "uuid"; "VM", Schema.Value.String "theVM" ]) in
+   |> add_row "VBD" "VBD:1" (make_row Generation.initial [ Db_names.ref, Schema.Value.String "VBD:1"; Db_names.uuid, Schema.Value.String "uuid"; "VM", Schema.Value.String "theVM" ])
+   |> Database.branch in
+
   let stats, vbd_1 = find "VBD" "VBD:1" db in
   let db' = set_field "VBD" "VBD:1" "uuid" (Schema.Value.String "another uuid") db in
   let stats', vbd_1' = find "VBD" "VBD:1" db' in
@@ -56,7 +58,33 @@ let test_field_generation_count () =
   let stats'', _ = TableSet.find "VBD" (Database.tableset db'') in
   assert_equal ~printer:Int64.to_string stats'.Stat.created stats''.Stat.created;
   assert_equal ~printer:Int64.to_string stats'.Stat.deleted stats''.Stat.deleted;
-  assert_equal ~printer:Int64.to_string (Int64.add stats'.Stat.modified 1L) stats''.Stat.modified
+  assert_equal ~printer:Int64.to_string (Int64.add stats'.Stat.modified 1L) stats''.Stat.modified;
+
+  let printer x = String.concat "; " (List.map (fun x -> Sexplib.Sexp.to_string_hum (Update.sexp_of_t x)) x) in
+  let cmp a b =
+          (* Every row should be involved at most once in our 'expected' lists
+           * below so we can sort the lists into any order for comparison
+           *)
+        let a' = List.sort compare a and b' = List.sort compare b in
+        List.fold_left (&&) true (List.map (fun (a, b) -> Update.equal a b) (List.combine a' b')) in
+
+  (* We first did a writefield *)
+  let the_write = Update.WriteField("VBD", "VBD:1", "uuid", Schema.Value.String "uuid", Schema.Value.String "another uuid") in
+  let updates = Database.diff db db' in
+  assert_equal ~printer ~cmp [ the_write ] updates;
+  (* And then created another *)
+  Printf.fprintf stderr "\nmergepoint = %s\n" (Sexplib.Sexp.to_string_hum (Database.sexp_of_t db'));
+  Printf.fprintf stderr "\ntopic = %s\n%!" (Sexplib.Sexp.to_string_hum (Database.sexp_of_t db''));
+  let values = List.fold_left (fun map (k, v) -> StringMap.add k v map) StringMap.empty
+    [ "uuid", Schema.Value.String "uuid2"; "_ref", Schema.Value.String "VBD:2"; "VM", Schema.Value.String "theVM2" ] in
+  let the_create = Update.Create("VBD", "VBD:2", values) in
+  let updates = Database.diff db' db'' in
+  assert_equal ~printer ~cmp [ the_create ] updates;
+  (* Check we see them both: *)
+  let updates = Database.diff db db'' in
+  assert_equal ~printer ~cmp [ the_write; the_create ] updates;
+
+  ()
 
 let check_many_to_many () = 
   let db = create_test_db () in

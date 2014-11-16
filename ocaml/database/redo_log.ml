@@ -347,7 +347,7 @@ let action_read fn_db fn_delta sock datasockpath =
   let str = "read______" in
   Unixext.time_limited_write sock (String.length str) str latest_response_time;
   (* Read response *)
-  read_read_response sock fn_db fn_delta Generation.null_generation latest_response_time datasockpath
+  read_read_response sock fn_db fn_delta Generation.initial latest_response_time datasockpath
 
 let action_write_db marker generation_count write_fn sock datasockpath =
   R.debug "Performing writedb (generation %Ld)" generation_count;
@@ -755,23 +755,24 @@ let flush_db_to_all_active_redo_logs db =
 (* Write a delta to all active redo_logs *)
 let database_callback event db =
 	let to_write =
+                let open Db_cache_types in
 		match event with
-			| Db_cache_types.RefreshRow (tblname, objref) ->
+			| Update.RefreshRow (tblname, objref) ->
 				None
-			| Db_cache_types.WriteField (tblname, objref, fldname, oldval, newval) ->
+			| Update.WriteField (tblname, objref, fldname, oldval, newval) ->
 				R.debug "WriteField(%s, %s, %s, %s, %s)" tblname objref fldname (Schema.Value.marshal oldval) (Schema.Value.marshal newval);
 				if Schema.is_field_persistent (Db_cache_types.Database.schema db) tblname fldname 
 				then Some (WriteField(tblname, objref, fldname, Schema.Value.marshal newval))
 				else None
-			| Db_cache_types.PreDelete (tblname, objref) ->
+			| Update.PreDelete (tblname, objref) ->
 				None
-			| Db_cache_types.Delete (tblname, objref, _) ->
+			| Update.Delete (tblname, objref, _) ->
 				if Schema.is_table_persistent (Db_cache_types.Database.schema db) tblname 
 				then Some (DeleteRow(tblname, objref))
 				else None
-			| Db_cache_types.Create (tblname, objref, kvs) ->
+			| Update.Create (tblname, objref, map) ->
 				if Schema.is_table_persistent (Db_cache_types.Database.schema db) tblname
-				then Some (CreateRow(tblname, objref, (List.map (fun (k, v) -> k, Schema.Value.marshal v) kvs)))
+                                then Some (CreateRow(tblname, objref, StringMap.fold (fun k v acc -> (k, Schema.Value.marshal v) :: acc) map []))
 				else None 
 	in
 

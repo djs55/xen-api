@@ -118,6 +118,6 @@ val flush_db_to_redo_log: Db_cache_types.Database.t -> redo_log -> bool
 val flush_db_to_all_active_redo_logs: Db_cache_types.Database.t -> unit
 (** Immediately write the given database to all active redo logs *)
 
-val database_callback: Db_cache_types.update -> Db_cache_types.Database.t -> unit
+val database_callback: Db_cache_types.Update.t -> Db_cache_types.Database.t -> unit
 (** Given a database update, add it to all active redo logs *)
 

@@ -72,7 +72,8 @@ let events_of_other_tbl_refs other_tbl_refs =
 open Db_cache_types
 open Db_action_helper
 
-let database_callback event db = 
+let database_callback event db =
+        let open Update in
 	let context = Context.make "eventgen" in
 
 	let other_tbl_refs tblname = follow_references tblname in
@@ -149,11 +150,11 @@ let database_callback event db =
 				| Some snapshot ->
 					events_notify ~snapshot tblname "del" objref
 			end
-		| Delete(tblname, objref, kv) ->
+		| Delete(tblname, objref, map) ->
 			let other_tbl_refs = follow_references tblname in
 			let other_tbl_refs =
 				List.fold_left (fun accu (remote_tbl,fld) ->
-					let fld_value = List.assoc fld kv in
+					let fld_value = StringMap.find fld map in
 					if is_valid_ref fld_value then begin
                                                 let fld_value = Schema.Value.Unsafe_cast.string fld_value in
 					        (remote_tbl, fld_value, find_get_record remote_tbl ~__context:context ~self:fld_value) :: accu 
@@ -168,12 +169,12 @@ let database_callback event db =
 					events_notify ~snapshot:s tbl "mod" ref
 			) other_tbl_ref_events
 
-		| Create (tblname, new_objref, kv) ->
+		| Create (tblname, new_objref, map) ->
 			let snapshot = find_get_record tblname ~__context:context ~self:new_objref in
 			let other_tbl_refs = follow_references tblname in
 			let other_tbl_refs =
 				List.fold_left (fun accu (tbl,fld) ->
-					let fld_value = List.assoc fld kv in
+					let fld_value = StringMap.find fld map in
                                         if is_valid_ref fld_value then begin
                                                 let fld_value = Schema.Value.Unsafe_cast.string fld_value in
 					         (tbl, fld_value, find_get_record tbl ~__context:context ~self:fld_value) :: accu

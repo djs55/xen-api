@@ -41,7 +41,7 @@ let dummy_conf =
    compress=false;
    is_on_remote_storage=false;
    other_parameters=[];
-   last_generation_count = Generation.null_generation;
+   last_generation_count = Generation.initial;
   }
 
 let make path = { dummy_conf with path = path }
@@ -136,7 +136,7 @@ let parse_db_conf s =
        write_limit_period=maybe_put_in "write_limit_period" default_write_limit_period int_of_string;
        write_limit_write_cycles=maybe_put_in "write_limit_write_cycles" default_write_cycles int_of_string;
        other_parameters = !key_values; (* the things remaining in key_values at this point are the ones we haven't parsed out explicitly above.. *)
-	   last_generation_count = Generation.null_generation;
+	   last_generation_count = Generation.initial;
       } in
     let connections : db_connection list ref = ref [] in
     while !lines<>[] do
@@ -163,5 +163,5 @@ let get_db_conf path =
      write_limit_period=default_write_limit_period;
      write_limit_write_cycles=default_write_cycles;
      other_parameters=["available_this_boot","true"];
-     last_generation_count=Generation.null_generation}]
+     last_generation_count=Generation.initial}]
   end
