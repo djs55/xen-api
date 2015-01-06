@@ -535,3 +535,30 @@ let balance_memory ~xc ~xs =
 let is_host_memory_unbalanced ~xc ~xs = 
   Squeeze.is_host_memory_unbalanced (io ~verbose:false ~xc ~xs)
   
+
+(* If we want to manage domain 0, we must write the policy settings to xenstore *)
+let configure_domain_zero () =
+  (* Domain.write_noexn will drop the write if the directory doesn't exist
+     we make sure it already exists. *)
+  with_xs (fun xs ->
+    xs.Xs.mkdir "/local/domain/0"
+  );
+  with_xc_and_xs
+    (fun xc xs ->
+      Domain.write_noexn (xc,xs) 0 _dynamic_min (Int64.to_string (Memory.kib_of_bytes_used !Squeeze.domain_zero_dynamic_min));
+      let dynamic_max = match !Squeeze.domain_zero_dynamic_max with
+      | Some x -> Memory.kib_of_bytes_used x
+      | None ->
+        (* If this is the first time we've started after boot then we
+           can use the current domain 0 total_pages value. Otherwise we
+           continue to use the version already in xenstore. *)
+        if Domain.exists (xc,xs) 0 _dynamic_max
+        then Int64.of_string (Domain.read (xc,xs) 0 _dynamic_max)
+        else
+          let di = Xenctrl.domain_getinfo xc 0 in
+          Xenctrl.pages_to_kib (Int64.of_nativeint di.Xenctrl.Domain_info.total_memory_pages) in
+      Domain.write_noexn (xc,xs) 0 _dynamic_max (Int64.to_string dynamic_max);
+      if not (Domain.exists (xc,xs) 0 _target)
+      then Domain.write_noexn (xc,xs) 0 _target (Int64.to_string dynamic_max);
+      Domain.write_noexn (xc,xs) 0 _feature_balloon "1"
+  )

@@ -39,6 +39,8 @@ let config_spec = [
 	"daemon", Config.Set_bool daemon;
 	"balance-check-interval", Config.Set_float balance_check_interval;
 	"manage-domain-zero", Config.Set_bool Squeeze.manage_domain_zero;
+	"domain-zero-dynamic-min", Config.String (fun x -> Squeeze.domain_zero_dynamic_min := Int64.of_string x);
+	"domain-zero-dynamic-max", Config.String (fun x -> Squeeze.domain_zero_dynamic_max := if x = "auto" then None else Some (Int64.of_string x));
 	"disable-logging-for", Config.String
 		(fun x ->
 			try
@@ -154,6 +156,7 @@ let _ =
 
 	Memory_server.start_balance_thread balance_check_interval;
 	Squeeze_xen.Domain.start_watch_xenstore_thread ();
+	if !Squeeze.manage_domain_zero then Squeeze_xen.configure_domain_zero ();
 
 	while true do
 		try
