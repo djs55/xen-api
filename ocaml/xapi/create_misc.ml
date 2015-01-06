@@ -259,7 +259,7 @@ and create_domain_zero_default_memory_constraints host_info : Vm_memory_constrai
 		let target = if target > static_max then static_max else target in
 		{
 			static_min  = static_min;
-			dynamic_min = target;
+			dynamic_min = static_min;
 			target      = target;
 			dynamic_max = target;
 			static_max  = static_max;

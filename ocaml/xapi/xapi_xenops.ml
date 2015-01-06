@@ -1470,12 +1470,13 @@ let manage_dom0 ~__context =
 	let open Xenctrl.Domain_info in
 	let dbg = Context.string_of_task __context in
 	let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
-	let di = Vmopshelpers.with_xc (fun xc -> Xenctrl.domain_getinfo xc 0) in
-	let memory_actual_bytes = Xenctrl.pages_to_kib Int64.(mul (of_nativeint di.total_memory_pages) 1024L) in
 	let open Vm in
 	if not(vm_exists_in_xenopsd dbg uuid)
 	then begin
 		info "Client.VM.add %s" uuid;
+		let host_info = Create_misc.read_localhost_info () in
+		let static_min, static_max = Create_misc.calculate_domain_zero_memory_static_range host_info in
+		debug "domain 0 has static_min=%Ld static_max=%Ld" static_min static_max;
 		Client.VM.add dbg {
 			id = uuid;
 			name = "Domain-0";
@@ -1489,9 +1490,9 @@ let manage_dom0 ~__context =
 			};
 			suppress_spurious_page_faults = false;
 			machine_address_size = None;
-			memory_static_max = memory_actual_bytes;
-			memory_dynamic_max = memory_actual_bytes;
-			memory_dynamic_min = memory_actual_bytes;
+			memory_static_max = static_max;
+			memory_dynamic_max = static_max;
+			memory_dynamic_min = static_min;
 			vcpu_max = 0;
 			vcpus = 0;
 			scheduler_params = { priority = None; affinity = [] };
