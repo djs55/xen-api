@@ -38,6 +38,7 @@ let config_spec = [
 	"log", Config.Set_string log_destination;
 	"daemon", Config.Set_bool daemon;
 	"balance-check-interval", Config.Set_float balance_check_interval;
+	"manage-domain-zero", Config.Set_bool Squeeze.manage_domain_zero;
 	"disable-logging-for", Config.String
 		(fun x ->
 			try

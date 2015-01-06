@@ -48,6 +48,8 @@ let error fmt =
        D.error "%s" x
     ) fmt
 
+let manage_domain_zero = ref false
+
 (** Per-domain data *)
 type domain = {
 	domid: int;

@@ -322,9 +322,13 @@ let make_host ~verbose ~xc ~xs =
 	(* We cannot query simultaneously the host memory info and the domain memory info. Furthermore
 	   the call to domain_getinfolist is not atomic but comprised of many hypercall invocations. *)
 
-	(* We are excluding dom0, so it will never be ballooned down. *)
 	let open Xenctrl.Domain_info in
-	let domain_infolist = List.filter (fun di -> di.domid > 0) (Xenctrl.domain_getinfolist xc 0) in
+	let domain_infolist = Xenctrl.domain_getinfolist xc 0 in
+	(* Check if we are managing dom0 *)
+	let domain_infolist =
+		if !Squeeze.manage_domain_zero
+		then domain_infolist
+		else List.filter (fun di -> di.domid > 0) domain_infolist in
 	(*
 		For the host free memory we sum the free pages and the pages needing
 		scrubbing: we don't want to adjust targets simply because the scrubber
@@ -435,7 +439,7 @@ let make_host ~verbose ~xc ~xs =
 				    (* useful debug message is printed by the Domain.read* functions *)
 				    []
 				|  e ->
-					if verbose 
+					if verbose
 					then debug "Skipping domid %d: %s"
 						di.domid (Printexc.to_string e);
 					[]
