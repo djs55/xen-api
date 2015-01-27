@@ -225,7 +225,8 @@ let new_messages_of_field x order fld =
 		 msg_pool_internal = false;
 		 msg_db_only = fld.internal_only;
 		 msg_allowed_roles = None;
-		 msg_map_keys_roles = []
+		 msg_map_keys_roles = [];
+		 msg_tags = fld.tags;
 	       } in
   let getter = { common with
 		   msg_name = prefix "get_";
@@ -249,7 +250,8 @@ let new_messages_of_field x order fld =
 	                        "Set the %s field of the given %s."
 	                        (String.concat "/" fld.full_name) x.name);
 		   msg_allowed_roles = fld.field_setter_roles;
-		   msg_tag = FromField(Setter, fld) } in
+		   msg_tag = FromField(Setter, fld);
+		   msg_tags = fld.tags } in
   (* Set(Ref _) fields in a many-to-many generate symmetrical add_to, remove_from etc *)
   let is_many_to_many =
 	  let api = Datamodel.all_api in
@@ -336,7 +338,8 @@ let messages_of_obj (x: obj) document_order : message list =
 		 msg_force_custom = x.force_custom_actions;
 		 msg_allowed_roles = None;
 		 msg_map_keys_roles = [];
-		 msg_obj_name=x.name } in
+		 msg_obj_name=x.name;
+		 msg_tags=[] } in
   (* Constructor *)
   let ctor = { common with 
            msg_name = "create";

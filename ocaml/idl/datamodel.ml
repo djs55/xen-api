@@ -295,7 +295,7 @@ let call ~name ?(doc="") ?(in_oss_since=Some "3.0.3") ?in_product_since ?interna
 	?(pool_internal=false)
 	~allowed_roles
 	?(map_keys_roles=[])
-	?(params=[]) ?versioned_params ?lifecycle () =
+	?(params=[]) ?versioned_params ?lifecycle ?(tags=[]) () =
 	(* if you specify versioned_params then these get put in the params field of the message record;
 	 * otherwise params go in with no default values and param_release=call_release...
 	 *)
@@ -344,7 +344,8 @@ let call ~name ?(doc="") ?(in_oss_since=Some "3.0.3") ?in_product_since ?interna
 		msg_hide_from_docs = hide_from_docs;
 		msg_pool_internal = pool_internal;
 		msg_allowed_roles = allowed_roles;
-		msg_map_keys_roles = map_keys_roles
+		msg_map_keys_roles = map_keys_roles;
+		msg_tags = tags;
 	}
 
 let assert_operation_valid enum cls self = call 
@@ -3132,7 +3133,7 @@ let field ?(in_oss_since = Some "3.0.3") ?in_product_since ?(internal_only = fal
 	?internal_deprecated_since ?(ignore_foreign_key = false) ?(writer_roles=None) ?(reader_roles=None)
 	?(qualifier = RW) ?(ty = String) ?(effect = false) ?(default_value = None) ?(persist = true)
 	?(map_keys_roles=[]) (* list of (key_name,(writer_roles)) for a map field *)
-	?lifecycle name desc =
+	?lifecycle ?(tags=[]) name desc =
 	(* in_product_since currently defaults to 'Some rel_rio', for backwards compatibility.
 	 * This should eventually become 'None'. *)
 	let in_product_since = match in_product_since with None -> Some rel_rio | x -> x in
@@ -3173,6 +3174,7 @@ let field ?(in_oss_since = Some "3.0.3") ?in_product_since ?(internal_only = fal
 		field_setter_roles = writer_roles;
 		field_getter_roles = reader_roles;
 		field_map_keys_roles = map_keys_roles;
+		tags = tags;
 	}
 
 let uid ?(in_oss_since=Some "3.0.3") ?(reader_roles=None) ?lifecycle refname =

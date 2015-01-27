@@ -171,7 +171,8 @@ and message = {
     msg_custom_marshaller: bool;
     msg_hide_from_docs: bool; (* don't list the function in the documentation and do not include it in the SDK *)
     msg_allowed_roles: string list option;
-    msg_map_keys_roles: (string * (string list option)) list
+    msg_map_keys_roles: (string * (string list option)) list;
+    msg_tags: string list;
 } 
 
 and field = {
@@ -189,7 +190,8 @@ and field = {
     field_ignore_foreign_key: bool;
     field_setter_roles: string list option;
     field_getter_roles: string list option;
-    field_map_keys_roles: (string * (string list option)) list
+    field_map_keys_roles: (string * (string list option)) list;
+    tags: string list;
 } 
 
 and error = { 
