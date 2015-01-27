@@ -288,6 +288,9 @@ let get_deprecated lifecycle =
 		Some deprecated
 	with Not_found -> None
 
+(* Tags we've defined *)
+let _tag_core = "core"
+
 let call ~name ?(doc="") ?(in_oss_since=Some "3.0.3") ?in_product_since ?internal_deprecated_since
 	?result ?(flags=[`Session;`Async])
 	?(effect=true) ?(tag=Custom) ?(errs=[]) ?(custom_marshaller=false) ?(db_only=false)
@@ -1560,7 +1563,7 @@ let vm_update_snapshot_metadata = call
 let vm_snapshot = call
   ~name:"snapshot"
   ~in_product_since: rel_orlando
-  ~doc:"Snapshots the specified VM, making a new VM. Snapshot automatically exploits the capabilities of the underlying storage repository in which the VM's disk images are stored (e.g. Copy on Write)."
+  ~doc:"Snapshots the specified VM, making a new VM which will have is_a_template=is_a_snapshot=true. Snapshot recursively calls VDI.snapshot which automatically exploits the capabilities of the underlying storage repository in which the VM's disk images are stored (e.g. Copy on Write)."
   ~result: (Ref _vm, "The reference of the newly created VM.")
   ~params:[
     Ref _vm, "vm", "The VM to be snapshotted";
@@ -1568,16 +1571,18 @@ let vm_snapshot = call
   ]
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.sr_full; Api_errors.operation_not_allowed]
   ~allowed_roles:_R_VM_POWER_ADMIN
+  ~tags:[_tag_core]
   ()
 
 let vm_revert = call
   ~name:"revert"
   ~in_product_since: rel_midnight_ride
-  ~doc:"Reverts the specified VM to a previous state."
+  ~doc:"Given a specified VM snapshot, reverts the associated VM to the state associated with the snapshot. The current state of the VM will be destroyed (i.e. disk contents will be deleted) and then replaced with the same contents as the snapshot."
   ~params:[Ref _vm, "snapshot", "The snapshotted state that we revert to"]
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.operation_not_allowed;
 		Api_errors.sr_full; Api_errors.vm_revert_failed ]
   ~allowed_roles:_R_VM_POWER_ADMIN
+  ~tags:[_tag_core]
   ()
 
 let vm_checkpoint = call
@@ -1661,6 +1666,7 @@ let vm_start = call
 		Api_errors.license_restriction;
 	]
 	~allowed_roles:_R_VM_OP
+	~tags:[_tag_core]
 	()
 
 let vm_assert_can_boot_here = call
@@ -1787,14 +1793,15 @@ let vm_set_memory_dynamic_min = call ~flags:[`Session]
 let vm_set_memory_dynamic_range = call
 	~name:"set_memory_dynamic_range"
 	~in_product_since:rel_midnight_ride
-	~doc:"Set the minimum and maximum amounts of physical memory the VM is \
-		allowed to use."
+	~doc:"Set a range of VM memory values that the VM is allowed to automatically move between. If the host is low on memory it will request that the VM uses the minimum of this range; if the host has lots of memory free it will allow the VM to use the maximum of this range."
 	~allowed_roles:_R_VM_POWER_ADMIN
 	~params:[
 		Ref _vm, "self", "The VM";
 		Int, "min", "The new minimum value";
 		Int, "max", "The new maximum value";
-	] ()
+	]
+	~tags:[_tag_core]
+	()
 
 (* When HA is enabled we need to prevent memory *)
 (* changes which will break the recovery plan.  *)
@@ -1807,7 +1814,8 @@ let vm_set_memory_static_max = call ~flags:[`Session]
 	~params:[
 		Ref _vm, "self", "The VM to modify";
 		Int, "value", "The new value of memory_static_max";
-	] ()
+	]
+	()
 
 let vm_set_memory_static_min = call ~flags:[`Session]
 	~in_product_since:rel_midnight_ride
@@ -1823,13 +1831,14 @@ let vm_set_memory_static_min = call ~flags:[`Session]
 let vm_set_memory_static_range = call
 	~name:"set_memory_static_range"
 	~in_product_since:rel_midnight_ride
-	~doc:"Set the static (ie boot-time) range of virtual memory that the VM is \
-		allowed to use."
+	~doc:"The minimum value of this range is a 'safe minimum' amount of memory for this VM, while the maximum value of this range is the maximum amount of memory addressable by the VM without rebooting it. The 'dynamic range' is a policy setting which must be wholly inside this 'static range'."
 	~allowed_roles:_R_VM_POWER_ADMIN
 	~params:[Ref _vm, "self", "The VM";
 		Int, "min", "The new minimum value";
 		Int, "max", "The new maximum value";
-	] ()
+	]
+	~tags:[_tag_core]
+	()
 
 let vm_set_memory_limits = call
 	~name:"set_memory_limits"
@@ -1941,6 +1950,7 @@ let vm_cleanShutdown = call
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.other_operation_in_progress; Api_errors.operation_not_allowed;
          Api_errors.vm_is_template]
   ~allowed_roles:_R_VM_OP
+  ~tags:[_tag_core]
   ()
 
 (* VM.CleanReboot *)
@@ -1977,6 +1987,7 @@ let vm_shutdown = call
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.other_operation_in_progress; Api_errors.operation_not_allowed;
          Api_errors.vm_is_template]
   ~allowed_roles:_R_VM_OP
+  ~tags:[_tag_core]
   ()
 
 (* VM.PowerStateReset *)
@@ -2000,6 +2011,7 @@ let vm_hardReboot = call
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.other_operation_in_progress; Api_errors.operation_not_allowed;
          Api_errors.vm_is_template]
   ~allowed_roles:_R_VM_OP
+  ~tags:[_tag_core]
   ()
 
 let vm_hardReboot_internal = call
@@ -2024,6 +2036,7 @@ let vm_suspend = call
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.other_operation_in_progress; Api_errors.operation_not_allowed;
 	 Api_errors.vm_is_template]
   ~allowed_roles:_R_VM_OP
+  ~tags:[_tag_core]
   ()
 
 (* VM.clsp -- clone suspended, undocumented API for VMLogix *)
@@ -2051,6 +2064,7 @@ let vm_resume = call
           ]
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.operation_not_allowed; Api_errors.vm_is_template]
   ~allowed_roles:_R_VM_OP
+  ~tags:[_tag_core]
   ()
 
 let vm_resume_on = call
@@ -2077,6 +2091,7 @@ let vm_pool_migrate = call
 	   Map(String, String), "options", "Extra configuration operations" ]
   ~errs:[Api_errors.vm_bad_power_state; Api_errors.other_operation_in_progress; Api_errors.vm_is_template; Api_errors.operation_not_allowed; Api_errors.vm_migrate_failed]
   ~allowed_roles:_R_VM_POWER_ADMIN
+  ~tags:[_tag_core]
   ()
 
 let vm_pool_migrate_complete = call
@@ -2110,6 +2125,7 @@ let set_vcpus_number_live = call
 	~params:[Ref _vm, "self", "The VM";
 		Int, "nvcpu", "The number of VCPUs"]
 	~allowed_roles:_R_VM_ADMIN
+	~tags:[_tag_core]
 	()
 
 let vm_set_VCPUs_max = call ~flags:[`Session]
@@ -3209,7 +3225,8 @@ let namespace ?(get_field_writer_roles=fun x->x) ?(get_field_reader_roles=fun x-
 let names ?(writer_roles=None) ?(reader_roles=None) ?lifecycle in_oss_since qual =
 	let field x y =
 		field x y ~in_oss_since ~qualifier:qual ~writer_roles ~reader_roles
-			~default_value:(Some (VString "")) ?lifecycle in
+			~default_value:(Some (VString "")) ?lifecycle
+			~tags:[_tag_core] in
 	[
 		field "label" "a human-readable name";
 		field "description" "a notes field containing human-readable description"
@@ -6831,7 +6848,7 @@ let vm =
       ~contents:
       ([ uid _vm;
       ] @ (allowed_and_current_operations vm_operations) @ [
-	field ~writer_roles:_R_VM_OP ~qualifier:DynamicRO ~ty:vm_power_state "power_state" "Current power state of the machine";
+	field ~writer_roles:_R_VM_OP ~qualifier:DynamicRO ~ty:vm_power_state ~tags:[_tag_core] "power_state" "Current power state of the machine";
 	namespace ~name:"name" ~contents:(names oss_since_303 RW) ();
 
 	field ~ty:Int "user_version" "a user version number for this machine";
