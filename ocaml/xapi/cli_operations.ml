@@ -3397,20 +3397,24 @@ let blob_create printer rpc session_id params =
 		raise (Cli_util.Cli_failure "Need one of: vm-uuid, host-uuid, network-uuid, sr-uuid or pool-uuid")
 
 
-let export_common fd printer rpc session_id params filename num ?task_uuid use_compression preserve_power_state vm =
+let export_common fd printer rpc session_id params filename num ?task_uuid use_compression preserve_power_state which =
     let vm_metadata_only : bool = get_bool_param params "metadata" in
     let export_snapshots : bool =
         if List.mem_assoc "include-snapshots" params
         then bool_of_string "include-snapshots" (List.assoc "include-snapshots" params)
         else vm_metadata_only in
 	let vm_metadata_only = get_bool_param params "metadata" in
-	let vm_record = vm.record () in
 	let exporttask, task_destroy_fn =
-		match task_uuid with
-			| None -> (* manage task internally *)
+		match which, task_uuid with
+			| `One vm, None -> (* manage task internally *)
+				let vm_record = vm.record () in
 				let exporttask = Client.Task.create rpc session_id (Printf.sprintf "Export of VM: %s" (vm_record.API.vM_uuid)) "" in
 				(exporttask,(fun ()->Client.Task.destroy rpc session_id exporttask))
-			| Some task_uuid -> (* do not destroy the task that has been received *)
+			| `All, None ->
+				let exporttask = Client.Task.create rpc session_id "Export of all VMs" "" in
+				(exporttask,(fun ()->Client.Task.destroy rpc session_id exporttask))
+
+			| _, Some task_uuid -> (* do not destroy the task that has been received *)
 				((Client.Task.get_by_uuid rpc session_id task_uuid),(fun ()->()))
 	in
 
@@ -3425,15 +3429,16 @@ let export_common fd printer rpc session_id params filename num ?task_uuid use_c
 			let f = if !num > 1 then filename ^ (string_of_int !num) else filename in
 			download_file ~__context rpc session_id exporttask fd f
 				(Printf.sprintf
-					"%s?session_id=%s&task_id=%s&ref=%s&%s=%s&preserve_power_state=%b&export_snapshots=%b"
+					"%s?session_id=%s&task_id=%s%s&%s=%s&preserve_power_state=%b&export_snapshots=%b&all=%b"
 					(if vm_metadata_only then Constants.export_metadata_uri else Constants.export_uri)
 					(Ref.string_of session_id)
 					(Ref.string_of exporttask)
-					(Ref.string_of (vm.getref ()))
+					(match which with `All -> "" | `One vm -> Printf.sprintf "&ref=%s" (Ref.string_of (vm.getref ())))
 					Constants.use_compression
 					(if use_compression then "true" else "false")
 					preserve_power_state
-					export_snapshots)
+					export_snapshots
+					(match which with `All -> true | _ -> false))
 				"Export";
 			num := !num + 1)
 		(fun () -> task_destroy_fn ())
@@ -3442,12 +3447,17 @@ let vm_export fd printer rpc session_id params =
 	let filename = List.assoc "filename" params in
 	let use_compression = get_bool_param params "compress" in
 	let preserve_power_state = get_bool_param params "preserve-power-state" in
+	let all = get_bool_param params "all" in
 	let task_uuid = if (List.mem_assoc "task-uuid" params) then Some (List.assoc "task-uuid" params) else None in
 	let num = ref 1 in
-	let op vm =
-		export_common fd printer rpc session_id params filename num ?task_uuid use_compression preserve_power_state vm
-	in
-	ignore(do_vm_op printer rpc session_id op params ["filename"; "metadata"; "compress"; "preserve-power-state"; "include-snapshots"])
+	if all then begin
+		export_common fd printer rpc session_id params filename num ?task_uuid use_compression preserve_power_state `All
+	end else begin
+		let op vm =
+			export_common fd printer rpc session_id params filename num ?task_uuid use_compression preserve_power_state (`One vm)
+		in
+		ignore(do_vm_op printer rpc session_id op params ["filename"; "metadata"; "compress"; "preserve-power-state"; "include-snapshots"; "all"])
+	end
 
 let vm_export_aux obj_type fd printer rpc session_id params =
 	let filename = List.assoc "filename" params in
@@ -3456,7 +3466,7 @@ let vm_export_aux obj_type fd printer rpc session_id params =
 	let num = ref 1 in
 	let uuid = List.assoc (obj_type ^ "-uuid") params in
 	let ref = Client.VM.get_by_uuid rpc session_id uuid in
-	export_common fd printer rpc session_id params filename num use_compression preserve_power_state (vm_record rpc session_id ref)
+	export_common fd printer rpc session_id params filename num use_compression preserve_power_state (`One (vm_record rpc session_id ref))
 
 let vm_copy_bios_strings printer rpc session_id params =
 	let host = Client.Host.get_by_uuid rpc session_id (List.assoc "host-uuid" params) in

@@ -1311,7 +1311,7 @@ there are two or more empty CD devices, please use the command 'vbd-insert' and 
    "vm-export",
     {
       reqd=["filename"];
-      optn=["preserve-power-state"; "compress"; "include-snapshots"];
+      optn=["preserve-power-state"; "compress"; "include-snapshots"; "all"];
       help="Export a VM to <filename>.";
       implementation=With_fd Cli_operations.vm_export;
       flags=[Standard; Vm_selectors];
