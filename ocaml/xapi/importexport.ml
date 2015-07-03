@@ -233,7 +233,7 @@ let remote_metadata_export_import ~__context ~rpc ~session_id ~remote_address wh
 		| `Only {vm=vm; send_snapshots=send_snapshots} -> Printf.sprintf "export_snapshots=%b&ref=%s" send_snapshots (Ref.string_of vm) in
 
 	let remote_import_request = match which with
-		| `All -> Printf.sprintf "%s?restore=true" Constants.import_metadata_uri
+		| `All -> Printf.sprintf "%s?restore=true&live=true" Constants.import_metadata_uri
 		| `Only {vm=vm; live=live; dry_run=dry_run} ->
 			Printf.sprintf "%s?restore=true&live=%b&dry_run=%b" Constants.import_metadata_uri live dry_run in
 

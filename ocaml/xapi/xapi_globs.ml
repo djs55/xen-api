@@ -25,6 +25,9 @@ let use_xenopsd = ref false
 (* set this to true to enable XSM to out-of-pool SRs with matching UUID *)
 let relax_xsm_sr_check = ref false
 
+(* If true we will let hosts with running or suspended VMs join a pool *)
+let allow_pool_join_with_running_VMs = ref false
+
 (* xapi process returns this code on exit when it wants to be restarted *)
 let restart_return_code = 123
 
@@ -738,7 +741,9 @@ let test_patch_key = "RjgyNjVCRURDMzcxMjgzNkQ1NkJENjJERDQ2MDlGOUVDQzBBQkZENQ=="
 let trusted_patch_key = ref citrix_patch_key
 
 let xapi_globs_spec =
-	[ "master_connection_reset_timeout",
+	[ "allow-pool-join-with-running-VMs",
+          Config.Set_bool allow_pool_join_with_running_VMs;
+	  "master_connection_reset_timeout",
 	  Config.Set_float master_connection_reset_timeout;
 	  "master_connection_retry_timeout",
 	  Config.Set_float master_connection_retry_timeout;

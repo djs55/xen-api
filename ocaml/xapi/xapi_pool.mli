@@ -40,7 +40,9 @@ val create_or_get_pbd_on_master :
 val create_or_get_vdi_on_master :
   Context.t ->
   (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session -> [ `VDI ] Ref.t * API.vDI_t -> API.ref_VDI
+  API.ref_session ->
+  (API.ref_host * API.ref_host option) list ->
+  [ `VDI ] Ref.t * API.vDI_t -> API.ref_VDI
 val create_or_get_network_on_master :
   Context.t ->
   (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->

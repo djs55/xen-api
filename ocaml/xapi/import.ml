@@ -401,7 +401,7 @@ module VM : HandlerTools = struct
 					raise e
 				end
 			end else
-				Db.VM.set_power_state ~__context ~self:vm ~value:`Halted;
+				Db.VM.set_power_state ~__context ~self:vm ~value:(if is_live config then vm_record.API.vM_power_state else `Halted);
 
 			(* We might want to import a control domain *)
 			Db.VM.set_is_control_domain~__context  ~self:vm ~value:vm_record.API.vM_is_control_domain;

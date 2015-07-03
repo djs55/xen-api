@@ -164,9 +164,9 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 
 	let assert_no_running_vms_on_me () =
 		let my_vms = Db.VM.get_all_records ~__context in
- 		let my_running_vms =
+		let my_running_vms =
 			List.filter
-				(fun (_,vmrec) -> 
+				(fun (_,vmrec) ->
 					(not vmrec.API.vM_is_control_domain) && vmrec.API.vM_power_state = `Running
 				)
 				my_vms in
@@ -368,7 +368,7 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 	ha_is_not_enable_on_the_distant_pool ();
 	assert_not_joining_myself();
 	assert_i_know_of_no_other_hosts();
-	assert_no_running_vms_on_me ();
+	if not !Xapi_globs.allow_pool_join_with_running_VMs then assert_no_running_vms_on_me ();
 	assert_no_vms_with_current_ops ();
 	assert_hosts_compatible ();
 	if (not force) then assert_hosts_homogeneous ();
@@ -500,12 +500,29 @@ let create_or_get_pbd_on_master __context rpc session_id (pbd_ref, pbd) : API.re
 
 	new_pbd_ref
 
-let create_or_get_vdi_on_master __context rpc session_id (vdi_ref, vdi) : API.ref_VDI =
+let create_or_get_vdi_on_master __context rpc session_id old_to_new_host_refs (vdi_ref, vdi) : API.ref_VDI =
 	let my_uuid = vdi.API.vDI_uuid in
 	let my_sr_ref = vdi.API.vDI_SR in
 	let my_sr = Db.SR.get_record ~__context ~self:my_sr_ref in
 
 	let new_sr_ref = create_or_get_sr_on_master __context rpc session_id (my_sr_ref, my_sr) in
+
+	(* Some SM backends unwisely write host references to sm-config, unaware
+	   that these change over pool.join. *)
+	let sm_config = List.map (fun (k, v) ->
+		if Stringext.String.startswith "host_OpaqueRef:" k then begin
+			let old_ref = String.sub k 5 (String.length k - 5) in
+			if not(List.mem_assoc (Ref.of_string old_ref) old_to_new_host_refs) then begin
+				error "Old host %s has no new host on master" old_ref;
+				k, v
+			end else match List.assoc (Ref.of_string old_ref) old_to_new_host_refs with
+			| None ->
+				error "Old host %s has no new host on master" old_ref;
+				k, v
+			| Some new_host_ref ->
+				Printf.sprintf "host_%s" (Ref.string_of new_host_ref), v
+		end else k, v
+	) vdi.API.vDI_sm_config in
 
 	let new_vdi_ref =
 		try Client.VDI.get_by_uuid ~rpc ~session_id ~uuid:my_uuid 
@@ -522,7 +539,7 @@ let create_or_get_vdi_on_master __context rpc session_id (vdi_ref, vdi) : API.re
 				~other_config:vdi.API.vDI_other_config
 				~location:(Db.VDI.get_location ~__context ~self:vdi_ref)
 				~xenstore_data:vdi.API.vDI_xenstore_data
-				~sm_config:vdi.API.vDI_sm_config
+				~sm_config
 				~managed:vdi.API.vDI_managed
 				~virtual_size:vdi.API.vDI_virtual_size
 				~physical_utilisation:vdi.API.vDI_physical_utilisation
@@ -642,8 +659,9 @@ let update_non_vm_metadata ~__context ~rpc ~session_id =
 
 	(* Update hosts *)
 	let my_hosts = Db.Host.get_all_records ~__context in
-	let (_ : API.ref_host option list) =
+	let (new_hosts : API.ref_host option list) =
 		List.map (protect_exn (create_or_get_host_on_master __context rpc session_id)) my_hosts in
+	let old_to_new_hosts = List.(combine (map fst my_hosts) new_hosts) in
 
 	(* Update SRs *)
 	let my_srs = Db.SR.get_all_records ~__context in
@@ -658,7 +676,7 @@ let update_non_vm_metadata ~__context ~rpc ~session_id =
 	(* Update VDIs *)
 	let my_vdis = Db.VDI.get_all_records ~__context in
 	let (_ : API.ref_VDI option list) =
-		List.map (protect_exn (create_or_get_vdi_on_master __context rpc session_id)) my_vdis in
+		List.map (protect_exn (create_or_get_vdi_on_master __context rpc session_id old_to_new_hosts)) my_vdis in
 
 	(* Update networks *)
 	let my_networks = Db.Network.get_all_records ~__context in
