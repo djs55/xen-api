@@ -5903,14 +5903,24 @@ let pool_designate_new_master = call
   ~allowed_roles:_R_POOL_OP
   ()
 
+let pool_join_overrides = Enum ("pool_join_overrides", [
+  "RunningOrSuspendedVMs", "Allow the join even if there are running or suspended VMs on the slave."
+])
+
 let pool_join = call
   ~name:"join"
   ~in_oss_since:None
   ~in_product_since:rel_rio
-  ~params:[String, "master_address", "The hostname of the master of the pool to join";
-	   String, "master_username", "The username of the master (for initial authentication)";
-	   String, "master_password", "The password for the master (for initial authentication)";
-	  ]
+  ~lifecycle:[
+        Published, rel_rio, "Joins a host to a pool. The joining host must have no shared storage, no network bonds or VLANs and no running or suspended VMs. The joining host must also use a compatible host architecture.";
+        Extended, rel_cream, "The running VMs check can be ignored";
+ ]
+  ~versioned_params:
+  [{param_type=String; param_name="master_address"; param_doc="The hostname of the master of the pool to join"; param_release=rio_release; param_default=None};
+   {param_type=String; param_name="master_username"; param_doc="The username to supply to the master (for initial authentication)"; param_release=rio_release; param_default=None};
+   {param_type=String; param_name="master_password"; param_doc="The password to supply to the master (for initial authentication)"; param_release=rio_release; param_default=None};
+   {param_type=Set pool_join_overrides; param_name="overrides"; param_doc="Explicitly override specified pool join safety checks. Use at your own risk."; param_release=cream_release; param_default=Some (VSet [])}
+  ]
   ~errs:[Api_errors.pool_joining_host_cannot_contain_shared_SRs]
   ~doc:"Instruct host to join a new pool"
   ~allowed_roles:_R_POOL_OP

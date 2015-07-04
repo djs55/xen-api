@@ -897,6 +897,9 @@ let pool_designate_new_master printer rpc session_id params =
 let pool_join printer rpc session_id params =
 	try
 		let force = get_bool_param params "force" in
+		let overrides =
+			if get_bool_param params "ignore-running-VMs"
+			then [ `RunningOrSuspendedVMs ] else [] in
 		if force then
 			Client.Pool.join_force ~rpc ~session_id
 				~master_address:(List.assoc "master-address" params)
@@ -906,7 +909,8 @@ let pool_join printer rpc session_id params =
 			Client.Pool.join ~rpc ~session_id
 				~master_address:(List.assoc "master-address" params)
 				~master_username:(List.assoc "master-username" params)
-				~master_password:(List.assoc "master-password" params);
+				~master_password:(List.assoc "master-password" params)
+				~overrides;
 		printer (Cli_printer.PList ["Host agent will restart and attempt to join pool in "^(string_of_float !Xapi_globs.fuse_time)^" seconds..."])
 	with
 		| Api_errors.Server_error(code, params) when code=Api_errors.pool_joining_host_connection_failed ->

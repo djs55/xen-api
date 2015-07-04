@@ -17,52 +17,10 @@
 
 (** {2 (Fill in Title!)} *)
 
-val rpc : string -> Xml.xml -> Xml.xml
-val get_master :
-  rpc:(XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  session_id:API.ref_session -> API.ref_host
-val pre_join_checks :
-  __context:Context.t ->
-  rpc:(XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  session_id:API.ref_session -> force:bool -> unit
-val create_or_get_host_on_master :
-  Context.t ->
-  (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session -> [ `host ] Ref.t * API.host_t -> API.ref_host
-val create_or_get_sr_on_master :
-  Context.t ->
-  (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session -> [ `SR ] Ref.t * API.sR_t -> API.ref_SR
-val create_or_get_pbd_on_master :
-  Context.t ->
-  (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session -> 'a * API.pBD_t -> API.ref_PBD
-val create_or_get_vdi_on_master :
-  Context.t ->
-  (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session ->
-  (API.ref_host * API.ref_host option) list ->
-  [ `VDI ] Ref.t * API.vDI_t -> API.ref_VDI
-val create_or_get_network_on_master :
-  Context.t ->
-  (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session -> 'b * API.network_t -> API.ref_network
-val create_or_get_pif_on_master :
-  Context.t ->
-  (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) ->
-  API.ref_session -> 'a * API.pIF_t -> API.ref_PIF
-val protect_exn : ('a -> 'b) -> 'a -> 'b option
-val update_non_vm_metadata :
-  __context:Context.t ->
-  rpc:(XMLRPC.xmlrpc -> XMLRPC.xmlrpc) -> session_id:API.ref_session -> unit
-val join_common :
-  __context:Context.t ->
-  master_address:string ->
-  master_username:string -> master_password:string -> force:bool -> unit
 val join :
   __context:Context.t ->
   master_address:string ->
-  master_username:string -> master_password:string -> unit
+  master_username:string -> master_password:string -> overrides:API.pool_join_overrides list ->unit
 val join_force :
   __context:Context.t ->
   master_address:string ->
@@ -71,10 +29,7 @@ val emergency_transition_to_master : __context:'a -> unit
 val emergency_reset_master : __context:'a -> master_address:string -> unit
 val recover_slaves : __context:Context.t -> API.ref_host list
 exception Cannot_eject_master
-val no_exn : (unit -> unit) -> unit
-val unplug_pbds : __context:Context.t -> [ `host ] Ref.t -> unit
 val eject : __context:Context.t -> host:API.ref_host -> unit
-val sync_m : Threadext.Mutex.t
 val sync_database : __context:Context.t -> unit
 val designate_new_master : __context:Context.t -> host:'a -> unit
 val initial_auth : __context:'a -> string
@@ -95,8 +50,7 @@ val slave_network_report :
   phydevs:'b -> dev_to_mac:'c -> dev_to_mtu:'d -> slave_host:'e -> 'f list
   
 (** {2 High availability (HA)} *)
-  
-val enable_disable_m : Threadext.Mutex.t
+
 val enable_ha :
   __context:Context.t ->
   heartbeat_srs:API.ref_SR list ->

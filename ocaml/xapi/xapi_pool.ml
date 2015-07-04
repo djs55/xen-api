@@ -42,7 +42,7 @@ let get_master ~rpc ~session_id =
 	Client.Pool.get_master rpc session_id pool
 	
 (* Pre-join asserts *)
-let pre_join_checks ~__context ~rpc ~session_id ~force =
+let pre_join_checks ~__context ~rpc ~session_id ~force ~overrides =
 	(* I cannot join a Pool unless my management interface exists in the db, otherwise
 	   Pool.eject will fail to rewrite network interface files. *)
 	let assert_management_interface_exists () =
@@ -368,7 +368,7 @@ let pre_join_checks ~__context ~rpc ~session_id ~force =
 	ha_is_not_enable_on_the_distant_pool ();
 	assert_not_joining_myself();
 	assert_i_know_of_no_other_hosts();
-	if not !Xapi_globs.allow_pool_join_with_running_VMs then assert_no_running_vms_on_me ();
+	if not !Xapi_globs.allow_pool_join_with_running_VMs && not(List.mem `RunningOrSuspendedVMs overrides) then assert_no_running_vms_on_me ();
 	assert_no_vms_with_current_ops ();
 	assert_hosts_compatible ();
 	if (not force) then assert_hosts_homogeneous ();
@@ -698,7 +698,7 @@ let update_non_vm_metadata ~__context ~rpc ~session_id =
 
 	()
 
-let join_common ~__context ~master_address ~master_username ~master_password ~force =
+let join_common ~__context ~master_address ~master_username ~master_password ~force ~overrides =
 	(* get hold of cluster secret - this is critical; if this fails whole pool join fails *)
 	(* Note: this is where the license restrictions are checked on the other side.. if we're trying to join
 	a host that does not support pooling then an error will be thrown at this stage *)
@@ -711,7 +711,7 @@ let join_common ~__context ~master_address ~master_username ~master_password ~fo
 	let cluster_secret = ref "" in
 
 	finally (fun () ->
-		pre_join_checks ~__context ~rpc ~session_id ~force;
+		pre_join_checks ~__context ~rpc ~session_id ~force ~overrides;
 		cluster_secret := Client.Pool.initial_auth rpc session_id;
 
 		(* get pool db from new master so I have a backup ready if we failover to me *)
@@ -756,11 +756,10 @@ let join_common ~__context ~master_address ~master_username ~master_password ~fo
 				Client.Host.update_master my_rpc my_session_id host master_address)
 		(Db.Host.get_all_records ~__context));
 	Xapi_hooks.pool_join_hook ~__context
-
-let join ~__context ~master_address ~master_username ~master_password  =
-  join_common ~__context ~master_address ~master_username ~master_password ~force:false
+let join ~__context ~master_address ~master_username ~master_password ~overrides =
+  join_common ~__context ~master_address ~master_username ~master_password ~force:false ~overrides
 let join_force ~__context ~master_address ~master_username ~master_password  =
-  join_common ~__context ~master_address ~master_username ~master_password ~force:true
+  join_common ~__context ~master_address ~master_username ~master_password ~force:true ~overrides:[]
 
 (* Assume that db backed up from master will be there and ready to go... *)
 let emergency_transition_to_master ~__context =

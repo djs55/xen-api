@@ -289,7 +289,7 @@ let create_sdk_pool session_id sdkname pool_name key ipbase =
 		Client.Host.set_name_label rpc s h (Printf.sprintf "perftest host %d" i);
 		if i<>0 then begin
 			debug "Joining to pool";
-			Client.Pool.join rpc s (Printf.sprintf "192.168.%d.1" pool.ipbase) "root" "xensource"
+			Client.Pool.join rpc s (Printf.sprintf "192.168.%d.1" pool.ipbase) "root" "xensource" []
 		end;
 		u
 	) hosts in

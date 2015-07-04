@@ -183,7 +183,7 @@ let rec cmdtable_data : (string*cmd_spec) list =
    "pool-join",
     {
       reqd=["master-address"; "master-username"; "master-password"];
-      optn=["force"];
+      optn=["force"; "ignore-running-VMs" ];
       help="Instruct host to join an existing pool.";
       implementation=No_fd Cli_operations.pool_join;
       flags=[];
