@@ -853,11 +853,9 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 
 		(* Read resisdent-on field from vm to determine who to forward to  *)
 		let forward_vm_op ~local_fn ~__context ~vm op =
-			if Xapi_vm_lifecycle.is_live ~__context ~self:vm then
-				do_op_on ~local_fn ~__context ~host:(Db.VM.get_resident_on ~__context ~self:vm) op
-			else
-				let state = Db.VM.get_power_state ~__context ~self:vm in
-				raise (Api_errors.Server_error(Api_errors.vm_bad_power_state, [Ref.string_of vm; "running"; Record_util.power_to_string state]))
+			Xapi_vm_lifecycle.assert_power_state_in ~__context ~self:vm
+				~allowed:[`Running; `Paused];
+			do_op_on ~local_fn ~__context ~host:(Db.VM.get_resident_on ~__context ~self:vm) op
 
 		(* Notes on memory checking/reservation logic:
 		   When computing the hosts free memory we consider all VMs resident_on (ie running
@@ -933,7 +931,9 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 					with_global_lock
 						(fun () ->
 							finally_clear_host_operation ~__context ~host:suitable_host ?host_op ();
-							Db.VM.set_scheduled_to_be_resident_on ~__context ~self:vm ~value:Ref.null))
+							(* In certain cases, VM might have been destroyed as a consequence of operation *)
+							if Db.is_valid_ref __context vm then
+								Db.VM.set_scheduled_to_be_resident_on ~__context ~self:vm ~value:Ref.null))
 
 		(* Used by VM.start_on, VM.resume_on, VM.migrate to verify a host has enough resource and to
 		   'allocate_vm_to_host' (ie set the 'scheduled_to_be_resident_on' field) *)
@@ -1426,7 +1426,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			with_vm_operation ~__context ~self:vm ~doc:"VM.hard_shutdown" ~op:`hard_shutdown
 				(fun () ->
 				  List.iter (fun (task,op) ->
-				    if op = `clean_shutdown then
+				    if List.mem op [ `clean_shutdown; `clean_reboot; `hard_reboot ] then
 				      try Task.cancel ~__context ~task:(Ref.of_string task) with _ -> ()) (Db.VM.get_current_operations ~__context ~self:vm);
 
 					(* If VM is actually suspended and we ask to hard_shutdown, we need to
@@ -1465,7 +1465,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			with_vm_operation ~__context ~self:vm ~doc:"VM.hard_reboot" ~op:`hard_reboot
 				(fun () ->
 				  List.iter (fun (task,op) ->
-				    if op = `clean_reboot then
+				    if List.mem op [ `clean_shutdown; `clean_reboot ] then
 				      try Task.cancel ~__context ~task:(Ref.of_string task) with _ -> ()) (Db.VM.get_current_operations ~__context ~self:vm);
 
 
@@ -3282,11 +3282,8 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			let vbds = Db.VDI.get_VBDs ~__context ~self in
 			List.iter (fun vbd ->
 				let vm = Db.VBD.get_VM ~__context ~self:vbd in
-				let state = Db.VM.get_power_state ~__context ~self:vm in
-				match state with
-				| `Halted -> ()
-				| _ -> raise (Api_errors.Server_error(Api_errors.vm_bad_power_state,
-				  [Ref.string_of vm; "halted"; Record_util.power_to_string state]))) vbds
+				Xapi_vm_lifecycle.assert_power_state_is ~__context ~self:vm ~expected:`Halted
+			) vbds
 
 		let set_on_boot ~__context ~self ~value =
 			ensure_vdi_not_on_running_vm ~__context ~self;
@@ -3847,6 +3844,11 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 		let destroy ~__context ~self =
 			info "VGPU.destroy: VGPU = '%s'" (vgpu_uuid ~__context self);
 			Local.VGPU.destroy ~__context ~self
+
+		let atomic_set_resident_on ~__context ~self ~value =
+			info "VGPU.atomic_set_resident_on: VGPU = '%s'; PGPU = '%s'"
+				(vgpu_uuid ~__context self) (pgpu_uuid ~__context value);
+			Local.VGPU.atomic_set_resident_on ~__context ~self ~value
 	end
 
 	module VGPU_type = struct end

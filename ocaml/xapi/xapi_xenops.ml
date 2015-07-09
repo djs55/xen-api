@@ -283,15 +283,11 @@ let is_boot_file_whitelisted filename =
 		(* avoid ..-style attacks and other weird things *)
 	&&(safe_str filename)
 
-let builder_of_vm ~__context (vmref, vm) timeoffset pci_passthrough =
+let builder_of_vm ~__context (vmref, vm) timeoffset pci_passthrough vgpu =
 	let open Vm in
 
 	let video_mode =
-		(* If the vgpu keys are present for this VM, this overrides
-		 * the value of platform:vgpu. *)
-		if (List.mem_assoc Platform.vgpu_pci_id vm.API.vM_platform)
-			&& (List.mem_assoc Platform.vgpu_config vm.API.vM_platform)
-		then Vgpu
+		if vgpu then Vgpu
 		else if (Platform.is_true
 			~key:Platform.igd_passthru_key
 			~platformdata:vm.API.vM_platform
@@ -550,11 +546,80 @@ module MD = struct
 			})
 			(List.combine (Range.to_list (Range.make 0 (List.length devs))) devs)
 
+	let get_target_pci_address ~__context vgpu =
+		let pgpu =
+			if Db.is_valid_ref __context
+				vgpu.Db_actions.vGPU_scheduled_to_be_resident_on
+			then vgpu.Db_actions.vGPU_scheduled_to_be_resident_on
+			else vgpu.Db_actions.vGPU_resident_on
+		in
+		let pci = Db.PGPU.get_PCI ~__context ~self:pgpu in
+		let pci_address = Db.PCI.get_pci_id ~__context ~self:pci in
+		Xenops_interface.Pci.address_of_string pci_address
+
+	let of_nvidia_vgpu ~__context vm vgpu =
+		let open Vgpu in
+		(* Get the PCI address. *)
+		let physical_pci_address = get_target_pci_address ~__context vgpu in
+		(* Get the vGPU config. *)
+		let vgpu_type = vgpu.Db_actions.vGPU_type in
+		let internal_config =
+			Db.VGPU_type.get_internal_config ~__context ~self:vgpu_type in
+		let config_file =
+			try List.assoc Xapi_globs.vgpu_config_key internal_config
+			with Not_found -> failwith "NVIDIA vGPU config file not specified"
+		in
+		let implementation =
+			Nvidia {
+				physical_pci_address;
+				config_file;
+			}
+		in {
+			id = (vm.API.vM_uuid, vgpu.Db_actions.vGPU_device);
+			position = int_of_string vgpu.Db_actions.vGPU_device;
+			implementation;
+		}
+
+	let of_gvt_g_vgpu ~__context vm vgpu =
+		let open Vgpu in
+		(* Get the PCI address. *)
+		let physical_pci_address = get_target_pci_address ~__context vgpu in
+		(* Get the vGPU config. *)
+		let vgpu_type = vgpu.Db_actions.vGPU_type in
+		let internal_config =
+			Db.VGPU_type.get_internal_config ~__context ~self:vgpu_type in
+		try
+			let implementation =
+				GVT_g {
+					physical_pci_address;
+					low_gm_sz =
+						List.assoc Xapi_globs.vgt_low_gm_sz internal_config
+						|> Int64.of_string;
+					high_gm_sz =
+						List.assoc Xapi_globs.vgt_high_gm_sz internal_config
+						|> Int64.of_string;
+					fence_sz =
+						List.assoc Xapi_globs.vgt_fence_sz internal_config
+						|> Int64.of_string;
+				}
+			in {
+				id = (vm.API.vM_uuid, vgpu.Db_actions.vGPU_device);
+				position = int_of_string vgpu.Db_actions.vGPU_device;
+				implementation;
+			}
+		with
+			| Not_found -> failwith "Intel GVT-g settings not specified"
+			| Failure "int_of_string" ->
+				failwith "Intel GVT-g settings invalid"
+
 	let vgpus_of_vm ~__context (vmref, vm) =
 		let open Vgpu in
-		if (List.mem_assoc Platform.vgpu_pci_id vm.API.vM_platform)
+		if Vgpuops.vgpu_manual_setup_of_vm vm
+			&& (List.mem_assoc Platform.vgpu_pci_id vm.API.vM_platform)
 			&& (List.mem_assoc Platform.vgpu_config vm.API.vM_platform)
 		then begin
+			(* We're using the vGPU manual setup mode, so get the vGPU configuration
+			 * from the VM platform keys. *)
 			let implementation =
 				Nvidia {
 					physical_pci_address =
@@ -567,9 +632,24 @@ module MD = struct
 				position = 0;
 				implementation;
 			}]
-		end else []
+		end else
+			List.fold_left
+				(fun acc vgpu ->
+					let vgpu_record = Db.VGPU.get_record_internal ~__context ~self:vgpu in
+					let implementation =
+						Db.VGPU_type.get_implementation ~__context
+							~self:vgpu_record.Db_actions.vGPU_type
+					in
+					match implementation with
+					(* Passthrough VGPUs are dealt with in pcis_of_vm. *)
+					| `passthrough -> acc
+					| `nvidia ->
+						(of_nvidia_vgpu ~__context vm vgpu_record) :: acc
+					| `gvt_g ->
+						(of_gvt_g_vgpu ~__context vm vgpu_record) :: acc)
+				[] vm.API.vM_VGPUs
 
-	let of_vm ~__context (vmref, vm) vbds pci_passthrough =
+	let of_vm ~__context (vmref, vm) vbds pci_passthrough vgpu =
 		let on_crash_behaviour = function
 			| `preserve -> [ Vm.Pause ]
 			| `coredump_and_restart -> [ Vm.Coredump; Vm.Start ]
@@ -664,7 +744,7 @@ module MD = struct
 			xsdata = vm.API.vM_xenstore_data;
 			platformdata = platformdata;
 			bios_strings = vm.API.vM_bios_strings;
-			ty = builder_of_vm ~__context (vmref, vm) timeoffset pci_passthrough;
+			ty = builder_of_vm ~__context (vmref, vm) timeoffset pci_passthrough vgpu;
 			suppress_spurious_page_faults = (try List.assoc "suppress-spurious-page-faults" vm.API.vM_other_config = "true" with _ -> false);
 			machine_address_size = (try Some(int_of_string (List.assoc "machine-address-size" vm.API.vM_other_config)) with _ -> None);
 			memory_static_max = vm.API.vM_memory_static_max;
@@ -689,7 +769,7 @@ open Fun
 
 (* If a VM was suspended pre-xenopsd it won't have a last_booted_record of the format understood by xenopsd. *)
 (* If we can parse the last_booted_record according to the old syntax, update it before attempting to resume. *)
-let generate_xenops_state ~__context ~self ~vm ~vbds ~pcis =
+let generate_xenops_state ~__context ~self ~vm ~vbds ~pcis ~vgpus =
 	try
 		let vm_to_resume = {
 			(Helpers.parse_boot_record vm.API.vM_last_booted_record) with
@@ -697,7 +777,9 @@ let generate_xenops_state ~__context ~self ~vm ~vbds ~pcis =
 		} in
 		debug "Successfully parsed old last_booted_record format - translating to new format so that xenopsd can resume the VM.";
 		let module Client = (val make_client (queue_of_vmr vm): XENOPS) in
-		let vm = MD.of_vm ~__context (self, vm_to_resume) vbds (pcis <> []) in
+		let vm = MD.of_vm ~__context
+			(self, vm_to_resume) vbds (pcis <> []) (vgpus <> [])
+		in
 		let dbg = Context.string_of_task __context in
 		Client.VM.generate_state_string dbg vm
 	with Xml.Error _ ->
@@ -719,10 +801,10 @@ let create_metadata ~__context ~upgrade ~self =
 		(* For suspended VMs, we may need to translate the last_booted_record from the old format. *)
 		if vm.API.vM_power_state = `Suspended || upgrade then begin
 			(* We need to recall the currently_attached devices *)
-			Some(generate_xenops_state ~__context ~self ~vm ~vbds ~pcis)
+			Some(generate_xenops_state ~__context ~self ~vm ~vbds ~pcis ~vgpus)
 		end else None in
 	let open Metadata in {
-		vm = MD.of_vm ~__context (self, vm) vbds (pcis <> []);
+		vm = MD.of_vm ~__context (self, vm) vbds (pcis <> []) (vgpus <> []);
 		vbds = vbds';
 		vifs = vifs';
 		pcis = pcis;
@@ -1547,6 +1629,16 @@ let update_vgpu ~__context id =
 					Opt.iter
 						(fun (xenopsd_vgpu, state) ->
 							if state.plugged then begin
+								let scheduled =
+									Db.VGPU.get_scheduled_to_be_resident_on ~__context ~self:vgpu
+								in
+								if Db.is_valid_ref __context scheduled
+								then begin
+									Helpers.call_api_functions ~__context
+										(fun rpc session_id ->
+											XenAPI.VGPU.atomic_set_resident_on ~rpc ~session_id
+												~self:vgpu ~value:scheduled)
+								end;
 								if not vgpu_record.API.vGPU_currently_attached
 								then Db.VGPU.set_currently_attached ~__context
 									~self:vgpu ~value:true
@@ -1843,10 +1935,11 @@ let success_task queue_name f dbg id =
 
 (* Catch any uncaught xenops exceptions and transform into the most relevant XenAPI error.
    We do not want a XenAPI client to see a raw xenopsd error. *)
-let transform_xenops_exn ~__context queue_name f =
+let transform_xenops_exn ~__context ~vm queue_name f =
 	try
 		f ()
 	with e ->
+		Backtrace.is_important e;
 		let reraise code params =
 			error "Re-raising as %s [ %s ]" code (String.concat "; " params);
 			let e' = Api_errors.Server_error(code, params) in
@@ -1863,9 +1956,9 @@ let transform_xenops_exn ~__context queue_name f =
 		| Domain_not_built -> internal "domain has not been built"
 		| Invalid_vcpus n -> internal "the maximum number of vcpus configured for this VM is currently: %d" n
 		| Bad_power_state(found, expected) ->
-			let f x = x |> (fun x -> Some x) |> xenapi_of_xenops_power_state |> Record_util.power_state_to_string in
+			let f x = xenapi_of_xenops_power_state (Some x) |> Record_util.power_state_to_string in
 			let found = f found and expected = f expected in
-			reraise Api_errors.vm_bad_power_state [ expected; found ]
+			reraise Api_errors.vm_bad_power_state [ Ref.string_of vm; expected; found ]
 		| Failed_to_acknowledge_shutdown_request ->
 			reraise Api_errors.vm_failed_shutdown_ack []
 		| Failed_to_shutdown(id, timeout) ->
@@ -1967,15 +2060,9 @@ let sync __context queue_name x =
 	let dbg = Context.string_of_task __context in
 	x |> wait_for_task queue_name dbg |> success_task queue_name (update_debug_info __context) dbg
 
-let check_power_state ~__context ~self ~expected =
-	let found = Db.VM.get_power_state ~__context ~self in
-	if expected <> found then begin
-		let f = xenops_of_xenapi_power_state in
-		raise (Bad_power_state(f found, f expected)) end
-
 let pause ~__context ~self =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.pause %s" id;
@@ -1983,12 +2070,12 @@ let pause ~__context ~self =
 			let module Client = (val make_client queue_name : XENOPS) in
 			Client.VM.pause dbg id |> sync_with_task __context queue_name;
 			Events_from_xenopsd.wait queue_name dbg id ();
-			check_power_state ~__context ~self ~expected:`Paused
+			Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:`Paused
 		)
 
 let unpause ~__context ~self =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.unpause %s" id;
@@ -1996,12 +2083,12 @@ let unpause ~__context ~self =
 			let module Client = (val make_client queue_name : XENOPS) in
 			Client.VM.unpause dbg id |> sync_with_task __context queue_name;
 			Events_from_xenopsd.wait queue_name dbg id ();
-			check_power_state ~__context ~self ~expected:`Running
+			Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:`Running
 		)
 
 let request_rdp ~__context ~self enabled =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.request_rdp %s %b" id enabled;
@@ -2013,7 +2100,7 @@ let request_rdp ~__context ~self enabled =
 
 let set_xenstore_data ~__context ~self xsdata =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.set_xenstore_data %s" id;
@@ -2025,7 +2112,7 @@ let set_xenstore_data ~__context ~self xsdata =
 
 let set_vcpus ~__context ~self n =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.set_vcpus %s" id;
@@ -2048,7 +2135,7 @@ let set_vcpus ~__context ~self n =
 
 let set_shadow_multiplier ~__context ~self target =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.set_shadow_multiplier %s" id;
@@ -2069,7 +2156,7 @@ let set_shadow_multiplier ~__context ~self target =
 
 let set_memory_dynamic_range ~__context ~self min max =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			debug "xenops: VM.set_memory_dynamic_range %s" id;
@@ -2082,7 +2169,7 @@ let set_memory_dynamic_range ~__context ~self min max =
 let start ~__context ~self paused =
 	let dbg = Context.string_of_task __context in
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			(* For all devices which we want xenopsd to manage, set currently_attached = true
 			   so the metadata is pushed. *)
@@ -2145,11 +2232,11 @@ let start ~__context ~self paused =
 				raise e
 		);
 	(* XXX: if the guest crashed or shutdown immediately then it may be offline now *)
-	check_power_state ~__context ~self ~expected:(if paused then `Paused else `Running)
+	Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:(if paused then `Paused else `Running)
 
 let start ~__context ~self paused =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			try
 				start ~__context ~self paused
@@ -2166,7 +2253,7 @@ let start ~__context ~self paused =
 
 let reboot ~__context ~self timeout =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self;
 			let id = id_of_vm ~__context ~self in
@@ -2177,12 +2264,12 @@ let reboot ~__context ~self timeout =
 			let module Client = (val make_client queue_name : XENOPS) in
 			Client.VM.reboot dbg id timeout |> sync_with_task __context queue_name;
 			Events_from_xenopsd.wait queue_name dbg id ();
-			check_power_state ~__context ~self ~expected:`Running
+			Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:`Running
 		)
 
 let shutdown ~__context ~self timeout =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self;
 			let id = id_of_vm ~__context ~self in
@@ -2192,7 +2279,7 @@ let shutdown ~__context ~self timeout =
 			let module Client = (val make_client queue_name : XENOPS) in
 			Client.VM.shutdown dbg id timeout |> sync_with_task __context queue_name;
 			Events_from_xenopsd.wait queue_name dbg id ();
-			check_power_state ~__context ~self ~expected:`Halted;
+			Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:`Halted;
 			(* force_state_reset called from the xenopsd event loop above *)
 			assert (Db.VM.get_resident_on ~__context ~self = Ref.null);
 			List.iter
@@ -2203,7 +2290,7 @@ let shutdown ~__context ~self timeout =
 
 let suspend ~__context ~self =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self;
 			let id = id_of_vm ~__context ~self in
@@ -2230,7 +2317,7 @@ let suspend ~__context ~self =
 						info "xenops: VM.suspend %s to %s" id (disk |> rpc_of_disk |> Jsonrpc.to_string);
 						Client.VM.suspend dbg id disk |> sync_with_task __context queue_name;
 						Events_from_xenopsd.wait queue_name dbg id ();
-						check_power_state ~__context ~self ~expected:`Suspended;
+						Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:`Suspended;
 						assert (Db.VM.get_resident_on ~__context ~self = Ref.null);
 					with e ->
 						error "Caught exception suspending VM: %s" (string_of_exn e);
@@ -2250,7 +2337,7 @@ let suspend ~__context ~self =
 let resume ~__context ~self ~start_paused ~force =
 	let dbg = Context.string_of_task __context in
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let vdi = Db.VM.get_suspend_VDI ~__context ~self in
 			let disk = disk_of_vdi ~__context ~self:vdi |> Opt.unbox in
@@ -2286,12 +2373,12 @@ let resume ~__context ~self ~start_paused ~force =
 				(fun rpc session_id ->
 					XenAPI.VDI.destroy rpc session_id vdi
 				);
-			check_power_state ~__context ~self ~expected:(if start_paused then `Paused else `Running)
+			Xapi_vm_lifecycle.assert_power_state_is ~__context ~self ~expected:(if start_paused then `Paused else `Running)
 		)
 
 let s3suspend ~__context ~self =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			let dbg = Context.string_of_task __context in
@@ -2303,7 +2390,7 @@ let s3suspend ~__context ~self =
 
 let s3resume ~__context ~self =
 	let queue_name = queue_of_vm ~__context ~self in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			let id = id_of_vm ~__context ~self in
 			let dbg = Context.string_of_task __context in
@@ -2329,7 +2416,7 @@ let md_of_vbd ~__context ~self =
 let vbd_plug ~__context ~self =
 	let vm = Db.VBD.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			Events_from_xapi.wait ~__context ~self:vm;
@@ -2353,7 +2440,7 @@ let vbd_plug ~__context ~self =
 let vbd_unplug ~__context ~self force =
 	let vm = Db.VBD.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			let vbd = md_of_vbd ~__context ~self in
@@ -2373,7 +2460,7 @@ let vbd_unplug ~__context ~self force =
 let vbd_eject_hvm ~__context ~self =
 	let vm = Db.VBD.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			let vbd = md_of_vbd ~__context ~self in
@@ -2390,7 +2477,7 @@ let vbd_eject_hvm ~__context ~self =
 let vbd_insert_hvm ~__context ~self ~vdi =
 	let vm = Db.VBD.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			let vbd = md_of_vbd ~__context ~self in
@@ -2439,7 +2526,7 @@ let md_of_vif ~__context ~self =
 let vif_plug ~__context ~self =
 	let vm = Db.VIF.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			Events_from_xapi.wait ~__context ~self:vm;
@@ -2467,7 +2554,7 @@ let vm_set_vm_data ~__context ~self = ()
 let vif_set_locking_mode ~__context ~self =
 	let vm = Db.VIF.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			let vif = md_of_vif ~__context ~self in
@@ -2481,7 +2568,7 @@ let vif_set_locking_mode ~__context ~self =
 let vif_unplug ~__context ~self force =
 	let vm = Db.VIF.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			let vif = md_of_vif ~__context ~self in
@@ -2497,7 +2584,7 @@ let vif_unplug ~__context ~self force =
 let vif_move ~__context ~self network =
 	let vm = Db.VIF.get_VM ~__context ~self in
 	let queue_name = queue_of_vm ~__context ~self:vm in
-	transform_xenops_exn ~__context queue_name
+	transform_xenops_exn ~__context ~vm queue_name
 		(fun () ->
 			assert_resident_on ~__context ~self:vm;
 			let vif = md_of_vif ~__context ~self in

@@ -218,9 +218,23 @@ let check_pci ~op ~ref_str =
 	| `suspend | `checkpoint | `pool_migrate | `migrate_send -> Some (Api_errors.vm_has_pci_attached, [ref_str])
 	| _ -> None
 
-let check_vgpu ~op ~ref_str =
+let check_vgpu ~__context ~op ~ref_str ~vgpus =
 	match op with
-	| `suspend | `checkpoint | `pool_migrate | `migrate_send -> Some (Api_errors.vm_has_vgpu, [ref_str])
+	| `suspend | `pool_migrate -> begin
+		let all_nvidia_vgpus =
+			List.fold_left
+				(fun acc vgpu ->
+					let vgpu_type = Db.VGPU.get_type ~__context ~self:vgpu in
+					let implementation =
+						Db.VGPU_type.get_implementation ~__context ~self:vgpu_type in
+					acc && (implementation = `nvidia))
+				true vgpus
+		in
+		if all_nvidia_vgpus && (Xapi_fist.allow_nvidia_vgpu_migration ())
+		then None
+		else Some (Api_errors.vm_has_vgpu, [ref_str])
+	end
+	| `checkpoint | `migrate_send -> Some (Api_errors.vm_has_vgpu, [ref_str])
 	| _ -> None
 
 (* VM cannot be converted into a template while it is a member of an appliance. *)
@@ -345,7 +359,7 @@ let check_operation_error ~__context ~vmr ~vmgmr ~ref ~clone_suspended_vm_enable
 	(* The VM has a VGPU, check if the operation is allowed*)
 	let current_error = check current_error (fun () ->
 		if vmr.Db_actions.vM_VGPUs <> []
-		then check_vgpu ~op ~ref_str
+		then check_vgpu ~__context ~op ~ref_str ~vgpus:vmr.Db_actions.vM_VGPUs
 		else None) in
 
 	(* Check for errors caused by VM being in an appliance. *)
@@ -445,7 +459,9 @@ let force_state_reset_keep_current_operations ~__context ~self ~value:state =
 		List.iter 
 			(fun vgpu ->
 				Db.VGPU.set_currently_attached ~__context ~self:vgpu ~value:false;
-				Db.VGPU.set_resident_on ~__context ~self:vgpu ~value:Ref.null)
+				Db.VGPU.set_resident_on ~__context ~self:vgpu ~value:Ref.null;
+				Db.VGPU.set_scheduled_to_be_resident_on
+					~__context ~self:vgpu ~value:Ref.null)
 			(Db.VM.get_VGPUs ~__context ~self);
 		List.iter
 			(fun pci ->
@@ -504,3 +520,13 @@ let get_operation_error ~__context ~self ~op ~strict =
 let is_live ~__context ~self =
 	let power_state = Db.VM.get_power_state ~__context ~self in
 	power_state = `Running || power_state = `Paused
+
+let assert_power_state_in ~__context ~self ~allowed =
+	let actual = Db.VM.get_power_state ~__context ~self in
+	if not (List.mem actual allowed)
+	then raise (Api_errors.Server_error(Api_errors.vm_bad_power_state, [
+		Ref.string_of self;
+		List.map Record_util.power_to_string allowed |> String.concat ";";
+		Record_util.power_to_string actual ]))
+
+let assert_power_state_is ~expected = assert_power_state_in ~allowed:[expected]
