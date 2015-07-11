@@ -60,6 +60,7 @@ let assert_sr_can_host_statefile ~__context ~sr =
 		end) pbds;
 	(* Check the exported capabilities of the SR's SM plugin *)
 	let srtype = Db.SR.get_type ~__context ~self:sr in
+	let open Db_filter_types in
 	match Db.SM.get_internal_records_where ~__context ~expr:(Eq (Field "type", Literal srtype)) with
 	| [] ->
 		(* This should never happen because the PBDs are plugged in *)
