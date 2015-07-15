@@ -11,13 +11,11 @@ xapi_storage_script = "/usr/libexec/xapi-storage-script"
 
 def call_volume_plugin(name, command, args):
     args = [ xapi_storage_script + "/volume/org.xen.xcp.storage." + name + "/" + command, "static-vdis" ] + args
-    print repr(args)
     output = subprocess.check_output(args)
     return json.loads(output)
 
 def call_datapath_plugin(name, command, args):
     args = [ xapi_storage_script + "/datapath/" + name + "/" + command, "static-vdis" ] + args
-    print repr(args)
     output = subprocess.check_output(args)
     return json.loads(output)
 
@@ -140,7 +138,7 @@ def add(session, vdi_uuid, reason):
     }
 
     # If the SM supports offline attach then we use it
-    if sm.has_key("VDI_ATTACH_OFFLINE"):
+    if sm["features"].has_key("VDI_ATTACH_OFFLINE"):
         data["volume-plugin"] = ty
         data["sr-uri"] = device_config['uri']
         sr = call_volume_plugin(ty, "SR.attach", [ data["sr-uri"] ])
@@ -151,6 +149,7 @@ def add(session, vdi_uuid, reason):
     else:
         # SMAPIv1
         try:
+            data["driver"] = session.xenapi.SM.get_driver_filename(sm_ref)
             data["config"] = session.xenapi.VDI.generate_config(host, vdi)
         except XenAPI.Failure, e:
             raise Exception("Failed generating static config file: %s" % (str(e)))
@@ -212,7 +211,8 @@ def attach(vdi_uuid):
                 if not (os.path.exists(d + "/sr-uri")):
                     # SMAPIv1
                     config = read_whole_file(d + "/config")
-                    path = call_backend_attach(d + "/driver", config)
+                    driver = read_whole_file(d + "/driver")
+                    path = call_backend_attach(driver, config)
                 else:
                     volume_plugin = read_whole_file(d + "/volume-plugin")
                     sr_uri = read_whole_file(d + "/sr-uri")
