@@ -237,9 +237,22 @@ let with_nicer_network_errors host f =
 		  warn "Caught Stunnel_connection_failed while contacting host %s; converting into CANNOT_CONTACT_HOST" (Ref.string_of host);
 		  raise (Api_errors.Server_error (Api_errors.cannot_contact_host, [Ref.string_of host]))
 
+(* A function which can call a XenAPI on a host *) 
+let call_on_host
+	?(host_must_be_live = true)
+	?(session = `Pool) (* can also be `Local *)
+	?(retry_on_failure = true)
+	~local_fn ~__context ~host op =
 
-(* Forward op to one of the specified hosts if host!=localhost *)
-let do_op_on_common ~local_fn ~__context ~host op f =
+	let retry =
+		if retry_on_failure then remote_rpc_retry else remote_rpc_no_retry in
+
+	let f = match session with
+		| `Pool -> call_slave_with_session retry
+		| `Local -> call_slave_with_local_session retry in
+
+	if host_must_be_live then check_live ~__context host;
+
 	with_nicer_network_errors host
 		(fun () ->
 			let localhost=Helpers.get_localhost ~__context in
@@ -253,23 +266,18 @@ let do_op_on_common ~local_fn ~__context ~host op f =
    use the connection cache. *)
 (* we don't check "host.enabled" here, because for most messages we want to be able to forward
    them even when the host is disabled; vm.start_on and resume_on do their own check for enabled *)
-let do_op_on ~local_fn ~__context ~host op =
-	check_live ~__context host;
-	do_op_on_common ~local_fn ~__context ~host op
-		(call_slave_with_session remote_rpc_retry)
+let do_op_on ~local_fn ~__context ~host op = call_on_host ~local_fn ~__context ~host op
 
 (* with session but no live check. Used by the Pool.hello calling back ONLY
    Don't use the connection cache or retry logic. *)
 let do_op_on_nolivecheck_no_retry ~local_fn ~__context ~host op =
-	do_op_on_common ~local_fn ~__context ~host op
-		(call_slave_with_session remote_rpc_no_retry)
+	call_on_host ~host_must_be_live:false ~retry_on_failure:false ~local_fn ~__context ~host op
 
 (* with a local session and no checking. This is used for forwarding messages to hosts that
    we don't know are alive/dead -- e.g. the pool_emergency_* messages.
    Don't use the connection cache or retry logic. *)
 let do_op_on_localsession_nolivecheck ~local_fn ~__context ~host op =
-	do_op_on_common ~local_fn ~__context ~host op
-		(call_slave_with_local_session remote_rpc_no_retry)
+	call_on_host ~host_must_be_live:false ~session:`Local ~retry_on_failure:false ~local_fn ~__context ~host op
 
 (* Map a function across a list, remove elements which throw an exception *)
 let map_with_drop ?(doc = "performing unknown operation") f xs =
