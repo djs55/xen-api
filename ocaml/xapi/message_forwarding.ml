@@ -226,14 +226,9 @@ let check_enabled ~__context h =
 	(* check host is enabled *)
 	Xapi_vm_helpers.assert_host_is_enabled ~__context ~host:h
 
-(* Forward op to one of the specified hosts if host!=localhost *)
-let do_op_on_common ~local_fn ~__context ~host op f =
+let with_nicer_network_errors host f =
 	try
-		let localhost=Helpers.get_localhost ~__context in
-		if localhost=host then local_fn ~__context
-		else
-			let task_opt = set_forwarding_on_task ~__context ~host in
-			f __context host task_opt op
+		f ()
 	with
 	| Xmlrpc_client.Connection_reset | Http_client.Http_request_rejected _ ->
 		  warn "Caught Connection_reset when contacting host %s; converting into CANNOT_CONTACT_HOST" (Ref.string_of host);
@@ -241,6 +236,18 @@ let do_op_on_common ~local_fn ~__context ~host op f =
 	| Xmlrpc_client.Stunnel_connection_failed ->
 		  warn "Caught Stunnel_connection_failed while contacting host %s; converting into CANNOT_CONTACT_HOST" (Ref.string_of host);
 		  raise (Api_errors.Server_error (Api_errors.cannot_contact_host, [Ref.string_of host]))
+
+
+(* Forward op to one of the specified hosts if host!=localhost *)
+let do_op_on_common ~local_fn ~__context ~host op f =
+	with_nicer_network_errors host
+		(fun () ->
+			let localhost=Helpers.get_localhost ~__context in
+			if localhost=host then local_fn ~__context
+			else
+				let task_opt = set_forwarding_on_task ~__context ~host in
+				f __context host task_opt op
+		)
 
 (* regular forwarding fn, with session and live-check. Used by most calls, will
    use the connection cache. *)
