@@ -268,6 +268,39 @@ let call_on_host
    them even when the host is disabled; vm.start_on and resume_on do their own check for enabled *)
 let do_op_on ~local_fn ~__context ~host op = call_on_host ~local_fn ~__context ~host op
 
+let wait_for_task ~__context ~task =
+    let session_id = Context.get_session_id __context in
+    let token = ref "" in
+    let result = ref None in
+    let classes = [ Printf.sprintf "task/%s" (Ref.string_of task) ] in
+    while !result = None do
+      let events =
+          Xapi_event.from ~__context ~classes ~token:!token ~timeout:30.
+          |> Event_types.event_from_of_rpc in
+      token := events.Event_types.token;
+      Db.Session.set_last_active ~__context ~self:session_id ~value:(Date.of_float (Unix.time()));
+      match List.map Event_helper.record_of_event events.Event_types.events with
+      | [ Event_helper.Task (rf, Some { API.task_status = `success; task_result = xmlrpc })  ] ->
+        let xmlrpc = Xmlrpc.of_string xmlrpc in
+        result := Some xmlrpc
+      | [ Event_helper.Task (rf, Some { API.task_status = `failure; task_error_info = code :: params }) ] ->
+        raise (Api_errors.Server_error(code, params))
+      | [ Event_helper.Task (rf, Some { API.task_status = `cancelled }) ] ->
+        raise (Api_errors.Server_error(Api_errors.task_cancelled, [ Ref.string_of task ] ))
+      | _ -> ()
+    done;
+    match !result with
+    | None -> assert false
+    | Some xmlrpc -> xmlrpc
+
+let do_op_on_async ~local_fn ~__context ~unmarshal ~host async_op =
+  let local_fn ~__context =
+    let (_: Thread.t) = Thread.create (fun () -> local_fn ~__context) () in
+    Context.get_task_id __context in
+  let task = call_on_host ~local_fn ~__context ~host async_op in
+  let xmlrpc = wait_for_task ~__context ~task in
+  unmarshal xmlrpc
+
 (* with session but no live check. Used by the Pool.hello calling back ONLY
    Don't use the connection cache or retry logic. *)
 let do_op_on_nolivecheck_no_retry ~local_fn ~__context ~host op =
@@ -1314,9 +1347,9 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 									let snapshot = Db.VM.get_record ~__context ~self:vm in
 									reserve_memory_for_vm ~__context ~vm ~host ~snapshot ~host_op:`vm_start
 										(fun () ->
-											do_op_on ~local_fn ~__context ~host
+											do_op_on_async ~local_fn ~__context ~host ~unmarshal:(fun _ -> ())
 												(fun session_id rpc ->
-													Client.VM.start
+													Client.Async.VM.start
 														rpc session_id vm start_paused force)
 										);
 									Cpuid_helpers.populate_cpu_flags ~__context ~vm ~host;
